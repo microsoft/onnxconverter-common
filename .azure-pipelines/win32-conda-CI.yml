@@ -1,0 +1,58 @@
+# Python package
+# Create and test a Python package on multiple Python versions.
+# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+
+trigger:
+- master
+
+jobs:
+
+- job: 'Test'
+  pool:
+    vmImage: 'vs2017-win2016'
+  strategy:
+    matrix:
+      Python35:
+        python.version: '3.5'
+        ONNX_PATH: onnx==1.4.1
+
+      Python36:
+        python.version: '3.6'
+        ONNX_PATH: onnx==1.4.1
+
+      Python37:
+        python.version: '3.7'
+        ONNX_PATH: onnx==1.5.0
+
+    maxParallel: 3
+
+  steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(python.version)'
+      architecture: 'x64'
+
+  - powershell: Write-Host "##vso[task.prependpath]$env:CONDA\Scripts"
+    displayName: Add conda to PATH
+
+  - script: conda create --yes --quiet --name py$(python.version) -c conda-forge python=$(python.version) numpy protobuf
+    displayName: Create Anaconda environment
+
+  - script: |
+      call activate py$(python.version)
+      python -m pip install --upgrade pip numpy
+      echo Test numpy installation... && python -c "import numpy"
+      pip install %ONNX_PATH%
+    displayName: 'Install dependencies'
+
+  - script: |
+      call activate py$(python.version)
+      pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
+    displayName: 'pytest - onnxutils'
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFiles: '**/test-results.xml'
+      testRunTitle: 'Python $(python.version)'
+    condition: succeededOrFailed()
