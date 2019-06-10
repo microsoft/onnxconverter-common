@@ -73,6 +73,13 @@ def apply_add(scope, input_names, output_name, container, operator_name=None, ax
     _apply_basic_numerical_operation(scope, 'Add', input_names, output_name, container, operator_name=operator_name,
                                      axis=axis, broadcast=broadcast)
 
+
+def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1):
+    name = _create_name_or_use_existing_one(scope, 'ArgMax', operator_name)
+    container.add_node('ArgMax', input_name, output_name, op_version=1, name=name,
+                       axis=axis, keepdims=keepdims)
+
+
 def apply_affine(scope, input_name, output_name, container, operator_name=None, alpha=1., beta=0.):
     if container.target_opset < 9:
         op_type = 'Affine'
@@ -247,6 +254,11 @@ def apply_elu(scope, input_name, output_name, container, operator_name=None, alp
 def apply_exp(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Exp', input_name, output_name, container, operator_name=operator_name)
 
+
+def apply_floor(scope, input_name, output_name, container, operator_name=None):
+    _apply_unary_operation(scope, 'Floor', input_name, output_name, container, operator_name=operator_name)
+
+
 def apply_gemm(scope, input_name, output_name, container, operator_name=None, alpha=1.0, beta=1.0,
                transA=0, transB=0):
     """
@@ -291,6 +303,13 @@ def apply_leaky_relu(scope, input_name, output_name, container, operator_name=No
 def apply_log(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Log', input_name, output_name, container, operator_name=operator_name)
 
+
+def apply_matmul(scope, input_names, output_name, container, operator_name=None):
+    op_type = 'MatMul'
+    name = _create_name_or_use_existing_one(scope, op_type, operator_name)
+    container.add_node(op_type, input_names, output_name, op_version=9, name=name)
+
+
 def apply_max(scope, input_names, output_name, container, operator_name=None):
     _apply_pointwise_operation(scope, 'Max', input_names, output_name, container, operator_name)
 
@@ -303,6 +322,11 @@ def apply_min(scope, input_names, output_name, container, operator_name=None):
 def apply_mul(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
     _apply_basic_numerical_operation(scope, 'Mul', input_names, output_name, container, operator_name=operator_name,
                                      axis=axis, broadcast=broadcast)
+
+
+def apply_neg(scope, input_name, output_name, container, operator_name=None, axis=None, broadcast=None):
+    _apply_unary_operation(scope, 'Neg', input_name, output_name, container, operator_name)
+
 
 def apply_normalization(scope, input_name, output_name, container, operator_name=None, axis=1, p=2):
     name = _create_name_or_use_existing_one(scope, 'LpNormalization', operator_name)
@@ -429,6 +453,22 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
         # Create ONNX Reshape operator
         container.add_node('Reshape', [input_name, desired_shape_name], output_name, op_version=5, name=name)
 
+def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
+    '''
+    :param mode: "nearest" or "linear"
+    :param scales: a float tensor for scaling (upsampling or downsampling) all input dimensions
+    '''
+    name = _create_name_or_use_existing_one(scope, 'Resize', operator_name)
+    attrs = {'name': name}
+    attrs['mode'] = mode.lower()
+
+    scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
+    container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
+    inputs = [input_name, scales_tensor_name]
+    op_version = 10
+
+    container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
+
 def apply_sigmoid(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sigmoid', input_name, output_name, container, operator_name)
 
@@ -473,6 +513,37 @@ def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=N
         # output = a * d
         apply_mul(scope, [aName, dName], output_name, container)
 
+def apply_slice(scope, input_name, output_name, container, starts, ends,
+                axes=None, steps=None, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Slice', operator_name)
+
+    if container.target_opset < 10:
+        container.add_node('Slice', input_name, output_name, name=name,
+                           starts=starts, ends=ends, axes=axes, op_version=1)
+    else:
+        inputs = [input_name]
+        starts_name = scope.get_unique_variable_name('starts')
+        ends_name = scope.get_unique_variable_name('ends')
+        container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
+                                  [len(starts)], starts)
+        container.add_initializer(ends_name, onnx_proto.TensorProto.INT64,
+                                  [len(ends)], ends)
+        inputs.append(starts_name)
+        inputs.append(ends_name)
+        if axes:
+            axes_name = scope.get_unique_variable_name('axes')
+            container.add_initializer(axes_name, onnx_proto.TensorProto.INT64,
+                                      [len(axes)], axes)
+            inputs.append(axes_name)
+        if steps:
+            if not axes:
+                inputs.append('')
+            steps_name = scope.get_unique_variable_name('steps')
+            container.add_initializer(steps_name, onnx_proto.TensorProto.INT64,
+                                      [len(steps)], steps)
+            inputs.append(steps_name)
+        container.add_node('Slice', inputs, output_name, name=name,
+                           op_version=10)
 
 def apply_split(scope, input_name, output_names, container, operator_name=None, split=None, axis=0):
     name = _create_name_or_use_existing_one(scope, 'Split', operator_name)
@@ -496,8 +567,33 @@ def apply_sub(scope, input_names, output_name, container, operator_name=None, ax
     _apply_basic_numerical_operation(scope, 'Sub', input_names, output_name, container, operator_name=operator_name,
                                      axis=axis, broadcast=broadcast)
 
+
+def apply_sum(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Sum', operator_name)
+    if container.target_opset < 6:
+        op_version = 1
+    else:
+        op_version = 6
+    container.add_node('Sum', input_names, output_name, op_version=op_version, name=name)
+
+
 def apply_tanh(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Tanh', input_name, output_name, container, operator_name)
+
+def apply_thresholded_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
+    if alpha == None:
+        alpha = [1.0]
+
+    name = _create_name_or_use_existing_one(scope, 'ThresholdedRelu', operator_name)
+    attrs = {'name': name, 'alpha': alpha[0]}
+    if container.target_opset < 10:
+    # ThresholdedRelu graduated from an experimental op to a full op in opset 10
+    # onnxruntime maintains support in the ONNX domain for ThresholdedRelu as a contrib op
+        attrs['op_domain'] = "ai.onnx"
+        op_version = 1
+    else:
+        op_version = 10
+    container.add_node('ThresholdedRelu', input_name, output_name, op_version=op_version, **attrs)
 
 def apply_tile(scope, input_name, output_name, container, operator_name=None, repeats=None):
     name = _create_name_or_use_existing_one(scope, 'Tile', operator_name)
@@ -586,14 +682,6 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
 
         container.add_node('Upsample', inputs, output_name, op_version=op_version, **attrs)
     else:
-        # TODO, we need verify this after onnx opset 10 release
-        name = _create_name_or_use_existing_one(scope, 'Resize', operator_name)
-        attrs = {'name': name}
-        attrs['mode'] = mode.lower()
-
-        scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
-        container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
-        inputs = [input_name, scales_tensor_name]
-        op_version = 10
-
-        container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
+        # Upsample op is deprecated in ONNX opset 10
+        # We implement Upsample through Resize instead
+        apply_resize(scope, input_name, output_name, container, operator_name, mode, scales)
