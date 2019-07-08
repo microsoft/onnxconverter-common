@@ -82,9 +82,11 @@ class TensorType(DataType):
             if isinstance(d, numbers.Integral):
                 s.dim_value = d
             elif isinstance(d, str):
-                s.dim_param = 'None'
+                s.dim_param = d
             else:
-                raise ValueError('Unsupported dimension type: %s' % type(d))
+                raise ValueError('Unsupported dimension type: %s, see %d' % (
+                    type(d), 'https://github.com/onnx/onnx/blob/master/docs/IR.md#'
+                    'input--output-data-types'))
         if getattr(onnx_type, 'denotation', None) is not None:
             if self.denotation:
                 onnx_type.denotation = self.denotation
