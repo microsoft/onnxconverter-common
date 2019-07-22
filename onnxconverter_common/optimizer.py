@@ -372,7 +372,11 @@ class MoveForwardSolution(Solution):
         self.begin.successor[0] = self.begin_n.successor[0]
         self.begin_n.precedence[0] = self.end_p
         self.end_p.successor[0] = self.begin_n
-        self.end.precedence[0] = self.begin_n
+        pre_len = len(self.end.precedence)
+        for i_ in range(pre_len):
+            if self.end.precedence[i_].origin.name == self.end_p.origin.name:
+                self.end.precedence[i_] = self.begin_n
+                break
         self.begin_n.successor[0] = self.end
         return node_list
 
