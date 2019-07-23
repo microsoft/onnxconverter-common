@@ -79,14 +79,16 @@ class TensorType(DataType):
         onnx_type.tensor_type.elem_type = self._get_element_onnx_type()
         for d in self.shape:
             s = onnx_type.tensor_type.shape.dim.add()
-            if isinstance(d, numbers.Integral):
+            if d is None:
+                pass
+            elif isinstance(d, numbers.Integral):
                 s.dim_value = d
             elif isinstance(d, str):
                 s.dim_param = d
             else:
-                raise ValueError('Unsupported dimension type: %s, see %d' % (
-                    type(d), 'https://github.com/onnx/onnx/blob/master/docs/IR.md#'
-                    'input--output-data-types'))
+                raise ValueError('Unsupported dimension type: %s, see %s' % (
+                    type(d), "https://github.com/onnx/onnx/blob/master/docs/IR.md#" +
+                    "input--output-data-types"))
         if getattr(onnx_type, 'denotation', None) is not None:
             if self.denotation:
                 onnx_type.denotation = self.denotation
