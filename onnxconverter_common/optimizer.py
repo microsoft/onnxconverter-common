@@ -372,7 +372,11 @@ class MoveForwardSolution(Solution):
         self.begin.successor[0] = self.begin_n.successor[0]
         self.begin_n.precedence[0] = self.end_p
         self.end_p.successor[0] = self.begin_n
-        self.end.precedence[0] = self.begin_n
+        pre_len = len(self.end.precedence)
+        for i_ in range(pre_len):
+            if self.end.precedence[i_].origin.name == self.end_p.origin.name:
+                self.end.precedence[i_] = self.begin_n
+                break
         self.begin_n.successor[0] = self.end
         return node_list
 
@@ -419,6 +423,32 @@ class FanInSolution(Solution):
         node_list = Solution.add_siso_node(node_list, self.begin, self.begin_n, list(self.begin.output.values())[0], nnode)
         for branch in precedence_list:
             node_list = Solution.delete_node_1ton(node_list, branch.precedence[0], branch, self.begin)
+        return node_list
+
+
+class MergePadConvSolution(Solution):
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
+        half_len_pads = len(pads) // 2
+        pads_new = pads[2:half_len_pads]
+        pads_new.extend(pads[half_len_pads+2:])
+        attrs = {'pads': pads_new}
+        auto_pad_value = 'NOTSET' if helper.get_attribute_value(self.end_p.origin.attribute[0]) == b'VALID' else None
+        for attr_idx in range(5):
+            if attr_idx == 0 and auto_pad_value == 'NOTSET':
+                attrs.update({'auto_pad': 'NOTSET'})
+                continue
+            cur_attr = self.end_p.origin.attribute[attr_idx]
+            attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
+
+        self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
+                                             self.end_p.origin.name + "_0", **attrs)
+
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+
         return node_list
 
 
@@ -516,8 +546,22 @@ class TransposeOptimizer(object):
         return solution
 
 
+class MergePadConvOptimizer(object):
+    @staticmethod
+    def find(node_list):
+        solution = None
+        for n_ in node_list:
+            if n_.origin.op_type == 'Pad' and n_.in_single_path_and_inner:
+                next = n_.successor[0]
+                if next.origin.op_type == 'Conv':
+                    solution = MergePadConvSolution(n_.precedence[0], n_, next, next.successor[0])
+                    return solution
+
+        return solution
+
+
 def _find_an_optimization(node_list):
-    optimizers = (RedundantOptimizer, TransposeOptimizer)
+    optimizers = (RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer)
 
     for optm in optimizers:
         solution = optm.find(node_list)
