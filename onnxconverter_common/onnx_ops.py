@@ -8,14 +8,15 @@
 # `container` argument. Notice that those function behaviors are defined in a way very similar to ONNX-1.2.
 
 import numpy as np
-import onnx
 from onnx import onnx_pb as onnx_proto
+
 
 def _create_name_or_use_existing_one(scope, op_type, name):
     if name is None:
         return scope.get_unique_operator_name(op_type)
     else:
         return name
+
 
 def _apply_unary_operation(scope, op_type, input_name, output_name, container, operator_name, **attrs):
     name = _create_name_or_use_existing_one(scope, op_type, operator_name)
@@ -28,6 +29,7 @@ def _apply_unary_operation(scope, op_type, input_name, output_name, container, o
         op_version = 6
 
     container.add_node(op_type, input_name, output_name, op_version=op_version, **attrs)
+
 
 def _apply_basic_numerical_operation(scope, op_type, input_names, output_name, container, operator_name,
                                      axis, broadcast):
@@ -52,6 +54,7 @@ def _apply_basic_numerical_operation(scope, op_type, input_names, output_name, c
 
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
+
 def _apply_pointwise_operation(scope, op_type, input_names, output_name, container, operator_name):
     name = _create_name_or_use_existing_one(scope, op_type, operator_name)
     attrs = {}
@@ -66,8 +69,10 @@ def _apply_pointwise_operation(scope, op_type, input_names, output_name, contain
 
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
+
 def apply_abs(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Abs', input_name, output_name, container, operator_name=operator_name)
+
 
 def apply_add(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
     _apply_basic_numerical_operation(scope, 'Add', input_names, output_name, container, operator_name=operator_name,
@@ -101,6 +106,7 @@ def apply_affine(scope, input_name, output_name, container, operator_name=None, 
         # Compute Y = Z + b, where Y is the final output.
         apply_add(scope, [zName, bName], output_name, container)
 
+
 def apply_batch_norm(scope, input_names, output_names, container, operator_name=None,
                      epsilon=None, is_test=None, momentum=None, spatial=None):
     name = _create_name_or_use_existing_one(scope, 'BatchNormalization', operator_name)
@@ -124,6 +130,7 @@ def apply_batch_norm(scope, input_names, output_names, container, operator_name=
         op_version = 9
 
     container.add_node('BatchNormalization', input_names, output_names, op_version=op_version, **attrs)
+
 
 def apply_cast(scope, input_name, output_name, container, operator_name=None, to=None):
     '''
@@ -159,6 +166,7 @@ def apply_cast(scope, input_name, output_name, container, operator_name=None, to
 
     container.add_node('Cast', input_name, output_name, op_version=op_version, **attrs)
 
+
 def apply_clip(scope, input_name, output_name, container, operator_name=None, max=None, min=None):
     name = _create_name_or_use_existing_one(scope, 'Clip', operator_name)
 
@@ -176,6 +184,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
     container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
 
+
 def apply_concat(scope, input_names, output_name, container, operator_name=None, axis=0):
     name = _create_name_or_use_existing_one(scope, 'Concat', operator_name)
 
@@ -185,6 +194,7 @@ def apply_concat(scope, input_names, output_name, container, operator_name=None,
         op_version = 4
 
     container.add_node('Concat', input_names, output_name, op_version=op_version, name=name, axis=axis)
+
 
 def apply_constant(scope, output_name, container, operator_name=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Constant', operator_name)
@@ -201,8 +211,9 @@ def apply_constant(scope, output_name, container, operator_name=None, value=None
 
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
 
+
 def apply_crop_height_width(scope, input_name, output_name, container, operator_name=None,
-        top_border=0, bottom_border=0, left_border=0, right_border=0):
+                            top_border=0, bottom_border=0, left_border=0, right_border=0):
     name = scope.get_unique_operator_name('CropHeightWidth')
     if container.target_opset < 9:
         # If operator set < 9, we can use the experimental Crop in ONNX.
@@ -244,12 +255,15 @@ def apply_crop_height_width(scope, input_name, output_name, container, operator_
         input_list = [input_name, starts_name, ends_name, axes_name]
         container.add_node('DynamicSlice', input_list, output_name, op_version=9)
 
+
 def apply_div(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
     _apply_basic_numerical_operation(scope, 'Div', input_names, output_name, container, operator_name=operator_name,
                                      axis=axis, broadcast=broadcast)
 
+
 def apply_elu(scope, input_name, output_name, container, operator_name=None, alpha=1.0):
     _apply_unary_operation(scope, 'Elu', input_name, output_name, container, operator_name, alpha=alpha)
+
 
 def apply_exp(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Exp', input_name, output_name, container, operator_name=operator_name)
@@ -277,13 +291,16 @@ def apply_gemm(scope, input_name, output_name, container, operator_name=None, al
 
     container.add_node('Gemm', input_name, output_name, name=name, **attrs)
 
+
 def apply_hard_sigmoid(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
     _apply_unary_operation(scope, 'HardSigmoid', input_name, output_name, container, operator_name,
                            alpha=alpha, beta=beta)
 
+
 def apply_identity(scope, input_name, output_name, container, operator_name=None):
     name = _create_name_or_use_existing_one(scope, 'Identity', operator_name)
     container.add_node('Identity', input_name, output_name, name=name)
+
 
 def apply_instance_norm(scope, input_names, output_name, container, operator_name=None, epsilon=1e-5):
     name = _create_name_or_use_existing_one(scope, 'InstanceNormalization', operator_name)
@@ -297,8 +314,10 @@ def apply_instance_norm(scope, input_names, output_name, container, operator_nam
 
     container.add_node('InstanceNormalization', input_names, output_name, op_version=op_version, **attrs)
 
+
 def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
+
 
 def apply_log(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Log', input_name, output_name, container, operator_name=operator_name)
@@ -313,11 +332,14 @@ def apply_matmul(scope, input_names, output_name, container, operator_name=None)
 def apply_max(scope, input_names, output_name, container, operator_name=None):
     _apply_pointwise_operation(scope, 'Max', input_names, output_name, container, operator_name)
 
+
 def apply_mean(scope, input_names, output_name, container, operator_name=None):
     _apply_pointwise_operation(scope, 'Mean', input_names, output_name, container, operator_name)
 
+
 def apply_min(scope, input_names, output_name, container, operator_name=None):
     _apply_pointwise_operation(scope, 'Min', input_names, output_name, container, operator_name)
+
 
 def apply_mul(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
     _apply_basic_numerical_operation(scope, 'Mul', input_names, output_name, container, operator_name=operator_name,
@@ -331,6 +353,7 @@ def apply_neg(scope, input_name, output_name, container, operator_name=None, axi
 def apply_normalization(scope, input_name, output_name, container, operator_name=None, axis=1, p=2):
     name = _create_name_or_use_existing_one(scope, 'LpNormalization', operator_name)
     container.add_node('LpNormalization', input_name, output_name, name=name, p=p, axis=axis)
+
 
 def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Pad', operator_name)
@@ -348,6 +371,7 @@ def apply_pad(scope, input_name, output_name, container, operator_name=None, mod
         op_version = 2
 
     container.add_node('Pad', input_name, output_name, op_version=op_version, **attrs)
+
 
 def apply_parametric_softplus(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
     if alpha == None:
@@ -392,6 +416,7 @@ def apply_parametric_softplus(scope, input_name, output_name, container, operato
         # g = a * f
         apply_mul(scope, [fName, aName], output_name, container)
 
+
 def apply_pow(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
     name = _create_name_or_use_existing_one(scope, 'Pow', operator_name)
 
@@ -407,6 +432,7 @@ def apply_pow(scope, input_names, output_name, container, operator_name=None, ax
         # Since ONNX-1.2, broadcasting behavior is Numpy-like, so we don't need to specify any attributes
         op_version = 7
     container.add_node('Pow', input_names, output_name, op_version=op_version, **attrs)
+
 
 def apply_prelu(scope, input_name, output_name, container, operator_name=None, slope=None):
     name = _create_name_or_use_existing_one(scope, 'PRelu', operator_name)
@@ -430,11 +456,14 @@ def apply_prelu(scope, input_name, output_name, container, operator_name=None, s
 
         container.add_node('PRelu', [input_name, slope_tensor_name], output_name, op_version=op_version, name=name)
 
+
 def apply_reciprocal(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Reciprocal', input_name, output_name, container, operator_name=operator_name)
 
+
 def apply_relu(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Relu', input_name, output_name, container, operator_name)
+
 
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
     if len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
@@ -442,7 +471,7 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
 
     name = _create_name_or_use_existing_one(scope, 'Reshape', operator_name)
 
-    if container.target_opset < 6:
+    if container.target_opset < 5:
         container.add_node('Reshape', input_name, output_name, op_version=1, name=name, shape=desired_shape,
                            consumed_inputs=[0])
     else:
@@ -452,6 +481,7 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
 
         # Create ONNX Reshape operator
         container.add_node('Reshape', [input_name, desired_shape_name], output_name, op_version=5, name=name)
+
 
 def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
     '''
@@ -469,16 +499,20 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
 
     container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
 
+
 def apply_sigmoid(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sigmoid', input_name, output_name, container, operator_name)
+
 
 # See alpha and gamma at https://github.com/keras-team/keras/blob/master/keras/activations.py#L80-L81
 def apply_selu(scope, input_name, output_name, container, operator_name=None, alpha=1.673263, gamma=1.050701):
     _apply_unary_operation(scope, 'Selu', input_name, output_name, container, operator_name, alpha=alpha, gamma=gamma)
 
+
 def apply_softmax(scope, input_name, output_name, container, operator_name=None, axis=1):
     name = _create_name_or_use_existing_one(scope, 'Softmax', operator_name)
     container.add_node('Softmax', input_name, output_name, name=name, axis=axis)
+
 
 def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
     if alpha == None:
@@ -514,6 +548,7 @@ def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=N
         # output = a * d
         apply_mul(scope, [aName, dName], output_name, container)
 
+
 def apply_slice(scope, input_name, output_name, container, starts, ends,
                 axes=None, steps=None, operator_name=None):
     name = _create_name_or_use_existing_one(scope, 'Slice', operator_name)
@@ -546,6 +581,7 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
         container.add_node('Slice', inputs, output_name, name=name,
                            op_version=10)
 
+
 def apply_split(scope, input_name, output_names, container, operator_name=None, split=None, axis=0):
     name = _create_name_or_use_existing_one(scope, 'Split', operator_name)
     if container.target_opset <= 1:
@@ -561,8 +597,10 @@ def apply_split(scope, input_name, output_names, container, operator_name=None, 
 
     container.add_node('Split', input_name, output_names, op_version=op_version, **attrs)
 
+
 def apply_sqrt(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sqrt', input_name, output_name, container, operator_name=operator_name)
+
 
 def apply_sub(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=0):
     _apply_basic_numerical_operation(scope, 'Sub', input_names, output_name, container, operator_name=operator_name,
@@ -581,6 +619,7 @@ def apply_sum(scope, input_names, output_name, container, operator_name=None):
 def apply_tanh(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Tanh', input_name, output_name, container, operator_name)
 
+
 def apply_thresholded_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
     if alpha == None:
         alpha = [1.0]
@@ -588,13 +627,14 @@ def apply_thresholded_relu(scope, input_name, output_name, container, operator_n
     name = _create_name_or_use_existing_one(scope, 'ThresholdedRelu', operator_name)
     attrs = {'name': name, 'alpha': alpha[0]}
     if container.target_opset < 10:
-    # ThresholdedRelu graduated from an experimental op to a full op in opset 10
-    # onnxruntime maintains support in the ONNX domain for ThresholdedRelu as a contrib op
+        # ThresholdedRelu graduated from an experimental op to a full op in opset 10
+        # onnxruntime maintains support in the ONNX domain for ThresholdedRelu as a contrib op
         attrs['op_domain'] = "ai.onnx"
         op_version = 1
     else:
         op_version = 10
     container.add_node('ThresholdedRelu', input_name, output_name, op_version=op_version, **attrs)
+
 
 def apply_tile(scope, input_name, output_name, container, operator_name=None, repeats=None):
     name = _create_name_or_use_existing_one(scope, 'Tile', operator_name)
@@ -639,6 +679,7 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
         container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
         container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=7, name=name)
 
+
 def apply_topk(scope, input_name, output_names, container, k, operator_name=None):
     name = _create_name_or_use_existing_one(scope, 'TopK', operator_name)
 
@@ -649,9 +690,11 @@ def apply_topk(scope, input_name, output_names, container, k, operator_name=None
         container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
         container.add_node('TopK', [input_name, k_value_name], output_names, name=name, op_version=10)
 
+
 def apply_transpose(scope, input_name, output_name, container, operator_name=None, perm=None):
     name = _create_name_or_use_existing_one(scope, 'Transpose', operator_name)
     container.add_node('Transpose', input_name, output_name, name=name, perm=perm)
+
 
 def apply_upsample(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
     '''
