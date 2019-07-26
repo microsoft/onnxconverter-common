@@ -49,7 +49,7 @@ class LinkedNode(object):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
                 ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
-                ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus']
+                ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity']
 
     @property
     def broadcast(self):
@@ -397,6 +397,16 @@ class Solution(object):
         return node_list
 
 
+# Match two perms where the merge is identity, this is order sensitive.
+def match_perm(perm0, perm1):
+    if len(perm0) != len(perm1):
+        return False
+    if perm0 == [] and perm1 == []:
+        return True
+    perm_f = [perm0[idx] for idx in perm1]
+    return Solution.is_useless_transpose(perm_f)
+
+
 class MergeSolution(Solution):
     def apply(self, node_list):
         perm0 = self.get_perm(self.begin_n.origin)
@@ -465,6 +475,15 @@ class FanOutSolution(Solution):
             node_list = Solution.add_siso_node(node_list, self.end_p, suc, list(self.end_p.output.values())[0], nnode)
 
         node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+        return node_list
+
+
+class TransposeFanOutSolution(Solution):
+    def apply(self, node_list):
+        successor_list = list(self.begin_n.successor)
+        for suc_ in successor_list:
+            node_list = Solution.delete_node_1ton(node_list, self.begin_n, suc_, suc_.successor[0])
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor)
         return node_list
 
 
@@ -569,52 +588,69 @@ class TransposeOptimizer(object):
     def find(node_list):
         solution = None
         for n_ in node_list:
-            if n_.is_transpose and n_.in_single_path: # n_.in_single_path_and_inner:
-                if Solution.is_useless_transpose(Solution.get_perm(n_.origin)):
-                    solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
-                    return solution
-                else:
-                    succ = n_.successor[0]  # type: LinkedNode
-                    while succ.in_single_path:
-                        if succ.is_transpose: break
-                        if succ.element_wise or succ.broadcast:
-                            succ = succ.successor[0]
-                        else:
-                            break
-                    if succ.is_transpose:
-                        solution = MergeSolution(n_.precedence[0], n_, succ, succ.successor[0])
+            if n_.is_transpose:
+                perm = Solution.get_perm(n_.origin)
+                if n_.in_single_path: # n_.in_single_path_and_inner:
+                    if Solution.is_useless_transpose(perm):
+                        solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
+                        return solution
+                    else:
+                        succ = n_.successor[0]  # type: LinkedNode
+                        while succ.in_single_path:
+                            if succ.is_transpose: break
+                            if succ.element_wise or succ.broadcast:
+                                succ = succ.successor[0]
+                            else:
+                                break
+                        if succ.is_transpose:
+                            solution = MergeSolution(n_.precedence[0], n_, succ, succ.successor[0])
+                            return solution
+
+                    last_switchable = n_
+                    test_node = n_.successor[0]
+                    switch_transpose = False
+                    while test_node.is_transpose_switchable_single_path and not test_node.successor[0].in_or_out:
+                        switch_transpose = True
+                        last_switchable = test_node
+                        test_node = test_node.successor[0]
+                    if switch_transpose:
+                        solution = MoveForwardSolution(n_.precedence[0], n_, last_switchable, last_switchable.successor[0])
                         return solution
 
-                last_switchable = n_
-                test_node = n_.successor[0]
-                switch_transpose = False
-                while test_node.is_transpose_switchable_single_path and not test_node.successor[0].in_or_out:
-                    switch_transpose = True
-                    last_switchable = test_node
-                    test_node = test_node.successor[0]
-                if switch_transpose:
-                    solution = MoveForwardSolution(n_.precedence[0], n_, last_switchable, last_switchable.successor[0])
-                    return solution
+                    next_node = n_.successor[0]
+                    if next_node.is_transpose_switchable_simo:
+                        delta_node = -1
+                        cur_perm = Solution.get_perm(n_.origin)
+                        for branch in next_node.successor:
+                            while branch.is_transpose_switchable_single_path:
+                                branch = branch.successor[0]
+                            if branch.is_transpose:
+                                branch_perm = Solution.get_perm(branch.origin)
+                                if len(cur_perm) == len(branch_perm):
+                                    perm_f = [cur_perm[idx] for idx in branch_perm]
 
-                next_node = n_.successor[0]
-                if next_node.is_transpose_switchable_simo:
-                    delta_node = -1
-                    cur_perm = Solution.get_perm(n_.origin)
-                    for branch in next_node.successor:
-                        while branch.is_transpose_switchable_single_path:
-                            branch = branch.successor[0]
-                        if branch.is_transpose:
-                            branch_perm = Solution.get_perm(branch.origin)
-                            if len(cur_perm) == len(branch_perm):
-                                perm_f = [cur_perm[idx] for idx in branch_perm]
+                                    if Solution.is_useless_transpose(perm_f):
+                                        delta_node = delta_node - 1
 
-                                if Solution.is_useless_transpose(perm_f):
-                                    delta_node = delta_node - 1
-
-                        else:
-                            delta_node = delta_node + 1
-                    if delta_node <= 0:
-                        solution = FanOutSolution(n_.precedence[0], n_, next_node, None)
+                            else:
+                                delta_node = delta_node + 1
+                        if delta_node <= 0:
+                            solution = FanOutSolution(n_.precedence[0], n_, next_node, None)
+                            return solution
+                else: # simo Transpose op
+                    simo_transpose_case = True
+                    cur_perm = None
+                    for succ_ in n_.successor:
+                        if not succ_.is_transpose:
+                            simo_transpose_case = False
+                            break
+                        if not cur_perm:
+                            cur_perm = Solution.get_perm(succ_.origin)
+                        elif cur_perm != Solution.get_perm(succ_.origin):
+                            simo_transpose_case = False
+                            break
+                    if simo_transpose_case and match_perm(perm, cur_perm):
+                        solution = TransposeFanOutSolution(n_.precedence[0], n_, None, None)
                         return solution
             elif n_.is_transpose_switchable_mi:
                 branch_perm = []
