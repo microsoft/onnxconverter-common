@@ -723,6 +723,72 @@ def _build_onnx_model(node_list):
     return regenerated
 
 
+def _visit(name_to_node_map, n_name, result):
+    node = name_to_node_map[n_name]
+    if node.status == 'perm':
+        return
+    if node.status == 'temp':
+        raise Exception("This graph is not a DAG")
+    node.status = 'temp'
+    for m in node.successor:
+        if m.origin is not None:
+            _visit(name_to_node_map, m.name, result)
+    node.status = 'perm'
+    result.insert(0, node.idx)
+
+
+def _generate_next_name(prefix, idx, name_set):
+    name = prefix+str(idx)
+    while name in name_set:
+        idx = idx + 1
+        name = prefix + str(idx)
+    return name
+
+
+def _get_name(node, name_idx, prefix, name_set):
+    if hasattr(node, 'name') and node.name is not None:
+        name = node.name
+    elif node.origin is not None and node.origin.name:
+        name = node.origin.name
+    else:
+        name = _generate_next_name(prefix, name_idx, name_set)
+        name_idx = name_idx + 1
+    return name
+
+
+def _get_unmark_node(name_to_node_map):
+    for k, v in six.iteritems(name_to_node_map):
+        if v.status == 'unmark':
+            return k
+    return None
+
+
+def _topological_sort(node_list):
+    result = []
+    name_set = set()
+    name_idx = 0
+    name_to_node_map = dict()
+    prefix = "abc_"
+
+    for idx_, n_ in enumerate(node_list):
+        setattr(n_, 'idx', idx_)
+
+    for n_ in node_list:
+        name = _get_name(n_, name_idx, prefix, name_set)
+        name_set.add(name)
+        setattr(n_, 'name', name)
+        setattr(n_, 'status', 'unmark')
+        name_to_node_map.update({name: n_})
+
+    n_name = _get_unmark_node(name_to_node_map)
+    while n_name:
+        _visit(name_to_node_map, n_name, result)
+        n_name = _get_unmark_node(name_to_node_map)
+
+    result = [node_list[result[idx]] for idx in range(len(node_list))]
+    return result
+
+
 def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
     """
     Optimize onnx model by several approaches.
@@ -742,6 +808,7 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
         node_list = _apply_optimization(solution, node_list)
         solution = _find_an_optimization(node_list)
 
+    node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
 
 
