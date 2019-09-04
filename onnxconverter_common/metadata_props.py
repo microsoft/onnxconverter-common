@@ -1,6 +1,5 @@
 import warnings
 from .case_insensitive_dict import CaseInsensitiveDict
-import onnx
 from onnx import onnx_pb as onnx_proto
 
 KNOWN_METADATA_PROPS = CaseInsensitiveDict({

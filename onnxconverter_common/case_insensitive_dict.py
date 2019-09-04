@@ -42,7 +42,7 @@ class CaseInsensitiveDict(MutableMapping):
         return dict(self.lower_key_iteritems()) == dict(other.lower_key_iteritems())
 
     def copy(self):
-         return CaseInsensitiveDict(self._dict.values())
+        return CaseInsensitiveDict(self._dict.values())
 
     def __repr__(self):
         return str(dict(self.items()))

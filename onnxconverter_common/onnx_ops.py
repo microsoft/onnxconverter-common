@@ -112,8 +112,10 @@ def apply_batch_norm(scope, input_names, output_names, container, operator_name=
     name = _create_name_or_use_existing_one(scope, 'BatchNormalization', operator_name)
     attrs = {'name': name, 'epsilon': epsilon, 'momentum': momentum}
 
-    if container.target_opset < 9: attrs['spatial'] = spatial
-    if container.target_opset < 7: attrs['is_test'] = is_test
+    if container.target_opset < 9:
+        attrs['spatial'] = spatial
+    if container.target_opset < 7:
+        attrs['is_test'] = is_test
 
     if container.target_opset < 6:
         attrs['consumed_inputs'] = [0] * len(input_names)
@@ -170,7 +172,7 @@ def apply_cast(scope, input_name, output_name, container, operator_name=None, to
 def apply_clip(scope, input_name, output_name, container, operator_name=None, max=None, min=None):
     name = _create_name_or_use_existing_one(scope, 'Clip', operator_name)
 
-    if op_version < 11:
+    if container.target_opset < 11:
         attrs = {'name': name}
         if max is not None:
             attrs['max'] = float(max)
@@ -185,6 +187,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
         container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
     else:
+        op_version = 11
         if min is None and max is not None:
             raise RuntimeError("Operator 'Clip': min must be specified if max is.")
         inputs = [input_name]
@@ -202,12 +205,12 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             min_name = scope.get_unique_variable_name('clip_min')
             container.add_initializer(min_name, getattr(container, 'proto_dtype',
                 onnx_proto.TensorProto.FLOAT), [min[0]], [1])
-            min = min_name        
+            min = min_name
         if isinstance(min, str):
             inputs.append(min)
         else:
             raise RuntimeError("Parameter 'min' must be a string or a float.")
-        
+
         if isinstance(max, (np.ndarray, float, int)):
             # add initializer
             if isinstance(max, np.ndarray):
@@ -417,9 +420,9 @@ def apply_pad(scope, input_name, output_name, container, operator_name=None, mod
 
 
 def apply_parametric_softplus(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
-    if alpha == None:
+    if alpha is None:
         alpha = [1.0]
-    if beta == None:
+    if beta is None:
         beta = [0.]
 
     name = _create_name_or_use_existing_one(scope, 'ParametricSoftplus', operator_name)
@@ -558,9 +561,9 @@ def apply_softmax(scope, input_name, output_name, container, operator_name=None,
 
 
 def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
-    if alpha == None:
+    if alpha is None:
         alpha = [1.0]
-    if beta == None:
+    if beta is None:
         beta = [1.0]
     if len(alpha) != 1 or len(beta) != 1:
         raise ValueError('alpha and beta must be 1-element lists')
@@ -664,7 +667,7 @@ def apply_tanh(scope, input_name, output_name, container, operator_name=None):
 
 
 def apply_thresholded_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
-    if alpha == None:
+    if alpha is None:
         alpha = [1.0]
 
     name = _create_name_or_use_existing_one(scope, 'ThresholdedRelu', operator_name)
