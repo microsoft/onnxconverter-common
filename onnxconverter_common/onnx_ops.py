@@ -188,13 +188,14 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
         if min is None and max is not None:
             raise RuntimeError("Operator 'Clip': min must be specified if max is.")
         inputs = [input_name]
-        
         if isinstance(min, (np.ndarray, float, int)):
             # add initializer
             if isinstance(min, np.ndarray):
                 if min.shape != (1, ):
                     raise RuntimeError("min must an array of one element.")
             else:
+                # container in sklearn-onnx stores the computation type in
+                # container.dtype.
                 min = np.array([min], dtype=getattr(
                     container, 'dtype', np.float32))
             min_name = scope.get_unique_variable_name('clip_min')
