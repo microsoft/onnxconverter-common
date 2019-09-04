@@ -5,7 +5,6 @@
 # --------------------------------------------------------------------------
 
 import six
-import onnx
 from onnx import helper
 from .interface import ModelContainer
 

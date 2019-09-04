@@ -182,8 +182,7 @@ class DictionaryType(DataType):
                 onnx_type.map_type.key_type = onnx_proto.TensorProto.STRING
             onnx_type.map_type.value_type.CopyFrom(
                 self.value_type.to_onnx_type())
-        except AttributeError as e:
-            import onnx
+        except AttributeError:
             msg = "ONNX was not compiled with flag ONNX-ML.\n{0}\n{1}"
             msg = msg.format(str(self), str(self.value_type.to_onnx_type()))
             info = [onnx.__version__, str(onnx_type)]
@@ -207,8 +206,7 @@ class SequenceType(DataType):
         try:
             onnx_type.sequence_type.elem_type.CopyFrom(
                             self.element_type.to_onnx_type())
-        except AttributeError as e:
-            import onnx
+        except AttributeError:
             msg = "ONNX was not compiled with flag ONNX-ML.\n{0}\n{1}"
             msg = msg.format(str(self), str(self.element_type.to_onnx_type()))
             info = [onnx.__version__, str(onnx_type)]

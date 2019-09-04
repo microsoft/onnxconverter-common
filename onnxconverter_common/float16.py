@@ -10,6 +10,7 @@ import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
 
+
 def _npfloat16_to_int(np_list):
     '''
     Convert numpy float16 to python int.
