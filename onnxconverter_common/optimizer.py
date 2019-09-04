@@ -211,7 +211,7 @@ class LinkedNode(object):
             onode.doc_string = self.origin.doc_string
             onode.domain = self.origin.domain
             onode.attribute.extend(
-                attr for attr in self.origin.attribute if not attr.name in self.attributes)
+                attr for attr in self.origin.attribute if attr.name not in self.attributes)
             onode.attribute.extend(
                 helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
 
@@ -415,7 +415,7 @@ class MergeSolution(Solution):
         perm_f = [perm0[idx] for idx in perm1]
         if self.is_useless_transpose(perm_f):
             node = self.begin  # type: LinkedNode
-            while node != self.end and len(node.successor) >=1:
+            while node != self.end and len(node.successor) >= 1:
                 #if node.broadcast:
                 #    node.reshape_input_for_broadcast(perm0)
                 node = node.successor[0]
