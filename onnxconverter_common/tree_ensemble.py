@@ -6,9 +6,6 @@
 """
 Common functions to convert any learner based on trees.
 """
-
-import numpy as np
-import numbers, six
 from .registration import register_converter
 
 
