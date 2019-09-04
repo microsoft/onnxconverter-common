@@ -207,7 +207,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             min = min_name
         if isinstance(min, str):
             inputs.append(min)
-        else:
+        elif min is not None:
             raise RuntimeError("Parameter 'min' must be a string or a float.")
 
         if isinstance(max, (np.ndarray, float, int)):
@@ -224,7 +224,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             max = max_name
         if isinstance(max, str):
             inputs.append(max)
-        else:
+        elif max is not None:
             raise RuntimeError("Parameter 'max' must be a string or a float.")
 
         container.add_node('Clip', input_name, output_name, op_version=op_version,
