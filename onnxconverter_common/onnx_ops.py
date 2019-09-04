@@ -209,7 +209,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 min = min_name
             if isinstance(min, str):
                 inputs.append(min)
-            elif min is not None:
+            else:
                 raise RuntimeError("Parameter 'min' must be a string or a float.")
 
         if max is not None:
