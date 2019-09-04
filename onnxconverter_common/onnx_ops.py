@@ -170,19 +170,62 @@ def apply_cast(scope, input_name, output_name, container, operator_name=None, to
 def apply_clip(scope, input_name, output_name, container, operator_name=None, max=None, min=None):
     name = _create_name_or_use_existing_one(scope, 'Clip', operator_name)
 
-    attrs = {'name': name}
-    if max is not None:
-        attrs['max'] = float(max)
-    if min is not None:
-        attrs['min'] = float(min)
+    if op_version < 11:
+        attrs = {'name': name}
+        if max is not None:
+            attrs['max'] = float(max)
+        if min is not None:
+            attrs['min'] = float(min)
 
-    if container.target_opset < 6:
-        attrs['consumed_inputs'] = [0]
-        op_version = 1
+        if container.target_opset < 6:
+            attrs['consumed_inputs'] = [0]
+            op_version = 1
+        else:
+            op_version = 6
+
+        container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
     else:
-        op_version = 6
+        if min is None and max is not None:
+            raise RuntimeError("Operator 'Clip': min must be specified if max is.")
+        inputs = [input_name]
 
-    container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
+        if isinstance(min, (np.ndarray, float, int)):
+            # add initializer
+            if isinstance(min, np.ndarray):
+                if min.shape != (1, ):
+                    raise RuntimeError("min must an array of one element.")
+            else:
+                # container in sklearn-onnx stores the computation type in
+                # container.dtype.
+                min = np.array([min], dtype=getattr(
+                    container, 'dtype', np.float32))
+            min_name = scope.get_unique_variable_name('clip_min')
+            container.add_initializer(min_name, getattr(container, 'proto_dtype',
+                onnx_proto.TensorProto.FLOAT), [min[0]], [1])
+            min = min_name        
+        if isinstance(min, str):
+            inputs.append(min)
+        else:
+            raise RuntimeError("Parameter 'min' must be a string or a float.")
+        
+        if isinstance(max, (np.ndarray, float, int)):
+            # add initializer
+            if isinstance(max, np.ndarray):
+                if max.shape != (1, ):
+                    raise RuntimeError("max must an array of one element.")
+            else:
+                max = np.array([max], dtype=getattr(
+                    container, 'dtype', np.float32))
+            max_name = scope.get_unique_variable_name('clip_max')
+            container.add_initializer(max_name, getattr(container, 'proto_dtype',
+                onnx_proto.TensorProto.FLOAT), [max[0]], [1])
+            max = max_name
+        if isinstance(max, str):
+            inputs.append(max)
+        else:
+            raise RuntimeError("Parameter 'max' must be a string or a float.")
+
+        container.add_node('Clip', input_name, output_name, op_version=op_version)
 
 
 def apply_concat(scope, input_names, output_name, container, operator_name=None, axis=0):
