@@ -171,9 +171,9 @@ def apply_cast(scope, input_name, output_name, container, operator_name=None, to
 
 def apply_clip(scope, input_name, output_name, container, operator_name=None, max=None, min=None):
     name = _create_name_or_use_existing_one(scope, 'Clip', operator_name)
+    attrs = {'name': name}
 
     if container.target_opset < 11:
-        attrs = {'name': name}
         if max is not None:
             attrs['max'] = float(max)
         if min is not None:
@@ -204,7 +204,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     container, 'dtype', np.float32))
             min_name = scope.get_unique_variable_name('clip_min')
             container.add_initializer(min_name, getattr(container, 'proto_dtype',
-                onnx_proto.TensorProto.FLOAT), [min[0]], [1])
+                onnx_proto.TensorProto.FLOAT), [1], [min[0]])
             min = min_name
         if isinstance(min, str):
             inputs.append(min)
@@ -221,14 +221,15 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     container, 'dtype', np.float32))
             max_name = scope.get_unique_variable_name('clip_max')
             container.add_initializer(max_name, getattr(container, 'proto_dtype',
-                onnx_proto.TensorProto.FLOAT), [max[0]], [1])
+                onnx_proto.TensorProto.FLOAT), [1], [max[0]])
             max = max_name
         if isinstance(max, str):
             inputs.append(max)
         else:
             raise RuntimeError("Parameter 'max' must be a string or a float.")
 
-        container.add_node('Clip', input_name, output_name, op_version=op_version)
+        container.add_node('Clip', input_name, output_name, op_version=op_version,
+                           **attrs)
 
 
 def apply_concat(scope, input_names, output_name, container, operator_name=None, axis=0):
