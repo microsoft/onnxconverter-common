@@ -19,7 +19,7 @@ class OptimizerTestCase(unittest.TestCase):
             os.mkdir(tmp_path)
         return os.path.join(tmp_path, name)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         for fl in glob.glob(os.path.join(tmp_path, '*.onnx')):
             os.remove(fl)
 
