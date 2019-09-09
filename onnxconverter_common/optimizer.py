@@ -9,7 +9,9 @@ import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
 
+
 class LinkedNode(object):
+    UNIQUE_NAME_INDEX = 0
 
     def __init__(self, node=None, in_n=None, out_n=None):
         self.origin = node  # type: onnx_proto.NodeProto
@@ -23,6 +25,13 @@ class LinkedNode(object):
         self.successor = []
         self.attributes = {}
         self.tensors = []
+        LinkedNode.UNIQUE_NAME_INDEX += 1
+        self.unique_name = "{}__{}".format(
+            self.origin.name if self.origin and self.origin.name else 'unnamed',
+            str(LinkedNode.UNIQUE_NAME_INDEX))
+
+    def __repr__(self):
+        return "name: {}, node: <{}>".format(self.unique_name, str(self.origin) if self.origin else 'None')
 
     @property
     def op_type(self):
@@ -48,21 +57,13 @@ class LinkedNode(object):
     def element_wise(self):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
-                ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
-                ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity']
+            ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
+            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity']
 
     @property
     def broadcast(self):
         return False if self.origin is None else \
             self.origin.op_type in ['Add', 'Div', 'Max']
-
-    @property
-    def in_single_path_and_inner(self):
-        """
-        Test if a node is not linking to any fan in or out node.
-        """
-        return len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and \
-               len(self.precedence) == 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out
 
     @property
     def in_single_path_and_inner(self):
@@ -211,7 +212,7 @@ class LinkedNode(object):
             onode.doc_string = self.origin.doc_string
             onode.domain = self.origin.domain
             onode.attribute.extend(
-                attr for attr in self.origin.attribute if not attr.name in self.attributes)
+                attr for attr in self.origin.attribute if attr.name not in self.attributes)
             onode.attribute.extend(
                 helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
 
@@ -248,7 +249,7 @@ class LinkedNode(object):
                                 'Transpose',
                                 [var_],
                                 [new_output],
-                                name='Transpose_nchw_'+str(count_nchw),
+                                name='Transpose_nchw_' + str(count_nchw),
                                 perm=[0, 2, 3, 1]))
                         count_nchw = count_nchw + 1
                         var_map[new_output] = nnode
@@ -288,7 +289,8 @@ class LinkedNode(object):
             output_list_str = ""
             if output_list is not None and output_list:
                 output_list_str = ", ".join(output_list)
-            print("Node origin name: " + n_.origin.name + ", Input id: " + input_list_str + ", Output id: " + output_list_str)
+            print(
+                "Node origin name: " + n_.origin.name + ", Input id: " + input_list_str + ", Output id: " + output_list_str)
 
 
 class Solution(object):
@@ -296,6 +298,7 @@ class Solution(object):
     Solution is the base class for solutions, and it has a basic function is to
      delete the node range of (begin, begin_n, end_p, end), where 'begin' and 'end' are excluded.
     """
+
     def __init__(self, begin, begin_n, end_p, end):
         self.begin = begin
         self.begin_n = begin_n
@@ -415,8 +418,8 @@ class MergeSolution(Solution):
         perm_f = [perm0[idx] for idx in perm1]
         if self.is_useless_transpose(perm_f):
             node = self.begin  # type: LinkedNode
-            while node != self.end and len(node.successor) >=1:
-                #if node.broadcast:
+            while node != self.end and len(node.successor) >= 1:
+                # if node.broadcast:
                 #    node.reshape_input_for_broadcast(perm0)
                 node = node.successor[0]
 
@@ -425,7 +428,7 @@ class MergeSolution(Solution):
         else:
             node_list = self.delete_node_1ton(node_list, self.begin_n, self.end_p, self.end)
             self.begin_n.origin = helper.make_node('Transpose', self.begin_n.origin.input, self.begin_n.origin.output,
-                                                    self.begin_n.origin.name, perm=perm_f)
+                                                   self.begin_n.origin.name, perm=perm_f)
         return node_list
 
 
@@ -441,7 +444,7 @@ class MoveForwardSolution(Solution):
         self.end_p.successor[0] = self.begin_n
         pre_len = len(self.end.precedence)
         for i_ in range(pre_len):
-            if self.end.precedence[i_].origin.name == self.end_p.origin.name:
+            if self.end.precedence[i_].origin and self.end.precedence[i_].origin.name == self.end_p.origin.name:
                 self.end.precedence[i_] = self.begin_n
                 break
         self.begin_n.successor[0] = self.end
@@ -450,6 +453,7 @@ class MoveForwardSolution(Solution):
 
 class FanOutSolution(Solution):
     number = 0
+
     def apply(self, node_list):
         cur_perm = Solution.get_perm(self.begin_n.origin)
         # make a copy of self.end_p.successor
@@ -489,30 +493,14 @@ class TransposeFanOutSolution(Solution):
 
 class FanInSolution(Solution):
     number = 0
+
     def __init__(self, begin, begin_n, end_p, end, perm):
         Solution.__init__(self, begin, begin_n, end_p, end)
         self.perm = perm
 
     def apply(self, node_list):
-        if self.perm == []:
-            nnode = LinkedNode(
-                helper.make_node(
-                    'Transpose',
-                    ['fan_in_adjustment_in' + str(FanInSolution.number)],
-                    ['fan_in_adjustment_out' + str(FanInSolution.number)],
-                    name='TransposeFanIn' + str(FanInSolution.number)))
-        else:
-            nnode = LinkedNode(
-                helper.make_node(
-                    'Transpose',
-                    ['fan_in_adjustment_in' + str(FanInSolution.number)],
-                    ['fan_in_adjustment_out' + str(FanInSolution.number)],
-                    perm=self.perm,
-                    name='TransposeFanIn' + str(FanInSolution.number)))
-        FanInSolution.number = FanInSolution.number + 1
         # make a copy of self.begin.precedence
         precedence_list = list(self.begin.precedence)
-        # node_list = Solution.add_siso_node(node_list, self.begin, self.begin_n, list(self.begin.output.values())[0], nnode)
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
@@ -548,7 +536,7 @@ class MergePadConvSolution(Solution):
         pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
         half_len_pads = len(pads) // 2
         pads_new = pads[2:half_len_pads]
-        pads_new.extend(pads[half_len_pads+2:])
+        pads_new.extend(pads[half_len_pads + 2:])
         attrs = {'pads': pads_new}
         auto_pad_value = 'NOTSET' if helper.get_attribute_value(self.end_p.origin.attribute[0]) == b'VALID' else None
         for attr_idx in range(5):
@@ -590,7 +578,7 @@ class TransposeOptimizer(object):
         for n_ in node_list:
             if n_.is_transpose:
                 perm = Solution.get_perm(n_.origin)
-                if n_.in_single_path: # n_.in_single_path_and_inner:
+                if n_.in_single_path:  # n_.in_single_path_and_inner:
                     if Solution.is_useless_transpose(perm):
                         solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
                         return solution
@@ -614,7 +602,8 @@ class TransposeOptimizer(object):
                         last_switchable = test_node
                         test_node = test_node.successor[0]
                     if switch_transpose:
-                        solution = MoveForwardSolution(n_.precedence[0], n_, last_switchable, last_switchable.successor[0])
+                        solution = MoveForwardSolution(n_.precedence[0], n_, last_switchable,
+                                                       last_switchable.successor[0])
                         return solution
 
                     next_node = n_.successor[0]
@@ -637,7 +626,7 @@ class TransposeOptimizer(object):
                         if delta_node <= 0:
                             solution = FanOutSolution(n_.precedence[0], n_, next_node, None)
                             return solution
-                else: # simo Transpose op
+                else:  # simo Transpose op
                     simo_transpose_case = True
                     cur_perm = None
                     for succ_ in n_.successor:
@@ -679,7 +668,7 @@ class TransposeOptimizer(object):
                 perm = Solution.get_perm(n_.precedence[0].origin)
                 solution = FanInSolution(n_, n_.successor[0], None, None, perm)
                 onnx_node = helper.make_node('Concat', n_.origin.input, n_.origin.output,
-                                              n_.origin.name,  axis=eligible_concat[1])
+                                             n_.origin.name, axis=eligible_concat[1])
                 n_.origin = onnx_node
                 return solution
 
@@ -737,44 +726,22 @@ def _visit(name_to_node_map, n_name, result):
     result.insert(0, node.idx)
 
 
-def _generate_next_name(prefix, idx, name_set):
-    name = prefix+str(idx)
-    while name in name_set:
-        idx = idx + 1
-        name = prefix + str(idx)
-    return name
-
-
-def _get_name(node, name_idx, prefix, name_set):
-    if hasattr(node, 'name') and node.name is not None:
-        name = node.name
-    elif node.origin is not None and node.origin.name:
-        name = node.origin.name
-    else:
-        name = _generate_next_name(prefix, name_idx, name_set)
-        name_idx = name_idx + 1
-    return name
-
-
-def _get_unmark_node(name_to_node_map):
-    for k, v in six.iteritems(name_to_node_map):
-        if v.status == 'unmark':
-            return k
-    return None
-
-
 def _topological_sort(node_list):
+    name_to_node_map = dict()
+
+    def _get_unmark_node(name_to_node_map):
+        for k, v in six.iteritems(name_to_node_map):
+            if v.status == 'unmark':
+                return k
+        return None
+
     result = []
     name_set = set()
-    name_idx = 0
-    name_to_node_map = dict()
-    prefix = "abc_"
-
     for idx_, n_ in enumerate(node_list):
         setattr(n_, 'idx', idx_)
 
     for n_ in node_list:
-        name = _get_name(n_, name_idx, prefix, name_set)
+        name = n_.unique_name
         name_set.add(name)
         setattr(n_, 'name', name)
         setattr(n_, 'status', 'unmark')
@@ -785,8 +752,8 @@ def _topological_sort(node_list):
         _visit(name_to_node_map, n_name, result)
         n_name = _get_unmark_node(name_to_node_map)
 
-    result = [node_list[result[idx]] for idx in range(len(node_list))]
-    return result
+    result_nodes = [node_list[result[idx]] for idx in range(len(node_list))]
+    return result_nodes
 
 
 def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
@@ -821,26 +788,33 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
     """
     graph = origin_model.graph
     nodelist = list(graph.node)
-    del graph.node[:]
 
+    input_with_initializer = [in_ for in_ in graph.input]
+    input_with_initializer += [in_ for in_ in graph.initializer]
     all_nodes = optimize_onnx(nodelist,
-                              inputs=graph.input,
+                              nchw_inputs=nchw_inputs,
+                              inputs=input_with_initializer,
                               outputs=graph.output)
+
+    del graph.node[:]
     nodes = [n_ for n_ in all_nodes if not isinstance(n_, tuple)]
     graph.node.extend(nodes)
 
     alter_tensors = {n_[1]: n_[0] for n_ in all_nodes if isinstance(n_, tuple)}
-    update_tensor = lambda x: \
+
+    def update_tensor(x):
         helper.make_tensor(x.name, x.data_type, (x.dims[0], 1, 1),
                            onnx.numpy_helper.to_array(x).flatten())
+
     new_initializer = [init_ if init_.name not in alter_tensors else update_tensor(init_)
                        for init_ in graph.initializer]
     del graph.initializer[:]
     graph.initializer.extend(new_initializer)
 
-    update_value_info = lambda x: \
+    def update_value_info(x):
         helper.make_tensor_value_info(x.name, x.type.tensor_type.elem_type,
                                       (x.type.tensor_type.shape.dim[0].dim_value, 1, 1))
+
     new_input = [in_ if in_.name not in alter_tensors else update_value_info(in_)
                  for in_ in graph.input]
     del graph.input[:]
