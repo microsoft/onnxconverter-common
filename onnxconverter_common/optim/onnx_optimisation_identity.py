@@ -81,6 +81,7 @@ def onnx_remove_node_identity(onnx_model, recursive=True, debug_info=None):
                             restart = True
                 nodes[i] = None
                 rem += 1
+                continue
             if not restart and inp not in inputs:
                 # We cannot change an input name.
                 for j in range(len(nodes)):  # pylint: disable=C0200
