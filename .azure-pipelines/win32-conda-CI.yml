@@ -46,6 +46,7 @@ jobs:
       pip install -r requirements.txt
       pip install %ONNX_PATH%
       pip install pytest
+      pip install skl2onnx onnxruntime scikit-learn
       pip install -e .
     displayName: 'Install dependencies'
 
