@@ -51,7 +51,6 @@ jobs:
   - script: |
       pip install skl2onnx
     displayName: 'Install skl2onnx'
-    condition: in(python.version, '3.5', '3.6', '3.7')
 
   - script: |
       python -c "import onnxconverter_common"
