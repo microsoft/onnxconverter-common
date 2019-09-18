@@ -44,9 +44,14 @@ jobs:
       pip install -r requirements.txt
       pip install $(ONNX_PATH)
       pip install pytest
-      pip install skl2onnx onnxruntime scikit-learn
+      pip install onnxruntime scikit-learn
       pip install -e .
     displayName: 'Install dependencies'
+
+  - script: |
+      pip install skl2onnx
+    displayName: 'Install skl2onnx'
+    condition: in(python.version, '3.5', '3.6', '3.7')
 
   - script: |
       python -c "import onnxconverter_common"
