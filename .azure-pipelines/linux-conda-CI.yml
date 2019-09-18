@@ -40,17 +40,20 @@ jobs:
       python -m pip install --upgrade pip
       conda config --set always_yes yes --set changeps1 no
       conda install -c conda-forge protobuf
-      conda install -c conda-forge numpy
+      conda install -c conda-forge numpy pandas
       pip install -r requirements.txt
       pip install $(ONNX_PATH)
       pip install pytest
       pip install onnxruntime scikit-learn
-      pip install -e .
     displayName: 'Install dependencies'
 
   - script: |
       pip install skl2onnx
     displayName: 'Install skl2onnx'
+
+  - script: |
+      pip install -e .
+    displayName: 'Install this'
 
   - script: |
       python -c "import onnxconverter_common"
