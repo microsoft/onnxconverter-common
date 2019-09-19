@@ -2,25 +2,30 @@ import unittest
 import sys
 import numpy
 from numpy.testing import assert_almost_equal
-from sklearn.datasets import load_iris
-from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsRegressor
-import skl2onnx
-from skl2onnx.algebra.onnx_ops import (  # pylint: disable=E0611
-    OnnxIdentity, OnnxAdd
-)
-from skl2onnx.common.data_types import FloatTensorType
-from skl2onnx.algebra.complex_functions import onnx_cdist
-from skl2onnx import to_onnx
-from onnxconverter_common.optim import (
-    onnx_statistics, onnx_remove_node_identity
-)
-from onnxruntime import InferenceSession
+try:
+    from sklearn.datasets import load_iris
+    from sklearn.model_selection import train_test_split
+    from sklearn.neighbors import KNeighborsRegressor
+    import skl2onnx
+    from skl2onnx.algebra.onnx_ops import (  # pylint: disable=E0611
+        OnnxIdentity, OnnxAdd
+    )
+    from skl2onnx.common.data_types import FloatTensorType
+    from skl2onnx.algebra.complex_functions import onnx_cdist
+    from skl2onnx import to_onnx
+    from onnxconverter_common.optim import (
+        onnx_statistics, onnx_remove_node_identity
+    )
+    from onnxruntime import InferenceSession
+except ImportError:
+    # python 2 or windows
+    pass
 
 
 class TestOptimOnnxIdentity(unittest.TestCase):
 
-    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
+    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+                     reason="skl2onnx only python 3")
     def test_onnx_remove_identities(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
@@ -55,7 +60,8 @@ class TestOptimOnnxIdentity(unittest.TestCase):
                 return
             raise e
 
-    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
+    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+                     reason="skl2onnx only python 3")
     def test_onnx_remove_identities2(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
@@ -90,7 +96,8 @@ class TestOptimOnnxIdentity(unittest.TestCase):
                 return
             raise e
 
-    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
+    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+                     reason="skl2onnx only python 3")
     def test_onnx_example_cdist_in_euclidean(self):
         x2 = numpy.array([1.1, 2.1, 4.01, 5.01, 5.001, 4.001, 0, 0]).astype(
             numpy.float32).reshape((4, 2))
