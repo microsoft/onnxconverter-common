@@ -50,7 +50,7 @@ jobs:
   - script: |
       pip install skl2onnx --no-deps
     displayName: 'Install skl2onnx'
-    condition: ne(variables['python.version'], '2.7'))
+    condition: ne(variables['python.version'], '2.7')
 
   - script: |
       pip install -e .
