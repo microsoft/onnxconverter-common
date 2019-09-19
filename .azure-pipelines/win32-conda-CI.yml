@@ -50,7 +50,7 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
-      pip install skl2onnx
+      pip install skl2onnx --no-deps
     displayName: 'Install skl2onnx'
 
   - script: |
