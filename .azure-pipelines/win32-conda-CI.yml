@@ -46,26 +46,13 @@ jobs:
       pip install -r requirements.txt
       pip install %ONNX_PATH%
       pip install pytest
-      pip install onnxruntime scikit-learn pandas six
-    displayName: 'Install dependencies'
-
-  - script: |
-      pip install skl2onnx --no-deps
-    displayName: 'Install skl2onnx'
-
-  - script: |
       pip install -e .
-    displayName: 'Install this'
-
-  - script: |
-      pip install six
-      python -c "import onnxconverter_common;print(onnxconverter_common.__file__)"
-    displayName: 'check version'
+    displayName: 'Install dependencies'
 
   - script: |
       call activate py$(python.version)
       pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
-    displayName: 'pytest'
+    displayName: 'pytest - onnxutils'
 
   - task: PublishTestResults@2
     inputs:

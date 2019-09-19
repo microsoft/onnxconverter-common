@@ -1,3 +1,4 @@
+import sys
 import unittest
 import numpy
 from numpy.testing import assert_almost_equal
@@ -14,6 +15,7 @@ from onnxruntime import InferenceSession
 
 class TestOptimOnnxRedundant(unittest.TestCase):
 
+    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
     def test_onnx_remove_redundant(self):
         dtype = numpy.float32
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
@@ -42,6 +44,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         y2 = oinf2.run(None, {'X': x})
         assert_almost_equal(y1[0], y2[0])
 
+    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
     def test_onnx_remove_two_outputs(self):
         dtype = numpy.float32
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
@@ -75,6 +78,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         assert_almost_equal(y1[0], y2[0])
         assert_almost_equal(y1[1], y2[1])
 
+    @unittest.skipIf(sys.version_info[0] == 2, reason="skl2onnx only python 3")
     def test_onnx_remove_redundant_subgraphs(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
