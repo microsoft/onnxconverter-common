@@ -58,9 +58,13 @@ jobs:
     displayName: 'Install this'
 
   - script: |
+      python -c "import onnxconverter_common;print(onnxconverter_common.__file__)"
+    displayName: 'check version'
+
+  - script: |
       call activate py$(python.version)
       pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
-    displayName: 'pytest - onnxutils'
+    displayName: 'pytest'
 
   - task: PublishTestResults@2
     inputs:
