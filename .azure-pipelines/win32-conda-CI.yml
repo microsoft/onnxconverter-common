@@ -46,7 +46,7 @@ jobs:
       pip install -r requirements.txt
       pip install %ONNX_PATH%
       pip install pytest
-      pip install onnxruntime scikit-learn pandas
+      pip install onnxruntime scikit-learn pandas six
     displayName: 'Install dependencies'
 
   - script: |
