@@ -58,6 +58,7 @@ jobs:
     displayName: 'Install this'
 
   - script: |
+      pip install six
       python -c "import onnxconverter_common;print(onnxconverter_common.__file__)"
     displayName: 'check version'
 

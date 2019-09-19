@@ -44,11 +44,12 @@ jobs:
       pip install -r requirements.txt
       pip install $(ONNX_PATH)
       pip install pytest
-      pip install onnxruntime scikit-learn
+      pip install scikit-learn
     displayName: 'Install dependencies'
 
   - script: |
       pip install skl2onnx --no-deps
+      pip install onnxruntime --no-deps
     displayName: 'Install skl2onnx'
     condition: ne(variables['python.version'], '2.7')
 
