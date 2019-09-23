@@ -243,7 +243,24 @@ class ModelComponentContainer(ModelContainer):
             if v is None:
                 raise ValueError('Failed to create ONNX node. Undefined attribute pair (%s, %s) found' % (k, v))
 
-        node = helper.make_node(op_type, inputs, outputs, **attrs)
+        try:
+            node = helper.make_node(op_type, inputs, outputs, **attrs)
+        except ValueError as e:
+            for k, v in attrs.items():
+                typ = set(type(_) for _ in v)
+                if len(typ) > 1:
+                    styp = typ
+                    typ = {k: [] for k in typ}
+                    for _ in v:
+                        typ[type(_)].append(_)
+                    rows = []
+                    for kk, vv in typ.items():
+                        if len(vv) > 3:
+                            vv = vv[:3] + ['...']
+                        rows.append("{}: {}".format(kk, ", ".join(map(str, vv))))
+                    raise TypeError("Attribute '{}' mixes types {}\n{}."
+                                    "".format(k, styp, "\n".join(rows)))
+            raise e
         node.domain = op_domain
 
         self.node_domain_version_pair_sets.add((op_domain, op_version))
