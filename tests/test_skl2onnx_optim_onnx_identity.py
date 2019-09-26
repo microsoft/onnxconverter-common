@@ -112,7 +112,7 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         new_model = onnx_remove_node_identity(model_def)
         stats = onnx_statistics(model_def)
         stats2 = onnx_statistics(new_model)
-        self.assertEqual(stats.get('op_Identity', 0), 3)
+        self.assertTrue(stats.get('op_Identity', 0) in (2, 3))
         self.assertEqual(stats2.get('op_Identity', 0), 1)
 
 
