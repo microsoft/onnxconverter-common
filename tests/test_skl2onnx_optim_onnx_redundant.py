@@ -1,5 +1,6 @@
 import sys
 import unittest
+from distutils.version import StrictVersion
 import numpy
 from numpy.testing import assert_almost_equal
 try:
@@ -12,14 +13,15 @@ try:
         onnx_statistics, onnx_remove_node_redundant, onnx_remove_node
     )
     from onnxruntime import InferenceSession
+    skip = False
 except ImportError:
-    # python 2 or windows
-    pass
+    # python 2 or skl2onnx <= 1.5.0
+    skip = True
 
 
 class TestOptimOnnxRedundant(unittest.TestCase):
 
-    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_remove_redundant(self):
         dtype = numpy.float32
@@ -49,7 +51,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         y2 = oinf2.run(None, {'X': x})
         assert_almost_equal(y1[0], y2[0])
 
-    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_remove_two_outputs(self):
         dtype = numpy.float32
@@ -84,7 +86,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         assert_almost_equal(y1[0], y2[0])
         assert_almost_equal(y1[1], y2[1])
 
-    @unittest.skipIf(sys.version_info[0] == 2 or sys.platform == 'win32',
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_remove_redundant_subgraphs(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist

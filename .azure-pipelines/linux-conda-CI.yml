@@ -48,6 +48,7 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
+      pip install pandas
       pip install skl2onnx --no-deps
       pip install onnxruntime --no-deps
     displayName: 'Install skl2onnx'
