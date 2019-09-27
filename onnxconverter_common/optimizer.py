@@ -537,14 +537,24 @@ class MergePadConvSolution(Solution):
         half_len_pads = len(pads) // 2
         pads_new = pads[2:half_len_pads]
         pads_new.extend(pads[half_len_pads + 2:])
-        attrs = {'pads': pads_new}
-        auto_pad_value = 'NOTSET' if helper.get_attribute_value(self.end_p.origin.attribute[0]) == b'VALID' else None
+        pads_new = np.asarray(pads_new)
+        auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
+        if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            return node_list
+
+        attrs = {}
         for attr_idx in range(5):
-            if attr_idx == 0 and auto_pad_value == 'NOTSET':
+            if attr_idx == 0:
+                # for other cases, set auto_pad = 'NOTSET'
                 attrs.update({'auto_pad': 'NOTSET'})
                 continue
             cur_attr = self.end_p.origin.attribute[attr_idx]
-            attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
+            if cur_attr.name == "pads":
+                conv_pads = np.asarray(helper.get_attribute_value(cur_attr))
+                pads_new = list(pads_new + conv_pads)
+                attrs.update({cur_attr.name: pads_new})
+            else:
+                attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
 
         self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
                                              self.end_p.origin.name + "_0", **attrs)
