@@ -199,7 +199,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(min.shape) == 0:
                         min = [min]
                     elif min.shape != (1, ):
-                        raise RuntimeError("min must an array of one element.")
+                        raise RuntimeError("min must be an array of one element.")
                 else:
                     min = [min]
 
@@ -224,7 +224,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(max.shape) == 0:
                         max = [max]
                     elif max.shape != (1, ):
-                        raise RuntimeError("max must an array of one element.")
+                        raise RuntimeError("max must be an array of one element.")
                 else:
                     max = [max]
 
