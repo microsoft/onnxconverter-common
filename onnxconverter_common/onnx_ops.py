@@ -194,15 +194,9 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
         if min is not None:
             if isinstance(min, (np.ndarray, float, int)):
-                # add initializer
-                if isinstance(min, np.ndarray):
-                    if min.shape != (1, ):
-                        raise RuntimeError("min must an array of one element.")
-                else:
-                    # container in sklearn-onnx stores the computation type in
-                    # container.dtype.
-                    min = np.array([min], dtype=getattr(
-                        container, 'dtype', np.float32))
+                # add initializer, min.shape can be 0
+                # container in sklearn-onnx stores the computation type in container.dtype.
+                min = np.array([min], dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
                 container.add_initializer(min_name, getattr(container, 'proto_dtype',
                     onnx_proto.TensorProto.FLOAT), [1], [min[0]])
@@ -216,13 +210,8 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             if min is None:
                 raise RuntimeError("Parameter 'min' must be specified if 'max' is.")
             if isinstance(max, (np.ndarray, float, int)):
-                # add initializer
-                if isinstance(max, np.ndarray):
-                    if max.shape != (1, ):
-                        raise RuntimeError("max must an array of one element.")
-                else:
-                    max = np.array([max], dtype=getattr(
-                        container, 'dtype', np.float32))
+                # add initializer, max.shape can be 0
+                max = np.array([max], dtype=getattr(container, 'dtype', np.float32))
                 max_name = scope.get_unique_variable_name('clip_max')
                 container.add_initializer(max_name, getattr(container, 'proto_dtype',
                     onnx_proto.TensorProto.FLOAT), [1], [max[0]])
