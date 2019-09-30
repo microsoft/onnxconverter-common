@@ -198,7 +198,9 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 if isinstance(min, np.ndarray):
                     if len(min.shape) == 0:
                         min = [min]
-                    elif min.shape != (1, ):
+                    elif min.shape == (1, ):
+                        min = list(min[0])
+                    else:
                         raise RuntimeError("min must be an array of one element.")
                 else:
                     min = [min]
@@ -223,7 +225,9 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 if isinstance(max, np.ndarray):
                     if len(max.shape) == 0:
                         max = [max]
-                    elif max.shape != (1, ):
+                    elif max.shape == (1,):
+                        max = list(max[0])
+                    else:
                         raise RuntimeError("max must be an array of one element.")
                 else:
                     max = [max]
