@@ -48,7 +48,12 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         self.assertEqual(stats['subgraphs'], stats2['subgraphs'])
         assert stats2['op_Identity'] <= 2
 
-        oinf1 = InferenceSession(model_def.SerializeToString())
+        try:
+            oinf1 = InferenceSession(model_def.SerializeToString())
+        except RuntimeError as e:
+            if 'NOT_IMPLEMENTED' in str(e):
+                return
+            raise e
         oinf2 = InferenceSession(new_model.SerializeToString())
         try:
             y1 = oinf1.run(None, {'input': x})[0]
@@ -84,7 +89,12 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         self.assertEqual(stats['subgraphs'], stats2['subgraphs'])
         assert stats2['op_Identity'] <= 2
 
-        oinf1 = InferenceSession(model_def.SerializeToString())
+        try:
+            oinf1 = InferenceSession(model_def.SerializeToString())
+        except RuntimeError as e:
+            if 'NOT_IMPLEMENTED' in str(e):
+                return
+            raise e
         oinf2 = InferenceSession(new_model.SerializeToString())
         try:
             y1 = oinf1.run(None, {'input': x})[0]
