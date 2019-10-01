@@ -17,6 +17,10 @@ try:
 except ImportError:
     # python 2 or skl2onnx <= 1.5.0
     skip = True
+try:
+    from onnxruntime.capi.onnxruntime_pybind11_state import Fail as OrtFail
+except ImportError:
+    OrtFail = RuntimeError
 
 
 class TestOptimOnnxRedundant(unittest.TestCase):
@@ -125,7 +129,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
 
         try:
             oinf1 = InferenceSession(model_def.SerializeToString())
-        except RuntimeError as e:
+        except (RuntimeError, OrtFail) as e:
             if 'NOT_IMPLEMENTED' in str(e):
                 return
             if 'not placed on any Execution Provider' in str(e):
