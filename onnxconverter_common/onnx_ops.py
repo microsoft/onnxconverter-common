@@ -196,13 +196,18 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             if isinstance(min, (np.ndarray, float, int)):
                 # add initializer
                 if isinstance(min, np.ndarray):
-                    if min.shape != (1, ):
-                        raise RuntimeError("min must an array of one element.")
+                    if len(min.shape) == 0:
+                        min = [min]
+                    elif min.shape == (1, ):
+                        min = list(min[0])
+                    else:
+                        raise RuntimeError("min must be an array of one element.")
                 else:
-                    # container in sklearn-onnx stores the computation type in
-                    # container.dtype.
-                    min = np.array([min], dtype=getattr(
-                        container, 'dtype', np.float32))
+                    min = [min]
+
+                # container in sklearn-onnx stores the computation type in
+                # container.dtype.
+                min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
                 container.add_initializer(min_name, getattr(container, 'proto_dtype',
                     onnx_proto.TensorProto.FLOAT), [1], [min[0]])
@@ -218,11 +223,16 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             if isinstance(max, (np.ndarray, float, int)):
                 # add initializer
                 if isinstance(max, np.ndarray):
-                    if max.shape != (1, ):
-                        raise RuntimeError("max must an array of one element.")
+                    if len(max.shape) == 0:
+                        max = [max]
+                    elif max.shape == (1,):
+                        max = list(max[0])
+                    else:
+                        raise RuntimeError("max must be an array of one element.")
                 else:
-                    max = np.array([max], dtype=getattr(
-                        container, 'dtype', np.float32))
+                    max = [max]
+
+                max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
                 max_name = scope.get_unique_variable_name('clip_max')
                 container.add_initializer(max_name, getattr(container, 'proto_dtype',
                     onnx_proto.TensorProto.FLOAT), [1], [max[0]])
