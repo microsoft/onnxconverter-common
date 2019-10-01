@@ -17,14 +17,15 @@ try:
         onnx_statistics, onnx_remove_node_identity
     )
     from onnxruntime import InferenceSession
+    skip = False
 except ImportError:
-    # python 2 or windows
-    pass
+    # python 2 or skl2onnx <= 1.5.0
+    skip = True
 
 
 class TestOptimOnnxIdentity(unittest.TestCase):
 
-    @unittest.skipIf(sys.version_info[0] == 2,
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_remove_identities(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
@@ -60,7 +61,7 @@ class TestOptimOnnxIdentity(unittest.TestCase):
                 return
             raise e
 
-    @unittest.skipIf(sys.version_info[0] == 2,
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_remove_identities2(self):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
@@ -96,7 +97,7 @@ class TestOptimOnnxIdentity(unittest.TestCase):
                 return
             raise e
 
-    @unittest.skipIf(sys.version_info[0] == 2,
+    @unittest.skipIf(skip or sys.version_info[0] == 2,
                      reason="skl2onnx only python 3")
     def test_onnx_example_cdist_in_euclidean(self):
         x2 = numpy.array([1.1, 2.1, 4.01, 5.01, 5.001, 4.001, 0, 0]).astype(
@@ -112,7 +113,7 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         new_model = onnx_remove_node_identity(model_def)
         stats = onnx_statistics(model_def)
         stats2 = onnx_statistics(new_model)
-        self.assertEqual(stats.get('op_Identity', 0), 3)
+        self.assertTrue(stats.get('op_Identity', 0) in (2, 3))
         self.assertEqual(stats2.get('op_Identity', 0), 1)
 
 
