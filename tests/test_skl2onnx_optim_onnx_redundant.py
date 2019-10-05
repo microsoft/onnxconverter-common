@@ -141,7 +141,7 @@ class TestOptimOnnxRedundant(unittest.TestCase):
             y1 = oinf1.run(None, {'input': x})[0]
             y2 = oinf2.run(None, {'input': x})[0]
             assert_almost_equal(y1, y2)
-        except RuntimeError as e:
+        except (RuntimeError, OrtFail) as e:
             if "Subgraph must have the shape set for all outputs" in str(e):
                 # onnxruntime 1.6
                 return
