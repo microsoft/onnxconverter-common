@@ -251,8 +251,10 @@ def apply_concat(scope, input_names, output_name, container, operator_name=None,
 
     if container.target_opset < 4:
         op_version = 1
-    else:
+    elif container.target_opset < 11:
         op_version = 4
+    else:
+        op_version = 11
 
     container.add_node('Concat', input_names, output_name, op_version=op_version, name=name, axis=axis)
 
@@ -347,8 +349,10 @@ def apply_gemm(scope, input_name, output_name, container, operator_name=None, al
     elif container.target_opset < 7:
         attrs['op_version'] = 6
         attrs['broadcast'] = 1
-    else:
+    elif container.target_opset < 11:
         attrs['op_version'] = 7
+    else:
+        attrs['op_version'] = 11
 
     container.add_node('Gemm', input_name, output_name, name=name, **attrs)
 
@@ -555,9 +559,15 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
 
     scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
     container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
-    inputs = [input_name, scales_tensor_name]
-    op_version = 10
+    inputs = [input_name]
 
+    if container.target_opset < 11:
+        op_version = 10
+    else:
+        op_version = 11
+        inputs.append('')
+
+    inputs.append(scales_tensor_name)
     container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
 
 
@@ -618,6 +628,10 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
         container.add_node('Slice', input_name, output_name, name=name,
                            starts=starts, ends=ends, axes=axes, op_version=1)
     else:
+        if container.target_opset == 10:
+            op_version = 10
+        else:
+            op_version = 11
         inputs = [input_name]
         starts_name = scope.get_unique_variable_name('starts')
         ends_name = scope.get_unique_variable_name('ends')
@@ -640,15 +654,17 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
                                       [len(steps)], steps)
             inputs.append(steps_name)
         container.add_node('Slice', inputs, output_name, name=name,
-                           op_version=10)
+                           op_version=op_version)
 
 
 def apply_split(scope, input_name, output_names, container, operator_name=None, split=None, axis=0):
     name = _create_name_or_use_existing_one(scope, 'Split', operator_name)
     if container.target_opset <= 1:
         op_version = 1
-    else:
+    elif container.target_opset < 11:
         op_version = 2
+    else:
+        op_version = 11
 
     attrs = {'name': name}
     if split is not None:
@@ -747,9 +763,13 @@ def apply_topk(scope, input_name, output_names, container, k, operator_name=None
     if container.target_opset < 10:
         container.add_node('TopK', input_name, output_names, name=name, k=k, op_version=1)
     else:
+        if container.target_opset == 10:
+            op_version = 10
+        else:
+            op_version = 11
         k_value_name = scope.get_unique_variable_name('k_value')
         container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
-        container.add_node('TopK', [input_name, k_value_name], output_names, name=name, op_version=10)
+        container.add_node('TopK', [input_name, k_value_name], output_names, name=name, op_version=op_version)
 
 
 def apply_transpose(scope, input_name, output_name, container, operator_name=None, perm=None):
