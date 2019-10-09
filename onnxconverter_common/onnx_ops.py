@@ -210,7 +210,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
                 container.add_initializer(min_name, getattr(container, 'proto_dtype',
-                    onnx_proto.TensorProto.FLOAT), [1], [min[0]])
+                    onnx_proto.TensorProto.FLOAT), [], [min[0]])
                 min = min_name
             if isinstance(min, str):
                 inputs.append(min)
@@ -242,7 +242,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             else:
                 raise RuntimeError("Parameter 'max' must be a string or a float.")
 
-        container.add_node('Clip', input_name, output_name, op_version=op_version,
+        container.add_node('Clip', inputs, output_name, op_version=op_version,
                            **attrs)
 
 
@@ -557,16 +557,19 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
     attrs = {'name': name}
     attrs['mode'] = mode.lower()
 
-    scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
-    container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
     inputs = [input_name]
 
     if container.target_opset < 11:
         op_version = 10
     else:
         op_version = 11
-        inputs.append('')
+        roi_tensor_name = scope.get_unique_variable_name(name + '_roi')
+        roi = [0.0] * len(scales) + [1.0] * len(scales)
+        container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2*len(scales)], roi)
+        inputs.append(roi_tensor_name)
 
+    scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
+    container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
     inputs.append(scales_tensor_name)
     container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
 
