@@ -423,19 +423,31 @@ def apply_normalization(scope, input_name, output_name, container, operator_name
 def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Pad', operator_name)
     attrs = {'name': name}
+    inputs = [input_name]
 
     if mode is not None:
         attrs['mode'] = mode
-    if value is not None:
-        attrs['value'] = value
-    if container.target_opset < 2:
-        attrs['paddings'] = pads
-        op_version = 1
-    else:
-        attrs['pads'] = pads
-        op_version = 2
 
-    container.add_node('Pad', input_name, output_name, op_version=op_version, **attrs)
+    if container.target_opset < 11:
+        if value is not None:
+            attrs['value'] = value
+        if container.target_opset < 2:
+            attrs['paddings'] = pads
+            op_version = 1
+        else:
+            attrs['pads'] = pads
+            op_version = 2
+    else:
+        op_version = 11
+        pads_name = scope.get_unique_variable_name(name + '_pads')
+        container.add_initializer(pads_name, onnx_proto.TensorProto.INT64, [len(pads)], pads)
+        inputs.append(pads_name)
+        if value is not None:
+            value_name = scope.get_unique_variable_name(name + '_value')
+            container.add_initializer(value_name, onnx_proto.TensorProto.FLOAT, [], [value])
+            inputs.append(value_name)
+
+    container.add_node('Pad', inputs, output_name, op_version=op_version, **attrs)
 
 
 def apply_parametric_softplus(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
