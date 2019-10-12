@@ -423,7 +423,7 @@ def apply_normalization(scope, input_name, output_name, container, operator_name
 def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Pad', operator_name)
     attrs = {'name': name}
-    inputs = [input_name]
+    inputs = input_name if isinstance(input_name, list) else [input_name]
 
     if mode is not None:
         attrs['mode'] = mode
