@@ -198,7 +198,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 if isinstance(min, np.ndarray):
                     if len(min.shape) == 0:
                         min = [min]
-                    elif min.shape == (1, ):
+                    elif min.shape == (1,):
                         min = list(min[0])
                     else:
                         raise RuntimeError("min must be an array of one element.")
@@ -210,7 +210,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
                 container.add_initializer(min_name, getattr(container, 'proto_dtype',
-                    onnx_proto.TensorProto.FLOAT), [], [min[0]])
+                                                            onnx_proto.TensorProto.FLOAT), [], [min[0]])
                 min = min_name
             if isinstance(min, str):
                 inputs.append(min)
@@ -235,7 +235,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
                 max_name = scope.get_unique_variable_name('clip_max')
                 container.add_initializer(max_name, getattr(container, 'proto_dtype',
-                    onnx_proto.TensorProto.FLOAT), [], [max[0]])
+                                                            onnx_proto.TensorProto.FLOAT), [], [max[0]])
                 max = max_name
             if isinstance(max, str):
                 inputs.append(max)
@@ -334,6 +334,11 @@ def apply_exp(scope, input_name, output_name, container, operator_name=None):
 
 def apply_floor(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Floor', input_name, output_name, container, operator_name=operator_name)
+
+
+def apply_flatten(scope, input_name, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Flatten', operator_name)
+    container.add_node('Flatten', input_name, output_name, name=name)
 
 
 def apply_gemm(scope, input_name, output_name, container, operator_name=None, alpha=1.0, beta=1.0,
@@ -577,7 +582,7 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
         op_version = 11
         roi_tensor_name = scope.get_unique_variable_name(name + '_roi')
         roi = [0.0] * len(scales) + [1.0] * len(scales)
-        container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2*len(scales)], roi)
+        container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2 * len(scales)], roi)
         inputs.append(roi_tensor_name)
 
     scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
