@@ -584,6 +584,9 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
         roi = [0.0] * len(scales) + [1.0] * len(scales)
         container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2 * len(scales)], roi)
         inputs.append(roi_tensor_name)
+        attrs['coordinate_transformation_mode'] = 'asymmetric'
+        if attrs['mode'] == 'nearest':
+            attrs['nearest_mode'] = 'floor'
 
     scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
     container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
