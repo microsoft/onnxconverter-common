@@ -562,7 +562,11 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
         container.add_initializer(desired_shape_name, onnx_proto.TensorProto.INT64, [len(desired_shape)], desired_shape)
 
         # Create ONNX Reshape operator
-        container.add_node('Reshape', [input_name, desired_shape_name], output_name, op_version=5, name=name)
+        if isinstance(input_name, list):
+            input_name.append(desired_shape_name)
+        else:
+            input_name = [input_name, desired_shape_name]
+        container.add_node('Reshape', input_name, output_name, op_version=5, name=name)
 
 
 def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
