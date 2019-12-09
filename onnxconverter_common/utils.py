@@ -140,6 +140,15 @@ def xgboost_installed():
         warnings.warn('The converter works for xgboost >= 0.7. Earlier versions might not.')
     return True
 
+def h2o_installed():
+    """
+    Checks that *h2o* is available.
+    """
+    try:
+        import h2o
+    except ImportError:
+        return False
+    return True
 
 def get_producer():
     """
