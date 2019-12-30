@@ -1,4 +1,5 @@
 six
 numpy
 protobuf
+tensorflow
 onnx
