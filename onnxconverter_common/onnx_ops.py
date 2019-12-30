@@ -275,6 +275,17 @@ def apply_constant(scope, output_name, container, operator_name=None, value=None
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
 
 
+def apply_conv(scope, input_names, output_name, container, operator_name=None, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'Conv', operator_name)
+
+    if container.target_opset < 11:
+        op_version = 1
+    else:
+        op_version = 11
+
+    container.add_node('Conv', input_names, output_name, name=name, op_version=op_version, **attrs)
+
+
 def apply_crop_height_width(scope, input_name, output_name, container, operator_name=None,
                             top_border=0, bottom_border=0, left_border=0, right_border=0):
     name = scope.get_unique_operator_name('CropHeightWidth')
