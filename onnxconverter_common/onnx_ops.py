@@ -842,13 +842,15 @@ def apply_thresholded_relu(scope, input_name, output_name, container, operator_n
 def apply_tile(scope, input_name, output_name, container, operator_name=None, repeats=None):
     name = _create_name_or_use_existing_one(scope, 'Tile', operator_name)
 
-    if repeats is None or all(repeat_count == 1 for repeat_count in repeats):
+    if repeats is None or (not isinstance(repeats, str) and all(repeat_count == 1 for repeat_count in repeats)):
         container.add_node('Identity', input_name, output_name, name=name)
         return
 
     if container.target_opset < 7:
         intermediate_input_name = input_name
         intermediate_output_name = None
+        if isinstance(repeats, str):
+            raise ValueError('repeats cannot be string type before opset 7')
 
         for axis, repeat_count in enumerate(repeats):
             if repeat_count == 1:
@@ -878,9 +880,12 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
         container.add_node('Identity', intermediate_output_name, output_name, op_version=1, name=name)
     else:
         # ONNX-1.2 has a new Tile and we use it here
-        repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
-        container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
-        container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=7, name=name)
+        if isinstance(repeats, str):
+            container.add_node('Tile', input_name + [ repeats ], output_name, op_version=7, name=name)
+        else:
+            repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
+            container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
+            container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=7, name=name)
 
 
 def apply_topk(scope, input_name, output_names, container, k, operator_name=None):
