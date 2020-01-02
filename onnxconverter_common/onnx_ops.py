@@ -275,6 +275,17 @@ def apply_constant(scope, output_name, container, operator_name=None, value=None
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
 
 
+def apply_conv(scope, input_names, output_name, container, operator_name=None, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'Conv', operator_name)
+
+    if container.target_opset < 11:
+        op_version = 1
+    else:
+        op_version = 11
+
+    container.add_node('Conv', input_names, output_name, name=name, op_version=op_version, **attrs)
+
+
 def apply_crop_height_width(scope, input_name, output_name, container, operator_name=None,
                             top_border=0, bottom_border=0, left_border=0, right_border=0):
     name = scope.get_unique_operator_name('CropHeightWidth')
@@ -336,9 +347,25 @@ def apply_floor(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Floor', input_name, output_name, container, operator_name=operator_name)
 
 
-def apply_flatten(scope, input_name, output_name, container, operator_name=None):
+def apply_flatten(scope, input_name, output_name, container, operator_name=None, axis=1):
     name = _create_name_or_use_existing_one(scope, 'Flatten', operator_name)
-    container.add_node('Flatten', input_name, output_name, name=name)
+    if container.target_opset < 9:
+        op_version = 1
+    elif container.target_opset < 11:
+        op_version = 9
+    else:
+        op_version = 11
+    container.add_node('Flatten', input_name, output_name, name=name, op_version=op_version, axis=axis)
+
+
+def apply_gather(scope, input_names, output_name, container, operator_name=None, axis=0):
+    name = _create_name_or_use_existing_one(scope, 'Gather', operator_name)
+    if container.target_opset < 11:
+        op_version = 1
+    else:
+        op_version = 11
+
+    container.add_node('Gather', input_names, output_name, name=name, op_version=op_version, axis=axis)
 
 
 def apply_gemm(scope, input_name, output_name, container, operator_name=None, alpha=1.0, beta=1.0,
@@ -360,6 +387,34 @@ def apply_gemm(scope, input_name, output_name, container, operator_name=None, al
         attrs['op_version'] = 11
 
     container.add_node('Gemm', input_name, output_name, name=name, **attrs)
+
+
+def apply_greater(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Greater', operator_name)
+    if container.target_opset < 7:
+        op_version = 1
+    elif container.target_opset < 9:
+        op_version = 7
+    else:
+        op_version = 9
+
+    container.add_node('Greater', input_names, output_name, name=name, op_version=op_version)
+
+
+def apply_gru(scope, input_names, output_names, container, operator_name=None, output_seq=0, reset_after=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'GRU', operator_name)
+    if container.target_opset < 3:
+        op_version = 1
+        attrs['output_sequence'] = 1 if output_seq else 0
+    else:
+        attrs['linear_before_reset'] = 1 if reset_after else 0
+        if container.target_opset <= 5:
+            attrs['output_sequence'] = 1 if output_seq else 0
+            op_version = 3
+        else:
+            op_version = 7
+
+    container.add_node('GRU', input_names, output_names, name=name, op_version=op_version, **attrs)
 
 
 def apply_hard_sigmoid(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
@@ -393,10 +448,24 @@ def apply_log(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Log', input_name, output_name, container, operator_name=operator_name)
 
 
+def apply_lstm(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'LSTM', operator_name)
+    if container.target_opset <= 6:
+        attrs['output_sequence'] = 1 if output_seq else 0
+        op_version = 1
+    else:
+        op_version = 7
+    container.add_node('LSTM', input_names, output_names, name=name, op_version=op_version, **attrs)
+
+
 def apply_matmul(scope, input_names, output_name, container, operator_name=None):
     op_type = 'MatMul'
     name = _create_name_or_use_existing_one(scope, op_type, operator_name)
-    container.add_node(op_type, input_names, output_name, op_version=9, name=name)
+    if container.target_opset <= 9:
+        op_version = 1
+    else:
+        op_version = 9
+    container.add_node(op_type, input_names, output_name, op_version=op_version, name=name)
 
 
 def apply_max(scope, input_names, output_name, container, operator_name=None):
@@ -425,7 +494,8 @@ def apply_normalization(scope, input_name, output_name, container, operator_name
     container.add_node('LpNormalization', input_name, output_name, name=name, p=p, axis=axis)
 
 
-def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None):
+def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None,
+              onnx_type=onnx_proto.TensorProto.FLOAT):
     name = _create_name_or_use_existing_one(scope, 'Pad', operator_name)
     attrs = {'name': name}
     inputs = input_name if isinstance(input_name, list) else [input_name]
@@ -449,7 +519,7 @@ def apply_pad(scope, input_name, output_name, container, operator_name=None, mod
         inputs.append(pads_name)
         if value is not None:
             value_name = scope.get_unique_variable_name(name + '_value')
-            container.add_initializer(value_name, onnx_proto.TensorProto.FLOAT, [], [value])
+            container.add_initializer(value_name, onnx_type, [], [value])
             inputs.append(value_name)
 
     container.add_node('Pad', inputs, output_name, op_version=op_version, **attrs)
@@ -548,7 +618,7 @@ def apply_relu(scope, input_name, output_name, container, operator_name=None):
 
 
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
-    if len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
+    if not isinstance(desired_shape, str) and len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
         raise ValueError('There can only be one -1 in the targeted shape of a Reshape but got %s' % desired_shape)
 
     name = _create_name_or_use_existing_one(scope, 'Reshape', operator_name)
@@ -557,9 +627,12 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
         container.add_node('Reshape', input_name, output_name, op_version=1, name=name, shape=desired_shape,
                            consumed_inputs=[0])
     else:
-        # The shape attribute of Reshape becomes a tensor input, so we create one tensor to store that attribute.
-        desired_shape_name = scope.get_unique_variable_name('shape_tensor')
-        container.add_initializer(desired_shape_name, onnx_proto.TensorProto.INT64, [len(desired_shape)], desired_shape)
+        if isinstance(desired_shape, str):
+            desired_shape_name = desired_shape
+        else:
+            desired_shape_name = scope.get_unique_variable_name('shape_tensor')
+            container.add_initializer(desired_shape_name, onnx_proto.TensorProto.INT64, [len(desired_shape)],
+                                      desired_shape)
 
         # Create ONNX Reshape operator
         if isinstance(input_name, list):
@@ -569,7 +642,8 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
         container.add_node('Reshape', input_name, output_name, op_version=5, name=name)
 
 
-def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
+def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest',
+                 coordinate_transformation_mode='asymmetric', scales=None):
     '''
     :param mode: "nearest" or "linear"
     :param scales: a float tensor for scaling (upsampling or downsampling) all input dimensions
@@ -588,7 +662,7 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
         roi = [0.0] * len(scales) + [1.0] * len(scales)
         container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2 * len(scales)], roi)
         inputs.append(roi_tensor_name)
-        attrs['coordinate_transformation_mode'] = 'asymmetric'
+        attrs['coordinate_transformation_mode'] = coordinate_transformation_mode
         if attrs['mode'] == 'nearest':
             attrs['nearest_mode'] = 'floor'
 
@@ -596,6 +670,16 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
     container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
     inputs.append(scales_tensor_name)
     container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
+
+
+def apply_rnn(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'RNN', operator_name)
+    if container.target_opset <= 6:
+        attrs['output_sequence'] = 1 if output_seq else 0
+        op_version = 1
+    else:
+        op_version = 7
+    container.add_node('RNN', input_names, output_names, name=name, op_version=op_version, **attrs)
 
 
 def apply_sigmoid(scope, input_name, output_name, container, operator_name=None):
@@ -706,6 +790,21 @@ def apply_sqrt(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sqrt', input_name, output_name, container, operator_name=operator_name)
 
 
+def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axis=0, rank=0):
+    name = _create_name_or_use_existing_one(scope, squeeze_str, operator_name)
+    if container.target_opset < 11:
+        op_version = 1
+        if axis < 0:
+            axis += rank + 1
+    else:
+        op_version = 11
+    container.add_node(squeeze_str, input_name, output_name, name=name, op_version=op_version, axes=[axis])
+
+
+def apply_squeeze(scope, input_name, output_name, container, operator_name=None, axis=0, rank=0):
+    _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Squeeze', operator_name, axis, rank)
+
+
 def apply_sub(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=0):
     _apply_basic_numerical_operation(scope, 'Sub', input_names, output_name, container, operator_name=operator_name,
                                      axis=axis, broadcast=broadcast)
@@ -743,13 +842,15 @@ def apply_thresholded_relu(scope, input_name, output_name, container, operator_n
 def apply_tile(scope, input_name, output_name, container, operator_name=None, repeats=None):
     name = _create_name_or_use_existing_one(scope, 'Tile', operator_name)
 
-    if repeats is None or all(repeat_count == 1 for repeat_count in repeats):
+    if repeats is None or (not isinstance(repeats, str) and all(repeat_count == 1 for repeat_count in repeats)):
         container.add_node('Identity', input_name, output_name, name=name)
         return
 
-    if container.target_opset < 7:
+    if container.target_opset < 6:
         intermediate_input_name = input_name
         intermediate_output_name = None
+        if isinstance(repeats, str):
+            raise ValueError('repeats cannot be string type before opset 6')
 
         for axis, repeat_count in enumerate(repeats):
             if repeat_count == 1:
@@ -779,9 +880,12 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
         container.add_node('Identity', intermediate_output_name, output_name, op_version=1, name=name)
     else:
         # ONNX-1.2 has a new Tile and we use it here
-        repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
-        container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
-        container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=7, name=name)
+        if isinstance(repeats, str):
+            container.add_node('Tile', input_name + [ repeats ], output_name, op_version=6, name=name)
+        else:
+            repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
+            container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
+            container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=6, name=name)
 
 
 def apply_topk(scope, input_name, output_names, container, k, operator_name=None):
@@ -804,7 +908,8 @@ def apply_transpose(scope, input_name, output_name, container, operator_name=Non
     container.add_node('Transpose', input_name, output_name, name=name, perm=perm)
 
 
-def apply_upsample(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
+def apply_upsample(scope, input_name, output_name, container, operator_name=None, mode='nearest',
+                   coordinate_transformation_mode='asymmetric', scales=None):
     '''
     :param mode: nearest or linear
     :param scales: an integer list of scaling-up rate of all input dimensions
@@ -836,4 +941,9 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
     else:
         # Upsample op is deprecated in ONNX opset 10
         # We implement Upsample through Resize instead
-        apply_resize(scope, input_name, output_name, container, operator_name, mode, scales)
+        apply_resize(scope, input_name, output_name, container, operator_name, mode, coordinate_transformation_mode,
+                     scales)
+
+
+def apply_unsqueeze(scope, input_name, output_name, container, operator_name=None, axis=0, rank=0):
+    _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Unsqueeze', operator_name, axis, rank)
