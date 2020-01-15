@@ -504,6 +504,8 @@ def apply_pad(scope, input_name, output_name, container, operator_name=None, mod
         attrs['mode'] = mode
 
     if container.target_opset < 11:
+        if isinstance(pads, str):
+            raise ValueError("Dynamic pad is not supported for opset < 11.")
         if value is not None:
             attrs['value'] = value
         if container.target_opset < 2:
@@ -514,9 +516,12 @@ def apply_pad(scope, input_name, output_name, container, operator_name=None, mod
             op_version = 2
     else:
         op_version = 11
-        pads_name = scope.get_unique_variable_name(name + '_pads')
-        container.add_initializer(pads_name, onnx_proto.TensorProto.INT64, [len(pads)], pads)
-        inputs.append(pads_name)
+        if isinstance(pads, str):
+            inputs.append(pads)
+        else:
+            pads_name = scope.get_unique_variable_name(name + '_pads')
+            container.add_initializer(pads_name, onnx_proto.TensorProto.INT64, [len(pads)], pads)
+            inputs.append(pads_name)
         if value is not None:
             value_name = scope.get_unique_variable_name(name + '_value')
             container.add_initializer(value_name, onnx_type, [], [value])
@@ -743,7 +748,7 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
             op_version = 10
         else:
             op_version = 11
-        inputs = [input_name]
+        inputs = input_name if isinstance(input_name, list) else [input_name]
         starts_name = scope.get_unique_variable_name('starts')
         ends_name = scope.get_unique_variable_name('ends')
         container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
