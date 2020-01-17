@@ -1,15 +1,13 @@
-# -------------------------------------------------------------------------
+# coding=utf-8
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
 
 import re
 import warnings
 from logging import getLogger
 from distutils.version import StrictVersion
-import onnx
-from onnx import onnx_pb as onnx_proto
 from onnx import helper
 from .metadata_props import add_metadata_props
 from . import registration
@@ -17,7 +15,7 @@ from . import utils
 from .data_types import *
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
-from .interface import OperatorBase
+from .interface import OperatorBase, ScopeBase
 
 OPSET_TO_IR_VERSION = {
     1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3,
@@ -117,7 +115,7 @@ class Operator(OperatorBase):
         registration.get_shape_calculator(self.type)(self)
 
 
-class Scope:
+class Scope(ScopeBase):
 
     def __init__(self, name, parent_scopes=None, variable_name_set=None, operator_name_set=None, target_opset=None):
         '''
@@ -794,7 +792,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         i += 1
         if container.target_opset < op_version:
             raise RuntimeError(('The specified opset %d is too low to convert this model, ' +
-                               'which requires at least opset %d.') % (container.target_opset, op_version))
+                                'which requires at least opset %d.') % (container.target_opset, op_version))
         elif container.target_opset > op_version:
             getLogger('onnxmltools').warning('The maximum opset needed by this model is only %d.' % op_version)
 

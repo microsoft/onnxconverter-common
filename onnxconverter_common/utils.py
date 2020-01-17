@@ -1,13 +1,12 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
 
 import numbers, six
 import numpy as np
 import warnings
-from distutils.version import LooseVersion, StrictVersion
+from distutils.version import LooseVersion
 
 
 def sparkml_installed():
@@ -20,6 +19,7 @@ def sparkml_installed():
     except ImportError:
         return False
 
+
 def sklearn_installed():
     """
     Checks that *scikit-learn* is available.
@@ -30,6 +30,7 @@ def sklearn_installed():
     except ImportError:
         return False
 
+
 def skl2onnx_installed():
     """
     Checks that *skl2onnx* converter is available.
@@ -39,6 +40,7 @@ def skl2onnx_installed():
         return True
     except ImportError:
         return False
+
 
 def coreml_installed():
     """
@@ -140,6 +142,7 @@ def xgboost_installed():
         warnings.warn('The converter works for xgboost >= 0.7. Earlier versions might not.')
     return True
 
+
 def h2o_installed():
     """
     Checks that *h2o* is available.
@@ -149,6 +152,7 @@ def h2o_installed():
     except ImportError:
         return False
     return True
+
 
 def get_producer():
     """
@@ -203,7 +207,7 @@ def is_string_type(item):
     if isinstance(item, np.ndarray):
         return np.issubdtype(item.dtype, np.str_)
     return isinstance(item, types)
-    
+
 
 def cast_list(type, items):
     return [type(item) for item in items]

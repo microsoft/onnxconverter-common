@@ -1,3 +1,8 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+###############################################################################
+
 import warnings
 from .case_insensitive_dict import CaseInsensitiveDict
 from onnx import onnx_pb as onnx_proto
