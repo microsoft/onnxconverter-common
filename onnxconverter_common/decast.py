@@ -1,10 +1,13 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+###############################################################################
 import sys
 import onnx
 from .optimizer import LinkedNode, Solution
 
 
 def remove_cast(lnodes, op_set):
-
     while True:
         sln = []
         for n_ in lnodes:
