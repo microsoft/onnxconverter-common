@@ -25,7 +25,7 @@ class OnnxOpTestCase(unittest.TestCase):
     def test_apply_op(self):
         topo = Topology(self.raw_model)
         scope = topo.declare_scope('__ROOT__')
-        container = ModelComponentContainer(target_opset=10)
+        container = ModelComponentContainer(target_opset=7)
 
         with OnnxOperatorBuilder(container, scope).as_default('node_bn') as oopb:
             mul_node = oopb.apply_mul(self.raw_model.input_names)
@@ -40,6 +40,6 @@ class OnnxOpTestCase(unittest.TestCase):
         self.assertTrue(container.nodes[0].name.startswith('node_bn'))
 
         # a fake conversion to check the scope data correctness.
-        oxml = convert_topology(topo, 'test', "doc_string", 10, None)
+        oxml = convert_topology(topo, 'test', "doc_string", 7, None)
         self.assertIsNotNone(oxml)
         self.assertEqual(len(oxml.graph.node), 0)
