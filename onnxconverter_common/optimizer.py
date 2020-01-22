@@ -804,7 +804,7 @@ def _remove_unused_initializers(nodes, initializers):
 
 
 def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
-                        model_value_info=None, model_name='', target_opset=None):
+                        model_value_info=None, model_name=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
@@ -813,6 +813,7 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     :param outputs: the model output
     :param initializers: the model initializers
     :param model_value_info: the model value_info
+    :param model_name the internal name of model
     :return: the optimized onnx graph
     """
     if target_opset < 9:
