@@ -347,32 +347,82 @@ class Topology:
                 if is_root[name] or is_sink[name]]
 
     def topological_operator_iterator(self):
-        '''
-        This is an iterator of all operators in Topology object. Operators may be produced in a topological order.
-        If you want to simply go though all operators without considering their topological structure, please use
-        another function, unordered_operator_iterator.
-        '''
+        """
+        This is an iterator of all operators in Topology object.
+        Operators may be produced in a topological order. If you want to
+        simply go though all operators without considering their
+        topological structure, please use another function,
+        unordered_operator_iterator.
+        """
         self._initialize_graph_status_for_traversing()
-        priorities = {'tensorToProbabilityMap': 2, 'tensorToLabel': 1}
-        while not all(operator.is_evaluated for scope in self.scopes for operator in scope.operators.values()):
+        priorities = {
+            'tensorToProbabilityMap': 2,
+            'tensorToLabel': 1
+        }
+        while not all(operator.is_evaluated for scope in self.scopes
+                      for operator in scope.operators.values()):
             is_evaluation_happened = False
             for operator in sorted(self.unordered_operator_iterator(),
-                                   key=lambda op: priorities[op.type] if op.type in priorities else 0):
-                if all(variable.is_fed for variable in operator.inputs) and not operator.is_evaluated:
-                    # Check if over-writing problem occurs (i.e., multiple operators produce results on one variable).
+                                   key=lambda op: priorities[op.type]
+                                   if op.type in priorities else 0):
+                if (all(variable.is_fed for variable in operator.inputs)
+                        and not operator.is_evaluated):
+                    # Check if over-writing problem occurs (i.e., multiple
+                    # operators produce results on one variable).
                     for variable in operator.outputs:
-                        # Throw an error if this variable has been treated as an output somewhere
+                        # Throw an error if this variable has been treated as
+                        # an output somewhere
                         if variable.is_fed:
-                            raise RuntimeError('One variable can only be assigned once')
+                            raise RuntimeError(
+                                "A variable is already assigned ({}) "
+                                "for operator '{}' (name='{}'). This "
+                                "may still happen if a converter is a "
+                                "combination of sub-operators and one of "
+                                "of them is producing this output. "
+                                "In that case, an identity node must be "
+                                "added.".format(
+                                    variable, operator.type,
+                                    operator.onnx_name))
                         # Mark this variable as filled
                         variable.is_fed = True
                     # Make this operator as handled
                     operator.is_evaluated = True
                     is_evaluation_happened = True
+
                     # Send out an operator
                     yield operator
-            # After scanning through the whole computational graph, at least one operator should be evaluated. If not,
-            # we need to terminate this procedure to avoid dead lock.
+
+                    # This step may create new nodes if the
+                    # the converter is called while looping on
+                    # the nodes. The outputs of an operator
+                    # are not necessary the inputs of the next
+                    # one and but can processed by other ONNX nodes
+                    # inserted in the container. As a result, some
+                    # variables never have is_fed set to True which
+                    # is updated now unless they are an operator
+                    # output.
+                    known_outputs = {}
+                    for op in self.unordered_operator_iterator():
+                        for out in op.outputs:
+                            if hasattr(out, 'onnx_name'):
+                                known_outputs[out.onnx_name] = out
+                            else:
+                                known_outputs[out] = out
+                    for variable in self.unordered_variable_iterator():
+                        if variable.is_fed:
+                            continue
+                        if variable.onnx_name in known_outputs:
+                            continue
+                        update = (False if self.root_names and
+                                           variable.onnx_name not in self.root_names
+                                  else True)
+                        if update:
+                            variable.is_fed = True
+                            is_evaluation_happened = True
+
+            # After scanning through the whole computational graph, at
+            # least one operator should be evaluated. If not, we need
+            # to terminate this procedure to avoid dead lock.
             if not is_evaluation_happened:
                 break
 
