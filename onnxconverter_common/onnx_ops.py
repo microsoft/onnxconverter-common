@@ -741,8 +741,12 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
     name = _create_name_or_use_existing_one(scope, 'Slice', operator_name)
 
     if container.target_opset < 10:
-        container.add_node('Slice', input_name, output_name, name=name,
-                           starts=starts, ends=ends, axes=axes, op_version=1)
+        if axes is None:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, op_version=1)
+        else:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, axes=axes, op_version=1)
     else:
         if container.target_opset == 10:
             op_version = 10
