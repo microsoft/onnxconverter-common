@@ -54,6 +54,11 @@ class LinkedNode(object):
                len(self.precedence) == 1
 
     @property
+    def in_single_path_to_output(self):
+        return len(self.successor) == 1 and self.successor[0].in_or_out and \
+               len(self.precedence) == 1 and not self.precedence[0].in_or_out
+
+    @property
     def element_wise(self):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
@@ -564,19 +569,31 @@ class MergePadConvSolution(Solution):
         return node_list
 
 
+class NextToOutputSolution(Solution):
+    def apply(self, node_list):
+        self.begin.output[self.begin.single_output] = self.begin_n.single_output
+        self.begin.successor = self.begin_n.successor
+        node_list.remove(self.begin_n)
+        return node_list
+
+
 class RedundantOptimizer(object):
     @staticmethod
     def find(node_list):
         solution = None
         for n_ in node_list:
-            if n_.is_identity and n_.in_single_path:
-                end = n_.successor[0]
-                end_pre = n_
-                while end is not None and end.is_identity and end.in_single_path:
-                    end_pre = end
-                    end = end.successor[0]
-                solution = Solution(n_.precedence[0], n_, end_pre, end)
-                return solution
+            if n_.is_identity:
+                if n_.in_single_path:
+                    end = n_.successor[0]
+                    end_pre = n_
+                    while end is not None and end.is_identity and end.in_single_path:
+                        end_pre = end
+                        end = end.successor[0]
+                    solution = Solution(n_.precedence[0], n_, end_pre, end)
+                    return solution
+                elif n_.in_single_path_to_output:
+                    solution = NextToOutputSolution(n_.precedence[0], n_, None, None)
+                    return solution
 
         return solution
 
