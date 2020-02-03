@@ -254,7 +254,8 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
         optd_model = optimize_onnx_model(model)
-        self.assertEqual(len(optd_model.graph.node), 7)
+        node_number = 7 if onnx.defs.onnx_opset_version() < 9 else 6
+        self.assertEqual(len(optd_model.graph.node), node_number)
 
 
 if __name__ == '__main__':
