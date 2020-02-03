@@ -571,8 +571,12 @@ class MergePadConvSolution(Solution):
 
 class NextToOutputSolution(Solution):
     def apply(self, node_list):
+        for idx_, succ_ in enumerate(self.begin.successor):
+            if succ_ == self.begin_n:
+                self.begin.successor[idx_] = self.begin_n.successor[0]
+            else:
+                succ_.in_redirect(self.begin.single_output, self.begin_n.single_output)
         self.begin.output[self.begin.single_output] = self.begin_n.single_output
-        self.begin.successor = self.begin_n.successor
         node_list.remove(self.begin_n)
         return node_list
 
