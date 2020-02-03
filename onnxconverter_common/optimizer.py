@@ -6,14 +6,14 @@
 import six
 import numpy as np
 import onnx
-from onnx import helper
+from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
 
 
 class LinkedNode(object):
     UNIQUE_NAME_INDEX = 0
 
-    def __init__(self, node=None, in_n=None, out_n=None):
+    def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
         self.origin = node  # type: onnx_proto.NodeProto
         if in_n is None and node is not None:
             in_n = node.input
@@ -24,7 +24,7 @@ class LinkedNode(object):
         self.precedence = []
         self.successor = []
         self.attributes = {}
-        self.tensors = []
+        self.tensors = [] if tensors_n is None else tensors_n
         LinkedNode.UNIQUE_NAME_INDEX += 1
         self.unique_name = "{}__{}".format(
             self.origin.name if self.origin and self.origin.name else 'unnamed',
@@ -194,13 +194,9 @@ class LinkedNode(object):
             key = next(k for k, v in six.iteritems(self.output) if v == old_name)
             self.output[key] = name
 
-    def reshape_input_for_broadcast(self, perm):
-        assert len(self.origin.input) == 2
-        self.tensors.append((np.reshape, self.origin.input[1]))
-
     def generate(self):
         updated = False
-        if self.attributes or self.tensors:
+        if self.attributes:
             updated = True
         elif len([k for k, v in six.iteritems(self.input) if k != v]) > 0:
             updated = True
@@ -221,7 +217,7 @@ class LinkedNode(object):
             onode.attribute.extend(
                 helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
 
-            return [onode] + self.tensors
+            return [onode]
 
     def add_precedence(self, pre, tname):
         self.precedence.append(pre)
@@ -247,6 +243,56 @@ class LinkedNode(object):
                 if target is None:
                     assert var_ == '' or var_ in inputs
                     target = LinkedNode(out_n=[var_])  # create an empty node as input
+                    new_output = var_ + '_nhwc'
+                    if var_ in nchw_inputs:
+                        nnode = LinkedNode(
+                            helper.make_node(
+                                'Transpose',
+                                [var_],
+                                [new_output],
+                                name='Transpose_nchw_' + str(count_nchw),
+                                perm=[0, 2, 3, 1]))
+                        count_nchw = count_nchw + 1
+                        var_map[new_output] = nnode
+                        nnode.add_precedence(target, var_)
+                        n_.in_redirect(var_, new_output)
+                        target = nnode
+                        var_ = new_output
+                        additional_nodes.append(nnode)
+
+                n_.add_precedence(target, var_)
+
+        for n_ in view:  # add a dummy output node.
+            for var_ in n_.origin.output:
+                if var_ in outputs:
+                    LinkedNode(in_n=[var_]).add_precedence(n_, var_)
+
+        return view + additional_nodes
+
+    @staticmethod
+    def build_from_onnx_2(onnx_nodes, nchw_inputs, inputs, outputs, initializers):
+        view = []
+        var_map = {}
+        for o_ in onnx_nodes:
+            ln = LinkedNode(o_)
+            view.append(ln)
+            for var_ in o_.output:
+                assert var_map.get(var_) is None
+                var_map[var_] = ln
+
+        additional_nodes = []
+        count_nchw = 0
+        inputs_names = [i.name for i in inputs]
+        initializer_map = {k.name:k for k in initializers}
+        for n_ in view:
+            for var_ in n_.origin.input:
+                target = var_map.get(var_)
+                if target is None:
+                    assert var_ == '' or var_ in inputs_names
+                    if var_ in initializer_map:
+                        target = LinkedNode(out_n=[var_], tensors_n=[initializer_map[var_]])  # create an empty node as input
+                    else:
+                        target = LinkedNode(out_n=[var_])
                     new_output = var_ + '_nhwc'
                     if var_ in nchw_inputs:
                         nnode = LinkedNode(
@@ -424,8 +470,6 @@ class MergeSolution(Solution):
         if self.is_useless_transpose(perm_f):
             node = self.begin  # type: LinkedNode
             while node != self.end and len(node.successor) >= 1:
-                # if node.broadcast:
-                #    node.reshape_input_for_broadcast(perm0)
                 node = node.successor[0]
 
             node_list = self.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor[0])
@@ -581,6 +625,59 @@ class NextToOutputSolution(Solution):
         return node_list
 
 
+class ConvBatchNormSolution(Solution):
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        conv_ori_weight = numpy_helper.to_array(self.begin_n.precedence[1].tensors[0])
+        conv_ori_bias = 0
+        if len(self.begin_n.precedence) > 2:
+            conv_ori_bias = numpy_helper.to_array(self.begin_n.precedence[2].tensors[0])
+        scale = numpy_helper.to_array(self.end_p.precedence[1].tensors[0])
+        B = numpy_helper.to_array(self.end_p.precedence[2].tensors[0])
+        mean = numpy_helper.to_array(self.end_p.precedence[3].tensors[0])
+        var = numpy_helper.to_array(self.end_p.precedence[4].tensors[0])
+        epsilon = helper.get_attribute_value(self.end_p.origin.attribute[0])
+        adjusted_scale = scale / np.sqrt(var + epsilon)
+        conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
+        conv_bias = (conv_ori_bias - mean) * adjusted_scale[:, None, None, None] + B
+        conv_weight_initilizer = numpy_helper.from_array(conv_bias)
+        conv_bias_initilizer = numpy_helper.from_array(conv_bias)
+
+        inputs.append(numpy_helper.to_array(self.initializers[ts_]))
+        aa = 1
+
+        half_len_pads = len(pads) // 2
+        pads_new = pads[2:half_len_pads]
+        pads_new.extend(pads[half_len_pads + 2:])
+        attrs = {'pads': pads_new}
+        pads_new = np.asarray(pads_new)
+        auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
+        if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            return node_list
+
+        for attr_idx in range(5):
+            if attr_idx == 0:
+                # for other cases, set auto_pad = 'NOTSET'
+                attrs.update({'auto_pad': 'NOTSET'})
+                continue
+            cur_attr = self.end_p.origin.attribute[attr_idx]
+            if cur_attr.name == "pads":
+                conv_pads = np.asarray(helper.get_attribute_value(cur_attr))
+                pads_new = list(pads_new + conv_pads)
+                attrs.update({cur_attr.name: pads_new})
+            else:
+                attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
+
+        self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
+                                             self.end_p.origin.name + "_0", **attrs)
+
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+
+        return node_list
+
+
 class RedundantOptimizer(object):
     @staticmethod
     def find(node_list):
@@ -720,8 +817,36 @@ class MergePadConvOptimizer(object):
         return solution
 
 
-def _find_an_optimization(node_list):
-    optimizers = (RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer)
+class ConvBatchNormOptimizer(object):
+    @staticmethod
+    def find(node_list):
+        solution = None
+        for n_ in node_list:
+            if n_.origin.op_type == 'Conv' and n_.in_miso_and_inner:
+                next = n_.successor[0]
+                if next.origin.op_type == 'BatchNormalization':
+                    is_bn = True
+                    if len(n_.precedence[1].tensors) == 0:
+                        is_bn = False
+                    elif len(n_.precedence) > 2 and len(n_.precedence[1].tensors) == 0:
+                        is_bn = False
+                    else:
+                        for idx_ in range(1, 5):
+                            if len(next.precedence[idx_].tensors) == 0:
+                                is_bn = False
+                                break
+
+                    if is_bn:
+                        solution = ConvBatchNormSolution(n_.precedence[0], n_, next, next.successor[0])
+                    return solution
+
+        return solution
+
+
+def _find_an_optimization(node_list, target_opset=None):
+    optimizers = [RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
+    if target_opset is not None and target_opset >= 9:
+        optimizers.append(ConvBatchNormOptimizer)
 
     for optm in optimizers:
         solution = optm.find(node_list)
@@ -799,8 +924,8 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
     """
     node_list = LinkedNode.build_from_onnx(onnx_nodes,
                                            nchw_inputs if nchw_inputs else [],
-                                           [] if inputs is None else [i_.name for i_ in inputs],
-                                           [] if outputs is None else [o_.name for o_ in outputs])
+                                           [] if inputs is None else inputs,
+                                           [] if outputs is None else outputs)
     solution = _find_an_optimization(node_list)
     while solution:
         node_list = _apply_optimization(solution, node_list)
@@ -855,7 +980,19 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
-    nodes = optimize_onnx(onnx_nodes, nchw_inputs=nchw_inputs, inputs=inputs + extra_inputs, outputs=outputs)
+    inputs = inputs + extra_inputs
+    node_list = LinkedNode.build_from_onnx_2(onnx_nodes,
+                                             nchw_inputs if nchw_inputs else [],
+                                             [] if inputs is None else inputs,
+                                             [] if outputs is None else outputs,
+                                             initializers)
+    solution = _find_an_optimization(node_list, target_opset)
+    while solution:
+        node_list = _apply_optimization(solution, node_list)
+        solution = _find_an_optimization(node_list, target_opset)
+
+    node_list = _topological_sort(node_list)
+    nodes = _build_onnx_model(node_list)
 
     # Create a graph from its main components
     adjusted_initializers = _remove_unused_initializers(nodes, initializers)
