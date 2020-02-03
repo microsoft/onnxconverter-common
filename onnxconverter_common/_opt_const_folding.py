@@ -2,7 +2,7 @@ import onnx
 from onnx import numpy_helper, mapping, helper
 
 
-class OnnxGraph:
+class OnnxGraphContext:
     def __init__(self, graph_proto):
         self.initializers = {ts_.name: ts_ for ts_ in graph_proto.initializer}
         # self.nodes = {nd_.name for nd_ in graph_proto.node}
@@ -49,20 +49,20 @@ class OnnxGraph:
         return inputs
 
     def _OnConst(self, node, inputs):
-        return [OnnxGraph.get_attribute(node, 'value')]
+        return [OnnxGraphContext.get_attribute(node, 'value')]
 
     def _OnCast(self, node, inputs):
-        np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[OnnxGraph.get_attribute(node, 'to')]
+        np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[OnnxGraphContext.get_attribute(node, 'to')]
         casted = inputs[0].astype(np_dtype)
         return [casted]
 
     def _OnTranspose(self, node, inputs):
-        perm_attr = OnnxGraph.get_attribute(node, 'perm')
+        perm_attr = OnnxGraphContext.get_attribute(node, 'perm')
         retval = inputs[0].transpose(perm_attr)
         return [retval]
 
     def _OnUnsqueeze(self, node, inputs):
-        axes = OnnxGraph.get_attribute(node, 'axes')
+        axes = OnnxGraphContext.get_attribute(node, 'axes')
         shape_in = inputs[0].shape
         dims_out = len(shape_in) + len(axes)
         shape_in = iter(shape_in)
@@ -82,7 +82,7 @@ class OnnxGraph:
 
 
 def _dfs_calc(graph, node, node_status):
-    # type: (OnnxGraph, onnx.NodeProto, dict) -> int
+    # type: (OnnxGraphContext, onnx.NodeProto, dict) -> int
     if node.name in node_status:
         return node_status[node.name]
 
@@ -115,7 +115,7 @@ def _dfs_calc(graph, node, node_status):
 
 def const_folding_optimizer(graph):
     # type: (onnx.GraphProto)->onnx.GraphProto
-    opt_graph = OnnxGraph(graph)
+    opt_graph = OnnxGraphContext(graph)
     node_status = {}
     for ts_ in graph.output:
         _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], node_status)

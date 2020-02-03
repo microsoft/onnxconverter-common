@@ -785,7 +785,7 @@ def _topological_sort(node_list):
     return result_nodes
 
 
-def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
+def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
@@ -804,7 +804,8 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
         node_list = _apply_optimization(solution, node_list)
         solution = _find_an_optimization(node_list)
 
-    node_list = _topological_sort(node_list)
+    if target_opset is None or target_opset < 9:
+        node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
 
 
