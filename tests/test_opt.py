@@ -224,6 +224,7 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertEqual(len(new_nodes), 2)
         self.assertIsNotNone(model)
 
+    @unittest.skipIf(onnx.defs.onnx_opset_version() < 9, "Optimizer for the model graph only happens on opset >= 9")
     def test_opt_on_model(self):
         val = np.asarray([[[[1.0, 2.0, 3.0], [1.1, 2.1, 3.1]]]], np.float32)
         nodes = []
@@ -254,7 +255,7 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
         optd_model = optimize_onnx_model(model)
-        self.assertEqual(len(optd_model.graph.node), 7)
+        self.assertEqual(len(optd_model.graph.node), 6)
 
 
 if __name__ == '__main__':
