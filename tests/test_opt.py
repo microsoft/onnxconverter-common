@@ -194,6 +194,37 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertEqual(len(new_nodes), 7)
         self.assertIsNotNone(model)
 
+    def test_NextToOutputSolution(self):
+        val = np.asarray([[[[1.0, 2.0, 3.0], [1.1, 2.1, 3.1]]]], np.float32)
+
+        nodes = []
+        nodes[0:] = \
+            [helper.make_node('Constant', [], ['const1'], value=helper.make_tensor(
+                name='const0',
+                data_type=onnx_proto.TensorProto.FLOAT,
+                dims=val.shape,
+                vals=val.flatten().astype(float)),
+                              name="0")]
+        nodes[1:] = [helper.make_node('Identity', ['const1'], ['identity1'], name="1")]
+        nodes[2:] = [helper.make_node('Identity', ['identity1'], ['identity2'], name="2")]
+        nodes[3:] = [helper.make_node('Max', ['input1', 'identity2'], ['max0'], name="3")]
+        nodes[4:] = [helper.make_node('Identity', ['max0'], ['output0'], name="4")]
+
+        input0 = helper.make_tensor_value_info('input1', onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info('output0', onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+
+        graph = helper.make_graph(nodes, 'test_NextToOutputSolution', [input0], [output0])
+        model = helper.make_model(graph)
+        self.assertIsNotNone(model)
+
+        new_nodes = optimize_onnx(nodes, inputs=[input0], outputs=[output0])
+        new_nodes = [n_ for n_ in new_nodes if not isinstance(n_, tuple)]
+        graph = helper.make_graph(new_nodes, 'test_NextToOutputSolution', [input0], [output0])
+        model = helper.make_model(graph)
+        self.assertEqual(len(new_nodes), 2)
+        self.assertIsNotNone(model)
+
+    @unittest.skipIf(onnx.defs.onnx_opset_version() < 9, "Optimizer for the model graph only happens on opset >= 9")
     def test_opt_on_model(self):
         val = np.asarray([[[[1.0, 2.0, 3.0], [1.1, 2.1, 3.1]]]], np.float32)
         nodes = []
@@ -224,7 +255,7 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
         optd_model = optimize_onnx_model(model)
-        self.assertEqual(len(optd_model.graph.node), 7)
+        self.assertEqual(len(optd_model.graph.node), 6)
 
 
 if __name__ == '__main__':

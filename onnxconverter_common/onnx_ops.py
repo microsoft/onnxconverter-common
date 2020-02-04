@@ -741,33 +741,51 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
     name = _create_name_or_use_existing_one(scope, 'Slice', operator_name)
 
     if container.target_opset < 10:
-        container.add_node('Slice', input_name, output_name, name=name,
-                           starts=starts, ends=ends, axes=axes, op_version=1)
+        if axes is None:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, op_version=1)
+        else:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, axes=axes, op_version=1)
     else:
         if container.target_opset == 10:
             op_version = 10
         else:
             op_version = 11
         inputs = input_name if isinstance(input_name, list) else [input_name]
-        starts_name = scope.get_unique_variable_name('starts')
-        ends_name = scope.get_unique_variable_name('ends')
-        container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
-                                  [len(starts)], starts)
-        container.add_initializer(ends_name, onnx_proto.TensorProto.INT64,
-                                  [len(ends)], ends)
+        if isinstance(starts, str):
+            starts_name = starts
+        else:
+            starts_name = scope.get_unique_variable_name('starts')
+            container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
+                                      [len(starts)], starts)
+
+        if isinstance(ends, str):
+            ends_name = ends
+        else:
+            ends_name = scope.get_unique_variable_name('ends')
+            container.add_initializer(ends_name, onnx_proto.TensorProto.INT64,
+                                      [len(ends)], ends)
+
         inputs.append(starts_name)
         inputs.append(ends_name)
         if axes:
-            axes_name = scope.get_unique_variable_name('axes')
-            container.add_initializer(axes_name, onnx_proto.TensorProto.INT64,
-                                      [len(axes)], axes)
+            if isinstance(axes, str):
+                axes_name = axes
+            else:
+                axes_name = scope.get_unique_variable_name('axes')
+                container.add_initializer(axes_name, onnx_proto.TensorProto.INT64,
+                                          [len(axes)], axes)
             inputs.append(axes_name)
         if steps:
             if not axes:
                 inputs.append('')
-            steps_name = scope.get_unique_variable_name('steps')
-            container.add_initializer(steps_name, onnx_proto.TensorProto.INT64,
-                                      [len(steps)], steps)
+            if isinstance(steps, str):
+                steps_name = steps
+            else:
+                steps_name = scope.get_unique_variable_name('steps')
+                container.add_initializer(steps_name, onnx_proto.TensorProto.INT64,
+                                          [len(steps)], steps)
             inputs.append(steps_name)
         container.add_node('Slice', inputs, output_name, name=name,
                            op_version=op_version)

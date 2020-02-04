@@ -8,6 +8,7 @@ import numpy as np
 import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
+from ._opt_const_folding import const_folding_optimizer
 
 
 class LinkedNode(object):
@@ -52,6 +53,11 @@ class LinkedNode(object):
         """
         return len(self.successor) == 1 and not self.successor[0].in_or_out and \
                len(self.precedence) == 1
+
+    @property
+    def in_single_path_to_output(self):
+        return len(self.successor) == 1 and self.successor[0].in_or_out and \
+               len(self.precedence) == 1 and not self.precedence[0].in_or_out
 
     @property
     def element_wise(self):
@@ -189,18 +195,15 @@ class LinkedNode(object):
             key = next(k for k, v in six.iteritems(self.output) if v == old_name)
             self.output[key] = name
 
-    def reshape_input_for_broadcast(self, perm):
-        assert len(self.origin.input) == 2
-        self.tensors.append((np.reshape, self.origin.input[1]))
-
     def generate(self):
         updated = False
-        if self.attributes or self.tensors:
+        if self.attributes:
             updated = True
         elif len([k for k, v in six.iteritems(self.input) if k != v]) > 0:
             updated = True
         elif len([k for k, v in six.iteritems(self.output) if k != v]) > 0:
             updated = True
+
         if not updated:
             return [self.origin]
         else:
@@ -216,7 +219,7 @@ class LinkedNode(object):
             onode.attribute.extend(
                 helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
 
-            return [onode] + self.tensors
+            return [onode]
 
     def add_precedence(self, pre, tname):
         self.precedence.append(pre)
@@ -564,19 +567,35 @@ class MergePadConvSolution(Solution):
         return node_list
 
 
+class NextToOutputSolution(Solution):
+    def apply(self, node_list):
+        for idx_, succ_ in enumerate(self.begin.successor):
+            if succ_ == self.begin_n:
+                self.begin.successor[idx_] = self.begin_n.successor[0]
+            else:
+                succ_.in_redirect(self.begin.single_output, self.begin_n.single_output)
+        self.begin.output[self.begin.single_output] = self.begin_n.single_output
+        node_list.remove(self.begin_n)
+        return node_list
+
+
 class RedundantOptimizer(object):
     @staticmethod
     def find(node_list):
         solution = None
         for n_ in node_list:
-            if n_.is_identity and n_.in_single_path:
-                end = n_.successor[0]
-                end_pre = n_
-                while end is not None and end.is_identity and end.in_single_path:
-                    end_pre = end
-                    end = end.successor[0]
-                solution = Solution(n_.precedence[0], n_, end_pre, end)
-                return solution
+            if n_.is_identity:
+                if n_.in_single_path:
+                    end = n_.successor[0]
+                    end_pre = n_
+                    while end is not None and end.is_identity and end.in_single_path:
+                        end_pre = end
+                        end = end.successor[0]
+                    solution = Solution(n_.precedence[0], n_, end_pre, end)
+                    return solution
+                elif n_.in_single_path_to_output:
+                    solution = NextToOutputSolution(n_.precedence[0], n_, None, None)
+                    return solution
 
         return solution
 
@@ -766,7 +785,7 @@ def _topological_sort(node_list):
     return result_nodes
 
 
-def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
+def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
@@ -785,7 +804,8 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
         node_list = _apply_optimization(solution, node_list)
         solution = _find_an_optimization(node_list)
 
-    node_list = _topological_sort(node_list)
+    if target_opset is None or target_opset < 9:
+        node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
 
 
@@ -834,20 +854,23 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
-    nodes = optimize_onnx(onnx_nodes, nchw_inputs=nchw_inputs, inputs=inputs + extra_inputs, outputs=outputs)
+    nodes = optimize_onnx(onnx_nodes, nchw_inputs=nchw_inputs, inputs=list(inputs) + extra_inputs, outputs=outputs)
 
     # Create a graph from its main components
-    adjusted_initializers = _remove_unused_initializers(nodes, initializers)
     graph = helper.make_graph(nodes, model_name, inputs,
-                              outputs, adjusted_initializers)
-
+                              outputs, initializers)
     # Add extra information related to the graph
     graph.value_info.extend(model_value_info)
 
-    return graph
+    new_graph = const_folding_optimizer(graph)
+    adjusted_initializers = _remove_unused_initializers(new_graph.node, new_graph.initializer)
+    del new_graph.initializer[:]
+    new_graph.initializer.extend(adjusted_initializers)
+    return new_graph
 
 
 def optimize_onnx_model(origin_model, nchw_inputs=None):
+    # type: (onnx.ModelProto, list) -> onnx.ModelProto
     """
     the origin model will be updated after the optimization.
     :param origin_model:
@@ -859,32 +882,15 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
 
     input_with_initializer = [in_ for in_ in graph.input]
     input_with_initializer += [in_ for in_ in graph.initializer]
-    all_nodes = optimize_onnx(nodelist,
-                              nchw_inputs=nchw_inputs,
-                              inputs=input_with_initializer,
-                              outputs=graph.output)
+    opt_graph = optimize_onnx_graph(nodelist,
+                                    nchw_inputs=nchw_inputs,
+                                    inputs=graph.input,
+                                    outputs=graph.output,
+                                    initializers=graph.initializer,
+                                    model_value_info=graph.value_info,
+                                    model_name=graph.name,
+                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import)
+                                    )
 
-    del graph.node[:]
-    nodes = [n_ for n_ in all_nodes if not isinstance(n_, tuple)]
-    graph.node.extend(nodes)
-
-    alter_tensors = {n_[1]: n_[0] for n_ in all_nodes if isinstance(n_, tuple)}
-
-    def update_tensor(x):
-        helper.make_tensor(x.name, x.data_type, (x.dims[0], 1, 1),
-                           onnx.numpy_helper.to_array(x).flatten())
-
-    new_initializer = [init_ if init_.name not in alter_tensors else update_tensor(init_)
-                       for init_ in graph.initializer]
-    del graph.initializer[:]
-    graph.initializer.extend(new_initializer)
-
-    def update_value_info(x):
-        helper.make_tensor_value_info(x.name, x.type.tensor_type.elem_type,
-                                      (x.type.tensor_type.shape.dim[0].dim_value, 1, 1))
-
-    new_input = [in_ if in_.name not in alter_tensors else update_value_info(in_)
-                 for in_ in graph.input]
-    del graph.input[:]
-    graph.input.extend(new_input)
+    origin_model.graph.CopyFrom(opt_graph)
     return origin_model
