@@ -778,7 +778,7 @@ class ConvBatchNormOptimizer(object):
                 if len(n_.initializers) > 0:
                     continue
                 next = n_.successor[0]
-                if next.origin.op_type == 'BatchNormalization':
+                if next.origin is not None and next.origin.op_type == 'BatchNormalization':
                     if len(n_.initializers) > 0:
                         continue
                     if len(n_.precedence[1].tensors) == 0:
@@ -946,7 +946,6 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         solution = _find_an_optimization(node_list, target_opset)
 
     node_list = [n_ for n_ in node_list if n_.origin is not None]
-    node_list = _topological_sort(node_list)
     regenerated = []
     for n_ in node_list:
         nodes = n_.generate()
