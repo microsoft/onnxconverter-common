@@ -604,7 +604,7 @@ class ConvBatchNormSolution(Solution):
         epsilon = helper.get_attribute_value(self.end_p.origin.attribute[0])
         adjusted_scale = scale / np.sqrt(var + epsilon)
         conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
-        conv_bias = (conv_ori_bias - mean) * adjusted_scale[:, None, None, None] + B
+        conv_bias = (conv_ori_bias - mean) * adjusted_scale + B
 
         conv_weight_name = self.begin_n.origin.name+'_W_new'
         conv_weight_initilizer = numpy_helper.from_array(conv_weight, name=conv_weight_name)
@@ -767,8 +767,6 @@ class MergePadConvOptimizer(object):
 
 
 class ConvBatchNormOptimizer(object):
-    conv_batch_number = 0
-
     @staticmethod
     def find(node_list):
         solution = None
