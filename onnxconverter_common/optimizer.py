@@ -809,20 +809,6 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     return _build_onnx_model(node_list)
 
 
-def _remove_unused_initializers(nodes, initializers):
-    adjusted_initializers = []
-    nodes_input_set = set()
-    for n_ in nodes:
-        for input_name_ in n_.input:
-            nodes_input_set.add(input_name_)
-
-    for initializers_ in initializers:
-        if initializers_.name in nodes_input_set:
-            adjusted_initializers.append(initializers_)
-
-    return adjusted_initializers
-
-
 def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
                         model_value_info=None, model_name=None, target_opset=None):
     """
@@ -863,9 +849,6 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     graph.value_info.extend(model_value_info)
 
     new_graph = const_folding_optimizer(graph)
-    adjusted_initializers = _remove_unused_initializers(new_graph.node, new_graph.initializer)
-    del new_graph.initializer[:]
-    new_graph.initializer.extend(adjusted_initializers)
     return new_graph
 
 
