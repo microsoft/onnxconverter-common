@@ -618,10 +618,9 @@ class ConvBatchNormSolution(Solution):
             self.begin_n.input[conv_bias_name] = conv_bias_name
         self.begin_n.initializers = [conv_weight_initilizer, conv_bias_initilizer]
 
-        self.end.in_redirect(self.end.origin.input[0], self.begin_n.origin.output[0])
-        self.begin_n.successor = []
-        self.end.precedence = []
-        self.end.add_precedence(self.begin_n, self.begin_n.single_output)
+        self.end.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
+        self.begin_n.successor = [self.end]
+        self.end.precedence[self.end.precedence.index(self.end_p)] = self.begin_n
 
         node_list.remove(self.end_p)
 
