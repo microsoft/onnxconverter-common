@@ -230,8 +230,9 @@ class LinkedNode(object):
         pre.successor.append(self)
         assert tname in self.input.values() and tname in pre.output.values()
 
+
     @staticmethod
-    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs):
+    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None):
         view = []
         var_map = {}
         for o_ in onnx_nodes:
@@ -243,59 +244,15 @@ class LinkedNode(object):
 
         additional_nodes = []
         count_nchw = 0
+        initializer_map = None
+        if initializers is not None:
+            initializer_map = {k.name:k for k in initializers}
         for n_ in view:
             for var_ in n_.origin.input:
                 target = var_map.get(var_)
                 if target is None:
                     assert var_ == '' or var_ in inputs
-                    target = LinkedNode(out_n=[var_])  # create an empty node as input
-                    new_output = var_ + '_nhwc'
-                    if var_ in nchw_inputs:
-                        nnode = LinkedNode(
-                            helper.make_node(
-                                'Transpose',
-                                [var_],
-                                [new_output],
-                                name='Transpose_nchw_' + str(count_nchw),
-                                perm=[0, 2, 3, 1]))
-                        count_nchw = count_nchw + 1
-                        var_map[new_output] = nnode
-                        nnode.add_precedence(target, var_)
-                        n_.in_redirect(var_, new_output)
-                        target = nnode
-                        var_ = new_output
-                        additional_nodes.append(nnode)
-
-                n_.add_precedence(target, var_)
-
-        for n_ in view:  # add a dummy output node.
-            for var_ in n_.origin.output:
-                if var_ in outputs:
-                    LinkedNode(in_n=[var_]).add_precedence(n_, var_)
-
-        return view + additional_nodes
-
-    @staticmethod
-    def build_from_onnx_2(onnx_nodes, nchw_inputs, inputs, outputs, initializers):
-        view = []
-        var_map = {}
-        for o_ in onnx_nodes:
-            ln = LinkedNode(o_)
-            view.append(ln)
-            for var_ in o_.output:
-                assert var_map.get(var_) is None
-                var_map[var_] = ln
-
-        additional_nodes = []
-        count_nchw = 0
-        inputs_names = [i.name for i in inputs]
-        initializer_map = {k.name:k for k in initializers}
-        for n_ in view:
-            for var_ in n_.origin.input:
-                target = var_map.get(var_)
-                if target is None:
-                    assert var_ == '' or var_ in inputs_names
-                    if var_ in initializer_map:
+                    if initializer_map is not None and var_ in initializer_map:
                         target = LinkedNode(out_n=[var_], tensors_n=[initializer_map[var_]])  # create an empty node as input
                     else:
                         target = LinkedNode(out_n=[var_])
@@ -978,11 +935,11 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         extra_inputs.append(value_info)
 
     in_inputs = list(inputs) + extra_inputs
-    node_list = LinkedNode.build_from_onnx_2(onnx_nodes,
-                                             nchw_inputs if nchw_inputs else [],
-                                             [] if in_inputs is None else in_inputs,
-                                             [] if outputs is None else outputs,
-                                             initializers)
+    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+                                           nchw_inputs if nchw_inputs else [],
+                                           [] if in_inputs is None else [i_.name for i_ in in_inputs],
+                                           [] if outputs is None else [o_.name for o_ in outputs],
+                                           initializers)
     solution = _find_an_optimization(node_list, target_opset)
     while solution:
         node_list = _apply_optimization(solution, node_list)
