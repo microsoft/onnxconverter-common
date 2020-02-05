@@ -81,6 +81,28 @@ class OnnxGraphContext:
         return [retval]
 
 
+def _fix_unamed_node(graph):
+    # type: (onnx.GraphProto)->onnx.GraphProto
+    node_id = [1]
+
+    def _ensure_node_named(node, incre_id):
+        if node.name:
+            return node
+        name = node.op_type.lower() + "_{}".format(incre_id[0])
+        incre_id[0] += 1
+        node.name = name
+        return node
+
+    named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in graph.node]
+
+    if node_id[0] == 1:
+        return graph
+
+    del graph.node[:]
+    graph.node.extend(named_nodes)
+    return graph
+
+
 def _dfs_calc(graph, node, node_status):
     # type: (OnnxGraphContext, onnx.NodeProto, dict) -> int
     if node.name in node_status:
@@ -115,7 +137,7 @@ def _dfs_calc(graph, node, node_status):
 
 def const_folding_optimizer(graph):
     # type: (onnx.GraphProto)->onnx.GraphProto
-    opt_graph = OnnxGraphContext(graph)
+    opt_graph = OnnxGraphContext(_fix_unamed_node(graph))
     node_status = {}
     for ts_ in graph.output:
         _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], node_status)
