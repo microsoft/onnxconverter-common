@@ -212,9 +212,9 @@ class LinkedNode(object):
             onode.name = self.origin.name
             onode.op_type = self.origin.op_type
             onode.input.extend([self.input.get(i_, i_) for i_ in self.origin.input])
-            for input_ in self.input.values():
-                if input_ not in onode.input:
-                    onode.input.append(input_)
+            for input_ in self.initializers:
+                if input_.name not in onode.input:
+                    onode.input.append(input_.name)
             onode.output.extend([self.output.get(o_, o_) for o_ in self.origin.output])
             onode.doc_string = self.origin.doc_string
             onode.domain = self.origin.domain
