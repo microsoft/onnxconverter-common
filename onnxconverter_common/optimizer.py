@@ -332,7 +332,7 @@ class Solution(object):
         return perm == list(six.moves.range(len(perm)))
 
     @staticmethod
-    def delete_node_nto1(node_list, begin, node, end):  # type: ([],LinkedNode, LinkedNode, LinkedNode)->[]
+    def delete_node_nto1(node_list, begin, node, end, node_input_name=None):  # type: ([],LinkedNode, LinkedNode, LinkedNode)->[]
         """
         delete the node which has n-input and 1-output
         """
@@ -348,14 +348,19 @@ class Solution(object):
                 nb_.out_redirect(node.single_input, node.single_output)
         else:
             for nb_ in begin:
-                target_var_name = node.single_input
+                if node_input_name is None:
+                    target_var_name = node.single_input
+                else:
+                    target_var_name = node_input_name
                 assert target_var_name in nb_.output.values()  # since the output info never be updated, except the final.
                 end.in_redirect(node.single_output, target_var_name)
 
         for nb_ in begin:
             nb_.successor = [end if v_ == node else v_ for v_ in nb_.successor]
-        end.precedence = [v_ for v_ in end.precedence if v_ != node] + node.precedence
-
+        if node_input_name is None:
+            end.precedence = [v_ for v_ in end.precedence if v_ != node] + node.precedence
+        else:
+            end.precedence[end.precedence.index(node)] = [v_ for v_ in node.precedence if v_.origin is not None and v_.single_output == node_input_name][0]
         node_list.remove(node)
         return node_list
 
@@ -365,7 +370,6 @@ class Solution(object):
         delete the node which has 1-input and n-output
         """
         if end is None:
-            assert end is not None
             end = node.successor
         elif not isinstance(end, list):
             end = [end]
@@ -402,14 +406,17 @@ class Solution(object):
 
     def apply(self, node_list):
         node = self.begin_n  # type: LinkedNode
-        while node != self.end:
-            assert len(node.successor) == 1
-            end = node.successor[0]
-            if self.begin:
-                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
-            else:
-                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
-            node = self.end if self.end is None else end
+        if len(node.successor) > 1:
+            node_list = self.delete_node_1ton(node_list, self.begin, node, self.end)
+        else:
+            while node != self.end:
+                assert len(node.successor) == 1
+                end = node.successor[0]
+                if self.begin:
+                    node_list = self.delete_node_nto1(node_list, self.begin, node, end)
+                else:
+                    node_list = self.delete_node_nto1(node_list, self.begin, node, end)
+                node = self.end if self.end is None else end
 
         return node_list
 
@@ -545,7 +552,10 @@ class MergePadConvSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
+        if len(self.begin_n.origin.attribute) > 1:
+            pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
+        else:
+            pads = numpy_helper.to_array(self.begin_n.precedence[1].tensors[0]).tolist()
         half_len_pads = len(pads) // 2
         pads_new = pads[2:half_len_pads]
         pads_new.extend(pads[half_len_pads + 2:])
@@ -571,7 +581,7 @@ class MergePadConvSolution(Solution):
         self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
                                              self.end_p.origin.name + "_0", **attrs)
 
-        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+        node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p, self.begin_n.precedence[0].single_output)
 
         return node_list
 
@@ -644,6 +654,10 @@ class RedundantOptimizer(object):
                 elif n_.in_single_path_to_output:
                     solution = NextToOutputSolution(n_.precedence[0], n_, None, None)
                     return solution
+                elif len(n_.successor) > 1:
+                    in_or_out = any([successor_.in_or_out for successor_ in n_.successor])
+                    if not in_or_out:
+                        solution = Solution(n_.precedence[0], n_, None, None)
 
         return solution
 
@@ -757,7 +771,7 @@ class MergePadConvOptimizer(object):
     def find(node_list):
         solution = None
         for n_ in node_list:
-            if n_.origin.op_type == 'Pad' and n_.in_single_path_and_inner:
+            if n_.origin.op_type == 'Pad' and (n_.in_single_path_and_inner or n_.in_miso_and_inner):
                 next = n_.successor[0]
                 if next.origin.op_type == 'Conv':
                     solution = MergePadConvSolution(n_.precedence[0], n_, next, next.successor[0])
