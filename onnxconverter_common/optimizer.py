@@ -419,10 +419,7 @@ class Solution(object):
             while node != self.end:
                 assert len(node.successor) == 1
                 end = node.successor[0]
-                if self.begin:
-                    node_list = self.delete_node_nto1(node_list, self.begin, node, end)
-                else:
-                    node_list = self.delete_node_nto1(node_list, self.begin, node, end)
+                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
                 node = self.end if self.end is None else end
 
         return node_list
@@ -600,7 +597,16 @@ class NextToOutputSolution(Solution):
                 self.begin.successor[idx_] = self.begin_n.successor[0]
             else:
                 succ_.in_redirect(self.begin.single_output, self.begin_n.single_output)
-        self.begin.output[self.begin.single_output] = self.begin_n.single_output
+
+        find_begin_output = False
+        for k, v in self.begin.output.items():
+            if v == self.begin_n.single_input:
+                self.begin.output[k] = self.begin_n.single_output
+                find_begin_output = True
+                break
+        if not find_begin_output:
+            raise Exception("begin output is not found for NextToOutputSolution for tensor " + self.begin_n.single_output)
+
         node_list.remove(self.begin_n)
         return node_list
 
@@ -780,7 +786,7 @@ class MergePadConvOptimizer(object):
         for n_ in node_list:
             if n_.origin.op_type == 'Pad':
                 next = n_.successor[0]
-                if next.origin.op_type == 'Conv':
+                if next.origin is not None and next.origin.op_type == 'Conv':
                     if n_.in_single_path_and_inner:
                         solution = MergePadConvSolution(n_.get_precedence_by_idx(0), n_, next, next.successor[0])
                         return solution
