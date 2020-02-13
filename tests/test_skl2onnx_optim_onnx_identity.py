@@ -27,6 +27,9 @@ except ImportError:
     OrtFail = RuntimeError
 
 
+TARGET_OPSET = 11
+
+
 class TestOptimOnnxIdentity(unittest.TestCase):
 
     @unittest.skipIf(skip or sys.version_info[0] == 2,
@@ -35,13 +38,17 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
             numpy.float32).reshape((3, 2))
-        cop = OnnxAdd(OnnxIdentity('input'), 'input')
-        cdist = onnx_squareform_pdist(cop, dtype=numpy.float32)
-        cop2 = OnnxIdentity(cdist, output_names=['cdist'])
+        cop = OnnxAdd(OnnxIdentity('input', op_version=TARGET_OPSET),
+                      'input', op_version=TARGET_OPSET)
+        cdist = onnx_squareform_pdist(cop, dtype=numpy.float32,
+                                      op_version=TARGET_OPSET)
+        cop2 = OnnxIdentity(cdist, output_names=['cdist'],
+                            op_version=TARGET_OPSET)
 
         model_def = cop2.to_onnx(
             {'input': FloatTensorType()},
-            outputs=[('cdist', FloatTensorType())])
+            outputs=[('cdist', FloatTensorType())],
+            target_opset=TARGET_OPSET)
         stats = onnx_statistics(model_def)
         self.assertIn('subgraphs', stats)
         self.assertGreater(stats['subgraphs'], 0)
@@ -78,13 +85,16 @@ class TestOptimOnnxIdentity(unittest.TestCase):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
             numpy.float32).reshape((3, 2))
-        cop = OnnxIdentity('input')
-        cdist = onnx_squareform_pdist(cop, dtype=numpy.float32)
-        cop2 = OnnxIdentity(cdist, output_names=['cdist'])
+        cop = OnnxIdentity('input', op_version=TARGET_OPSET)
+        cdist = onnx_squareform_pdist(cop, dtype=numpy.float32,
+                                      op_version=TARGET_OPSET)
+        cop2 = OnnxIdentity(cdist, output_names=['cdist'],
+                            op_version=TARGET_OPSET)
 
         model_def = cop2.to_onnx(
             {'input': FloatTensorType()},
-            outputs=[('cdist', FloatTensorType())])
+            outputs=[('cdist', FloatTensorType())],
+            target_opset=TARGET_OPSET)
         stats = onnx_statistics(model_def)
         self.assertIn('subgraphs', stats)
         self.assertGreater(stats['subgraphs'], 0)
@@ -120,13 +130,16 @@ class TestOptimOnnxIdentity(unittest.TestCase):
     def test_onnx_example_cdist_in_euclidean(self):
         x2 = numpy.array([1.1, 2.1, 4.01, 5.01, 5.001, 4.001, 0, 0]).astype(
             numpy.float32).reshape((4, 2))
-        cop = OnnxAdd('input', 'input')
-        cop2 = OnnxIdentity(onnx_cdist(cop, x2, dtype=numpy.float32, metric='euclidean'),
-                            output_names=['cdist'])
+        cop = OnnxAdd('input', 'input', op_version=TARGET_OPSET)
+        cop2 = OnnxIdentity(onnx_cdist(cop, x2, dtype=numpy.float32, metric='euclidean',
+                                       op_version=TARGET_OPSET),
+                            output_names=['cdist'],
+                            op_version=TARGET_OPSET)
 
         model_def = cop2.to_onnx(
             inputs=[('input', FloatTensorType([None, None]))],
-            outputs=[('cdist', FloatTensorType())])
+            outputs=[('cdist', FloatTensorType())],
+            target_opset=TARGET_OPSET)
 
         new_model = onnx_remove_node_identity(model_def)
         stats = onnx_statistics(model_def)

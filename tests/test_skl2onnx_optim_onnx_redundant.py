@@ -22,6 +22,8 @@ try:
 except ImportError:
     OrtFail = RuntimeError
 
+TARGET_OPSET = 11
+
 
 class TestOptimOnnxRedundant(unittest.TestCase):
 
@@ -31,11 +33,15 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         dtype = numpy.float32
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
             numpy.float32).reshape((3, 2))
-        cop = OnnxAdd('X', numpy.array([1], dtype=dtype))
-        cop2 = OnnxAdd('X', numpy.array([1], dtype=dtype))
-        cop3 = OnnxAdd('X', numpy.array([2], dtype=dtype))
-        cop4 = OnnxSub(OnnxMul(cop, cop3), cop2, output_names=['final'])
-        model_def = cop4.to_onnx({'X': x})
+        cop = OnnxAdd('X', numpy.array([1], dtype=dtype),
+                      op_version=TARGET_OPSET)
+        cop2 = OnnxAdd('X', numpy.array([1], dtype=dtype),
+                       op_version=TARGET_OPSET)
+        cop3 = OnnxAdd('X', numpy.array([2], dtype=dtype),
+                       op_version=TARGET_OPSET)
+        cop4 = OnnxSub(OnnxMul(cop, cop3, op_version=TARGET_OPSET),
+                       cop2, output_names=['final'], op_version=TARGET_OPSET)
+        model_def = cop4.to_onnx({'X': x}, target_opset=TARGET_OPSET)
         stats = onnx_statistics(model_def)
         c1 = model_def.SerializeToString()
         new_model = onnx_remove_node_redundant(model_def, max_hash_size=10)
@@ -61,14 +67,20 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         dtype = numpy.float32
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
             numpy.float32).reshape((3, 2))
-        cop = OnnxAdd('X', numpy.array([1], dtype=dtype))
+        cop = OnnxAdd('X', numpy.array([1], dtype=dtype),
+                      op_version=TARGET_OPSET)
         cop2 = OnnxAdd('X', numpy.array(
-            [1], dtype=dtype), output_names=['keep'])
-        cop3 = OnnxAdd('X', numpy.array([2], dtype=dtype))
-        cop4 = OnnxSub(OnnxMul(cop, cop3), cop2, output_names=['final'])
+            [1], dtype=dtype), output_names=['keep'],
+            op_version=TARGET_OPSET)
+        cop3 = OnnxAdd('X', numpy.array([2], dtype=dtype),
+                       op_version=TARGET_OPSET)
+        cop4 = OnnxSub(OnnxMul(cop, cop3, op_version=TARGET_OPSET),
+                       cop2, output_names=['final'],
+                       op_version=TARGET_OPSET)
         model_def = cop4.to_onnx({'X': x},
                                  outputs=[('keep', FloatTensorType([None, 2])),
-                                          ('final', FloatTensorType([None, 2]))])
+                                          ('final', FloatTensorType([None, 2]))],
+                                 target_opset=TARGET_OPSET)
         c1 = model_def.SerializeToString()
         self.assertEqual(len(model_def.graph.output), 2)
         c2 = model_def.SerializeToString()
@@ -96,14 +108,21 @@ class TestOptimOnnxRedundant(unittest.TestCase):
         from skl2onnx.algebra.complex_functions import onnx_squareform_pdist
         x = numpy.array([1, 2, 4, 5, 5, 4]).astype(
             numpy.float32).reshape((3, 2))
-        cop = OnnxAdd(OnnxIdentity('input'), 'input')
-        cdist = onnx_squareform_pdist(cop, dtype=numpy.float32)
-        cdist2 = onnx_squareform_pdist(cop, dtype=numpy.float32)
-        cop2 = OnnxAdd(cdist, cdist2, output_names=['cdist'])
+        cop = OnnxAdd(OnnxIdentity('input', op_version=TARGET_OPSET),
+                      'input', op_version=TARGET_OPSET)
+        cdist = onnx_squareform_pdist(
+            cop, dtype=numpy.float32,
+            op_version=TARGET_OPSET)
+        cdist2 = onnx_squareform_pdist(
+            cop, dtype=numpy.float32,
+            op_version=TARGET_OPSET)
+        cop2 = OnnxAdd(cdist, cdist2, output_names=['cdist'],
+                       op_version=TARGET_OPSET)
 
         model_def = cop2.to_onnx(
             {'input': FloatTensorType()},
-            outputs=[('cdist', FloatTensorType())])
+            outputs=[('cdist', FloatTensorType())],
+            target_opset=TARGET_OPSET)
         c1 = model_def.SerializeToString()
         stats = onnx_statistics(model_def)
         c2 = model_def.SerializeToString()

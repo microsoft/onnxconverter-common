@@ -36,6 +36,10 @@ def _apply_optimisation_on_graph(fct, onnx_model, recursive=True, debug_info=Non
         new_model.doc_string = onnx_model.doc_string
         if hasattr(onnx_model, 'value_info'):
             graph.value_info.extend(onnx_model.value_info)
+        for oimp in onnx_model.opset_import:
+            op_set = new_model.opset_import.add()  # pylint: disable=E1101
+            op_set.domain = oimp.domain
+            op_set.version = oimp.version
         return new_model
     raise TypeError("This function only works on 'ModelProto' anod not not on"
                     " {}.".format(type(onnx_model)))
