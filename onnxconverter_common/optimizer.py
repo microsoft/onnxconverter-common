@@ -200,6 +200,10 @@ class LinkedNode(object):
         onode_input_name = self.origin.input[idx]
         return self.input[onode_input_name]
 
+    def get_output_by_idx(self, idx=0):
+        onode_output_name = self.origin.output[idx]
+        return self.output[onode_output_name]
+
     def get_precedence_by_idx(self, idx=0):
         input_tensor_name = self.get_input_by_idx(idx)
         for pred in self.precedence:
@@ -457,8 +461,8 @@ class MergeSolution(Solution):
 
 class MoveForwardSolution(Solution):
     def apply(self, node_list):
-        self.begin_n.successor[0].in_redirect(self.begin_n.single_output, self.begin.single_output)
-        self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
+        self.begin_n.successor[0].in_redirect(self.begin_n.single_output, self.begin.get_output_by_idx(0))
+        self.begin_n.in_redirect(self.begin.get_output_by_idx(0), self.end_p.single_output)
         self.end.in_redirect(self.end_p.single_output, self.begin_n.single_output)
 
         self.begin_n.successor[0].precedence[0] = self.begin
