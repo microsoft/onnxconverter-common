@@ -651,6 +651,8 @@ class ConvBatchNormSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
+        if self.begin_n.origin.name == 'block_13_project':
+            aa = 1
         conv_ori_weight = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0])
         conv_ori_bias = 0
         if len(self.begin_n.precedence) > 2:
@@ -676,9 +678,11 @@ class ConvBatchNormSolution(Solution):
             self.begin_n.input[conv_bias_name] = conv_bias_name
         self.begin_n.initializers = [conv_weight_initilizer, conv_bias_initilizer]
 
-        self.end.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
-        self.begin_n.successor = [self.end]
-        self.end.precedence[self.end.precedence.index(self.end_p)] = self.begin_n
+        self.begin_n.successor = []
+        for end_ in self.end:
+            end_.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
+            self.begin_n.successor.append(end_)
+            end_.precedence[end_.precedence.index(self.end_p)] = self.begin_n
 
         node_list.remove(self.end_p)
 
@@ -857,7 +861,7 @@ class ConvBatchNormOptimizer(object):
                             if len(next.precedence[idx_].tensors) == 0:
                                 continue
 
-                    solution = ConvBatchNormSolution(n_.get_precedence_by_idx(0), n_, next, next.successor[0])
+                    solution = ConvBatchNormSolution(n_.get_precedence_by_idx(0), n_, next, next.successor)
                     return solution
 
         return solution
@@ -952,9 +956,11 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
 
 
 def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map):
-    # TODO: old pad before 11
-    pads_tensor = node.get_precedence_by_idx(1)
-    pads_value = numpy_helper.to_array(pads_tensor.tensors[0])
+    pad_tensor = node.get_precedence_by_idx(1)
+    if pad_tensor is None:
+        pads_value = numpy_helper.to_array(node.initializers[0])
+    else:
+        pads_value = numpy_helper.to_array(pad_tensor.tensors[0])
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
     target_perm = _get_reverse_perm(cur_perm)
     target_perm_shift = [perm_ + len(target_perm) for perm_ in target_perm]
@@ -964,7 +970,8 @@ def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_m
         PushTransposeSolution.transpose_number))
     PushTransposeSolution.transpose_number += 1
     node.initializers = [add_initilizer]
-    node.precedence.remove(node.get_precedence_by_idx(1))
+    if pad_tensor is not None:
+        node.precedence.remove(node.get_precedence_by_idx(1))
     node.in_redirect(node.get_input_by_idx(1), add_initilizer.name)
     cur_perm_map[node.unique_name] = cur_perm
     return cur_perm_map
@@ -1053,7 +1060,8 @@ class PushTransposeSolution(Solution):
     def apply(self, node_list):
         cur_perm = Solution.get_perm(self.begin_n.origin)
         cur_perm_map = {self.begin_n.unique_name: cur_perm}
-        print('processed current Transpose node name=' + self.begin_n.unique_name + ' of type ' + self.begin_n.origin.op_type)
+        print('processed current Transpose node name=' + self.begin_n.unique_name + ' of type ' + self.begin_n.origin.op_type
+              + ' for the prev node=' + self.begin.unique_name + ' of type ' + self.begin.origin.op_type)
         candidate_queue = list()
         visited = set()
         for successor_ in self.begin_n.successor:
@@ -1147,10 +1155,12 @@ class PushTransposeOptimizer(object):
                 continue
             if n_.origin.op_type in first_node_type and len(n_.successor) == 1 and n_.successor[0] is not None:
                 next = n_.successor[0]
-                if next.origin is not None and next.origin.op_type == 'Transpose':
+                if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
                     PushTransposeOptimizer.opt_number += 1
+                    if PushTransposeOptimizer.opt_number == 10:
+                        aa = 1
                     print('PushTransposeOptimizer.opt_number='+str(PushTransposeOptimizer.opt_number))
-                    if PushTransposeOptimizer.opt_number <= 100000:
+                    if PushTransposeOptimizer.opt_number <= 10000:
                         solution = PushTransposeSolution(n_, next, next.successor[0], None)
                         return solution
                     else:
@@ -1161,12 +1171,13 @@ class PushTransposeOptimizer(object):
 
 def _find_an_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
+    #optimizers = [RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
     for optm in optimizers:
         solution = optm.find(node_list)
-        #if PushTransposeOptimizer.opt_number > 60:
+        #if PushTransposeOptimizer.opt_number >= 10 and optm == ConvBatchNormOptimizer:
         #    return None
         if solution is not None:
             return solution
