@@ -106,10 +106,11 @@ class LinkedNode(object):
         for pre_ in self.precedence:
             if len(pre_.successor) > 1:
                 return False
+        '''
         for succ_ in self.successor:
             if succ_.origin is None:
                 return False
-
+        '''
         return len(self.successor) >= 1 and \
                len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.successor[0].in_or_out
 
@@ -193,7 +194,7 @@ class LinkedNode(object):
             self.input[key] = name
 
     def out_redirect(self, old_name, name):
-        assert self.in_or_out
+        # assert self.in_or_out
         if old_name in self.output:
             self.output[old_name] = name
         else:
@@ -540,20 +541,36 @@ class FanInSolution(Solution):
         if self.begin.origin.name == 'encoder_tcm_decoder/de_conv2d_batch_normalized_3/p_re_lu_40/add':
             aa = 1
 
+        is_output_fixed = False
         for suc in successor_list:
+            if suc.origin is None:
+                output_name = list(self.begin.output.values())[0]
+                fan_in_node_output_name = 'fan_in_adjustment_out' + str(FanInSolution.number)
+                self.begin.out_redirect(output_name, fan_in_node_output_name)
+                FanInSolution.number = FanInSolution.number + 1
+                for suc_2 in successor_list:
+                    suc_2.in_redirect(output_name, fan_in_node_output_name)
+                is_output_fixed = True
+
+        for suc in successor_list:
+            if suc.origin is None:
+                transpose_output_name = [output_name]
+            else:
+                transpose_output_name = ['fan_in_adjustment_out' + str(FanInSolution.number)]
+
             if self.perm == []:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
                         ['fan_in_adjustment_in' + str(FanInSolution.number)],
-                        ['fan_in_adjustment_out' + str(FanInSolution.number)],
+                        transpose_output_name,
                         name='TransposeFanIn_succ_' + str(FanInSolution.number)))
             else:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
                         ['fan_in_adjustment_in' + str(FanInSolution.number)],
-                        ['fan_in_adjustment_out' + str(FanInSolution.number)],
+                        transpose_output_name,
                         perm=self.perm,
                         name='TransposeFanIn_succ_' + str(FanInSolution.number)))
                 FanInSolution.number = FanInSolution.number + 1
