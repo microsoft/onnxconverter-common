@@ -1104,7 +1104,7 @@ class PushTransposeOptimizer(object):
                 if next.origin is not None and next.origin.op_type == 'Transpose':
                     PushTransposeOptimizer.opt_number += 1
                     print('PushTransposeOptimizer.opt_number='+str(PushTransposeOptimizer.opt_number))
-                    if PushTransposeOptimizer.opt_number <= 60:
+                    if PushTransposeOptimizer.opt_number <= 100000:
                         solution = PushTransposeSolution(n_, next, next.successor[0], None)
                         return solution
                     else:
