@@ -65,7 +65,7 @@ class LinkedNode(object):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
             ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
-            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity', 'Neg']
+            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity', 'Neg', 'Clip']
 
     @property
     def broadcast(self):
@@ -106,11 +106,6 @@ class LinkedNode(object):
         for pre_ in self.precedence:
             if len(pre_.successor) > 1:
                 return False
-        '''
-        for succ_ in self.successor:
-            if succ_.origin is None:
-                return False
-        '''
         return len(self.successor) >= 1 and \
                len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.successor[0].in_or_out
 
@@ -194,7 +189,6 @@ class LinkedNode(object):
             self.input[key] = name
 
     def out_redirect(self, old_name, name):
-        # assert self.in_or_out
         if old_name in self.output:
             self.output[old_name] = name
         else:
@@ -448,8 +442,6 @@ class MergeSolution(Solution):
     def apply(self, node_list):
         perm0 = self.get_perm(self.begin_n.origin)
         perm1 = self.get_perm(self.end_p.origin)
-        if len(perm0) != len(perm1):
-            aa = 1
         assert len(perm0) == len(perm1)
         perm_f = [perm0[idx] for idx in perm1]
         if self.is_useless_transpose(perm_f):
@@ -538,10 +530,6 @@ class FanInSolution(Solution):
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
-        if self.begin.origin.name == 'encoder_tcm_decoder/de_conv2d_batch_normalized_3/p_re_lu_40/add':
-            aa = 1
-
-        is_output_fixed = False
         for suc in successor_list:
             if suc.origin is None:
                 output_name = list(self.begin.output.values())[0]
@@ -550,7 +538,6 @@ class FanInSolution(Solution):
                 FanInSolution.number = FanInSolution.number + 1
                 for suc_2 in successor_list:
                     suc_2.in_redirect(output_name, fan_in_node_output_name)
-                is_output_fixed = True
 
         for suc in successor_list:
             if suc.origin is None:
@@ -603,7 +590,6 @@ class MergePadConvSolution(Solution):
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
             return node_list
 
-        print('end_p name='+self.end_p.origin.name)
         for attr_idx in range(len(self.end_p.origin.attribute)):
             if attr_idx == 0:
                 # for other cases, set auto_pad = 'NOTSET'
@@ -651,8 +637,6 @@ class ConvBatchNormSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        if self.begin_n.origin.name == 'block_13_project':
-            aa = 1
         conv_ori_weight = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0])
         conv_ori_bias = 0
         if len(self.begin_n.precedence) > 2:
@@ -788,8 +772,6 @@ class TransposeOptimizer(object):
                 branch_perm = []
                 number_branch = 0
                 good_branch = 0
-                if n_.origin.name == 'encoder_tcm_decoder/de_conv2d_batch_normalized_3/p_re_lu_40/add':
-                    aa = 1
                 for branch in n_.precedence:
                     if branch.is_transpose and branch.in_single_path_and_inner:
                         if number_branch == 0:
@@ -871,11 +853,6 @@ _transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze'}
 _broadcast_types = {'Add', 'Mul', 'PRelu'}
 
 def _transpose_pass(node):
-    '''
-    for suc_ in node.successor:
-        if suc_.origin is None:
-            return False
-    '''
     if node.origin is None:
         return False
 
@@ -916,15 +893,6 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
         if pred.origin is not None and pred.unique_name in cur_perm_map:
             cur_perm = cur_perm_map[pred.unique_name]
 
-    if node.origin.name == 'encoder_tcm_decoder/de_conv2d_batch_normalized_2/p_re_lu_39/add':
-        aa = 1
-
-    if node.origin.name == 'encoder_tcm_decoder/de_conv2d_batch_normalized_3/p_re_lu_40/add':
-        aa = 1
-
-    if cur_perm is None:
-        aa = 1
-
     if count_init == 1:
         init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
         init_pred_value = np.expand_dims(init_pred_value, axis=tuple(range(len(cur_perm)-len(init_pred_value.shape))))
@@ -939,8 +907,6 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
     else:
         for add_transpose_idx_ in add_transpose_idx_list:
             prev = node.get_precedence_by_idx(add_transpose_idx_)
-            if PushTransposeSolution.transpose_number == 103:
-                aa = 1
             nnode = LinkedNode(
                 helper.make_node(
                     'Transpose',
@@ -994,10 +960,7 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
     target_perm = temp_perm
     new_node_name = node.origin.name + '_squeeze_' + str(PushTransposeSolution.transpose_number)
     node.origin = helper.make_node('Squeeze', node.origin.input, node.origin.output, new_node_name, **attrs)
-    # node_transpose_pass_name.add(new_node_name)
     PushTransposeSolution.transpose_number += 1
-    if node.origin.name == 'encoder_tcm_decoder/conv1d_depth_wise/depthwise:0_squeeze_squeeze_52':
-        aa = 1
     cur_perm_map[node.unique_name] = target_perm
     return cur_perm_map
 
@@ -1009,7 +972,6 @@ def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_
     attrs = {'axes': unsqueeze_axes}
     new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
     node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
-    # node_transpose_pass_name.add(new_node_name)
     PushTransposeSolution.transpose_number += 1
     cur_perm_map[node.unique_name] = [0, 2, 3, 1]
     return cur_perm_map
@@ -1040,8 +1002,6 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
         cur_perm_map = _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map)
     else:
         for idx_ in range(len(node.precedence)):
-            if node.get_precedence_by_idx(idx_).origin is None:
-                aa = 1
             pred_name = node.get_precedence_by_idx(idx_).unique_name
             if pred_name in cur_perm_map:
                 cur_perm_map[node.unique_name] = cur_perm_map[pred_name]
@@ -1060,8 +1020,6 @@ class PushTransposeSolution(Solution):
     def apply(self, node_list):
         cur_perm = Solution.get_perm(self.begin_n.origin)
         cur_perm_map = {self.begin_n.unique_name: cur_perm}
-        print('processed current Transpose node name=' + self.begin_n.unique_name + ' of type ' + self.begin_n.origin.op_type
-              + ' for the prev node=' + self.begin.unique_name + ' of type ' + self.begin.origin.op_type)
         candidate_queue = list()
         visited = set()
         for successor_ in self.begin_n.successor:
@@ -1075,15 +1033,11 @@ class PushTransposeSolution(Solution):
                 continue
             visited.add(node.unique_name)
             if _transpose_pass(node):
-                if node.origin is not None:
-                    print('processed pass node name=' + node.unique_name + ' of type ' + node.origin.op_type)
                 node_transpose_pass_name.add(node.unique_name)
                 node_transpose_pass.append((node, prev))
                 for successor_ in node.successor:
                     candidate_queue.append((successor_, node))
             else:
-                if node.origin is not None:
-                    print('processed no pass node name=' + node.unique_name + ' of type ' + node.origin.op_type)
                 node_transpose_no_pass.append((node, prev))
 
         for node_pair_ in node_transpose_pass:
@@ -1093,13 +1047,9 @@ class PushTransposeSolution(Solution):
         # add transpose
         for node_pair_ in node_transpose_no_pass:
             (node, prev) = node_pair_
-            if node.unique_name == 'encoder_tcm_decoder/conv1d_depth_wise_1/depthwise:0_depth_to_space__112':
-                aa = 1
             if prev.unique_name == self.begin.unique_name:
                 PushTransposeSolution.processed_conv_unique_name.add(self.begin.unique_name)
                 return node_list
-            if prev.unique_name == 'encoder_tcm_decoder/conv1d_depth_wise/conv1d/conv1d:0_squeeze__74':
-                aa = 1
             cur_perm = cur_perm_map[prev.unique_name]
 
         for node_pair_ in node_transpose_no_pass:
@@ -1130,9 +1080,6 @@ class PushTransposeSolution(Solution):
                             perm=cur_perm,
                             name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
                     PushTransposeSolution.transpose_number += 1
-                    print("add transpose name = " + node.unique_name)
-                    if node.unique_name == 'encoder_tcm_decoder/conv1d_depth_wise_1/depthwise:0_depth_to_space':
-                        aa = 1
                     node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
 
         node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
@@ -1149,36 +1096,24 @@ class PushTransposeOptimizer(object):
         first_node_type = _nchw_input_node_type + _activation_node_type
         solution = None
         for n_ in node_list:
-            if n_.origin.name == 'encoder_tcm_decoder/conv1d_depth_wise_4/conv1d_8/conv1d_conv':
-                aa = 1
             if n_.unique_name in PushTransposeSolution.processed_conv_unique_name:
                 continue
             if n_.origin.op_type in first_node_type and len(n_.successor) == 1 and n_.successor[0] is not None:
                 next = n_.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
-                    PushTransposeOptimizer.opt_number += 1
-                    if PushTransposeOptimizer.opt_number == 10:
-                        aa = 1
-                    print('PushTransposeOptimizer.opt_number='+str(PushTransposeOptimizer.opt_number))
-                    if PushTransposeOptimizer.opt_number <= 10000:
-                        solution = PushTransposeSolution(n_, next, next.successor[0], None)
-                        return solution
-                    else:
-                        return None
+                    solution = PushTransposeSolution(n_, next, next.successor[0], None)
+                    return solution
 
         return solution
 
 
 def _find_an_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
-    #optimizers = [RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
     for optm in optimizers:
         solution = optm.find(node_list)
-        #if PushTransposeOptimizer.opt_number >= 10 and optm == ConvBatchNormOptimizer:
-        #    return None
         if solution is not None:
             return solution
 
@@ -1260,7 +1195,6 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
         node_list = _apply_optimization(solution, node_list)
         solution = _find_an_optimization(node_list)
 
-
     if target_opset is None or target_opset < 9:
         node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
@@ -1311,8 +1245,6 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     node_list = [n_ for n_ in node_list if n_.origin is not None]
     regenerated = []
     for n_ in node_list:
-        if n_.origin.name == 'TransposeFanIn_succ_4':
-            aa = 1
         nodes = n_.generate()
         regenerated.extend(nodes)
         if len(n_.initializers) > 0:
