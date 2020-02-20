@@ -849,14 +849,14 @@ class ConvBatchNormOptimizer(object):
         return solution
 
 
-_transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze'}
+_transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
 _broadcast_types = {'Add', 'Mul', 'PRelu'}
 
 def _transpose_pass(node):
     if node.origin is None:
         return False
 
-    if node.element_wise or node.origin.op_type == 'Slice':
+    if node.element_wise:
         return True
 
     if node.origin.op_type in _transpose_pass_type_set:
@@ -990,16 +990,13 @@ def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm
 
 
 def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map):
+    type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze, 'Unsqueeze': _process_transpose_unsqueeze,
+                     'Slice': _process_transpose_slice}
+
     if node.origin.op_type in _broadcast_types:
         node_list, cur_perm_map = _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
-    elif node.origin.op_type == 'Pad':
-        cur_perm_map = _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map)
-    elif node.origin.op_type == 'Squeeze':
-        cur_perm_map = _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map)
-    elif node.origin.op_type == 'Unsqueeze':
-        cur_perm_map = _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map)
-    elif node.origin.op_type == 'Slice':
-        cur_perm_map = _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map)
+    elif node.origin.op_type in type_func_map:
+        cur_perm_map = type_func_map[node.origin.op_type](node, node_list, node_transpose_pass_name, cur_perm_map)
     else:
         for idx_ in range(len(node.precedence)):
             pred_name = node.get_precedence_by_idx(idx_).unique_name
@@ -1087,7 +1084,7 @@ class PushTransposeSolution(Solution):
 
 
 _nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization']
-_activation_node_type = ['LeakyRelu', 'Tanh']
+_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus', 'Softsign', 'Tanh']
 
 class PushTransposeOptimizer(object):
     opt_number = 0
@@ -1104,6 +1101,7 @@ class PushTransposeOptimizer(object):
                     for pred in n_.precedence:
                         if pred.origin is not None and pred.origin.op_type in _nchw_input_node_type:
                             pred_nchw = True
+                            break
                 if pred_nchw or n_.origin.op_type in _nchw_input_node_type:
                     next = n_.successor[0]
                     if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
