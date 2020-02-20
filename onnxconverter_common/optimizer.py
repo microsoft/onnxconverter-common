@@ -1099,10 +1099,16 @@ class PushTransposeOptimizer(object):
             if n_.unique_name in PushTransposeSolution.processed_conv_unique_name:
                 continue
             if n_.origin.op_type in first_node_type and len(n_.successor) == 1 and n_.successor[0] is not None:
-                next = n_.successor[0]
-                if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
-                    solution = PushTransposeSolution(n_, next, next.successor[0], None)
-                    return solution
+                pred_nchw = False
+                if n_.origin.op_type in _activation_node_type:
+                    for pred in n_.precedence:
+                        if pred.origin is not None and pred.origin.op_type in _nchw_input_node_type:
+                            pred_nchw = True
+                if pred_nchw or n_.origin.op_type in _nchw_input_node_type:
+                    next = n_.successor[0]
+                    if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
+                        solution = PushTransposeSolution(n_, next, next.successor[0], None)
+                        return solution
 
         return solution
 
