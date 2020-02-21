@@ -569,6 +569,8 @@ class FanInSolution(Solution):
 
 
 class MergePadConvSolution(Solution):
+    processed_unique_name = set()
+
     def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
@@ -588,6 +590,7 @@ class MergePadConvSolution(Solution):
         pads_new = np.asarray(pads_new)
         auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            MergePadConvSolution.processed_unique_name.add(self.begin_n.unique_name)
             return node_list
 
         for attr_idx in range(len(self.end_p.origin.attribute)):
@@ -807,6 +810,8 @@ class MergePadConvOptimizer(object):
     def find(node_list):
         solution = None
         for n_ in node_list:
+            if n_.unique_name in MergePadConvSolution.processed_unique_name:
+                continue
             if n_.origin.op_type == 'Pad':
                 next = n_.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Conv':
@@ -895,7 +900,7 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
 
     if count_init == 1:
         init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
-        for axis_ in range(len(cur_perm)-len(init_pred_value.shape), -1, -1):
+        for axis_ in range(len(cur_perm) - len(init_pred_value.shape)):
             init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
         init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
         add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name+'_initializer_'+str(PushTransposeSolution.transpose_number))
