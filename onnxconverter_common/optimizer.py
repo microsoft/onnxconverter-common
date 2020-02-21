@@ -895,7 +895,8 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
 
     if count_init == 1:
         init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
-        init_pred_value = np.expand_dims(init_pred_value, axis=tuple(range(len(cur_perm)-len(init_pred_value.shape))))
+        for axis_ in range(len(cur_perm)-len(init_pred_value.shape), -1, -1):
+            init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
         init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
         add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name+'_initializer_'+str(PushTransposeSolution.transpose_number))
         PushTransposeSolution.transpose_number += 1
@@ -1023,7 +1024,7 @@ class PushTransposeSolution(Solution):
             candidate_queue.append((successor_, self.begin))
         node_transpose_no_pass = list()
         node_transpose_pass = list()
-        node_transpose_pass_name = set()
+        node_transpose_pass_name = {self.begin_n.unique_name}
         while len(candidate_queue) > 0:
             (node, prev) = candidate_queue.pop(0)
             if node.unique_name in visited:
