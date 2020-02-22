@@ -65,7 +65,7 @@ class LinkedNode(object):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
             ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
-            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity']
+            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity', 'Neg', 'Clip']
 
     @property
     def broadcast(self):
@@ -189,7 +189,6 @@ class LinkedNode(object):
             self.input[key] = name
 
     def out_redirect(self, old_name, name):
-        assert self.in_or_out
         if old_name in self.output:
             self.output[old_name] = name
         else:
@@ -532,22 +531,36 @@ class FanInSolution(Solution):
         successor_list = list(self.begin.successor)
 
         for suc in successor_list:
+            if suc.origin is None:
+                output_name = list(self.begin.output.values())[0]
+                fan_in_node_output_name = 'fan_in_adjustment_out' + str(FanInSolution.number)
+                self.begin.out_redirect(output_name, fan_in_node_output_name)
+                FanInSolution.number = FanInSolution.number + 1
+                for suc_2 in successor_list:
+                    suc_2.in_redirect(output_name, fan_in_node_output_name)
+
+        for suc in successor_list:
+            if suc.origin is None:
+                transpose_output_name = [output_name]
+            else:
+                transpose_output_name = ['fan_in_adjustment_out' + str(FanInSolution.number)]
+
             if self.perm == []:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
-                        ['fan_out_adjustment_in' + str(FanOutSolution.number)],
-                        ['fan_out_adjustment_out' + str(FanOutSolution.number)],
-                        name='TransposeFanIn_succ_' + str(FanOutSolution.number)))
+                        ['fan_in_adjustment_in' + str(FanInSolution.number)],
+                        transpose_output_name,
+                        name='TransposeFanIn_succ_' + str(FanInSolution.number)))
             else:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
-                        ['fan_out_adjustment_in' + str(FanOutSolution.number)],
-                        ['fan_out_adjustment_out' + str(FanOutSolution.number)],
+                        ['fan_in_adjustment_in' + str(FanInSolution.number)],
+                        transpose_output_name,
                         perm=self.perm,
-                        name='TransposeFanIn_succ_' + str(FanOutSolution.number)))
-            FanOutSolution.number = FanOutSolution.number + 1
+                        name='TransposeFanIn_succ_' + str(FanInSolution.number)))
+                FanInSolution.number = FanInSolution.number + 1
             node_list = Solution.add_siso_node(node_list, self.begin, suc, list(self.begin.output.values())[0], nnode)
 
         for branch in precedence_list:
@@ -556,6 +569,8 @@ class FanInSolution(Solution):
 
 
 class MergePadConvSolution(Solution):
+    processed_unique_name = set()
+
     def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
@@ -563,7 +578,11 @@ class MergePadConvSolution(Solution):
         if len(self.begin_n.origin.attribute) > 1:
             pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
         else:
-            pads = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0]).tolist()
+            pad_tensor = self.begin_n.get_precedence_by_idx(1)
+            if pad_tensor is None:
+                pads = numpy_helper.to_array(self.begin_n.initializers[0]).tolist()
+            else:
+                pads = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0]).tolist()
         half_len_pads = len(pads) // 2
         pads_new = pads[2:half_len_pads]
         pads_new.extend(pads[half_len_pads + 2:])
@@ -571,9 +590,10 @@ class MergePadConvSolution(Solution):
         pads_new = np.asarray(pads_new)
         auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            MergePadConvSolution.processed_unique_name.add(self.begin_n.unique_name)
             return node_list
 
-        for attr_idx in range(5):
+        for attr_idx in range(len(self.end_p.origin.attribute)):
             if attr_idx == 0:
                 # for other cases, set auto_pad = 'NOTSET'
                 attrs.update({'auto_pad': 'NOTSET'})
@@ -645,9 +665,11 @@ class ConvBatchNormSolution(Solution):
             self.begin_n.input[conv_bias_name] = conv_bias_name
         self.begin_n.initializers = [conv_weight_initilizer, conv_bias_initilizer]
 
-        self.end.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
-        self.begin_n.successor = [self.end]
-        self.end.precedence[self.end.precedence.index(self.end_p)] = self.begin_n
+        self.begin_n.successor = []
+        for end_ in self.end:
+            end_.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
+            self.begin_n.successor.append(end_)
+            end_.precedence[end_.precedence.index(self.end_p)] = self.begin_n
 
         node_list.remove(self.end_p)
 
@@ -788,6 +810,8 @@ class MergePadConvOptimizer(object):
     def find(node_list):
         solution = None
         for n_ in node_list:
+            if n_.unique_name in MergePadConvSolution.processed_unique_name:
+                continue
             if n_.origin.op_type == 'Pad':
                 next = n_.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Conv':
@@ -824,14 +848,277 @@ class ConvBatchNormOptimizer(object):
                             if len(next.precedence[idx_].tensors) == 0:
                                 continue
 
-                    solution = ConvBatchNormSolution(n_.get_precedence_by_idx(0), n_, next, next.successor[0])
+                    solution = ConvBatchNormSolution(n_.get_precedence_by_idx(0), n_, next, next.successor)
                     return solution
 
         return solution
 
 
+_transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
+_broadcast_types = {'Add', 'Mul', 'PRelu'}
+
+def _transpose_pass(node):
+    if node.origin is None:
+        return False
+
+    if node.element_wise:
+        return True
+
+    if node.origin.op_type in _transpose_pass_type_set:
+        return True
+
+    return False
+
+
+def _get_reverse_perm(perm):
+    target_perm = []
+    for idx in range(len(perm)):
+        target_perm.append(perm.index(idx))
+    return target_perm
+
+
+def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+    count_init = 0
+    init_pred = None
+    init_idx = None
+    count_pass_node = 0
+    add_transpose_idx_list = []
+    cur_perm = None
+    for idx_ in range(len(node.precedence)):
+        pred = node.get_precedence_by_idx(idx_)
+        if pred.origin is None:
+            count_init += 1
+            init_pred = pred
+            init_idx = idx_
+        elif pred.unique_name in node_transpose_pass_name:
+            count_pass_node += 1
+        else:
+            add_transpose_idx_list.append(idx_)
+
+        if pred.origin is not None and pred.unique_name in cur_perm_map:
+            cur_perm = cur_perm_map[pred.unique_name]
+
+    if count_init == 1:
+        init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
+        for axis_ in range(len(cur_perm) - len(init_pred_value.shape)):
+            init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
+        init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
+        add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name+'_initializer_'+str(PushTransposeSolution.transpose_number))
+        PushTransposeSolution.transpose_number += 1
+        node.initializers = [add_initilizer]
+        node.precedence.remove(node.get_precedence_by_idx(init_idx))
+        node.in_redirect(node.get_input_by_idx(init_idx), add_initilizer.name)
+    elif count_pass_node == 2:
+        pass
+    else:
+        for add_transpose_idx_ in add_transpose_idx_list:
+            prev = node.get_precedence_by_idx(add_transpose_idx_)
+            nnode = LinkedNode(
+                helper.make_node(
+                    'Transpose',
+                    ['push_transpose_in' + str(PushTransposeSolution.transpose_number)],
+                    ['push_transpose_out' + str(PushTransposeSolution.transpose_number)],
+                    perm=_get_reverse_perm(cur_perm),
+                    name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
+            PushTransposeSolution.transpose_number += 1
+            node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
+
+    cur_perm_map[node.unique_name] = cur_perm
+    return node_list, cur_perm_map
+
+
+def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map):
+    pad_tensor = node.get_precedence_by_idx(1)
+    if pad_tensor is None:
+        pads_value = numpy_helper.to_array(node.initializers[0])
+    else:
+        pads_value = numpy_helper.to_array(pad_tensor.tensors[0])
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    target_perm = _get_reverse_perm(cur_perm)
+    target_perm_shift = [perm_ + len(target_perm) for perm_ in target_perm]
+    reshape_perm = target_perm + target_perm_shift
+    pads_value = np.asarray([pads_value[reshape_perm[idx_]] for idx_ in range(len(reshape_perm))])
+    add_initilizer = numpy_helper.from_array(pads_value, name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+    PushTransposeSolution.transpose_number += 1
+    node.initializers = [add_initilizer]
+    if pad_tensor is not None:
+        node.precedence.remove(node.get_precedence_by_idx(1))
+    node.in_redirect(node.get_input_by_idx(1), add_initilizer.name)
+    cur_perm_map[node.unique_name] = cur_perm
+    return cur_perm_map
+
+
+def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map):
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    squeeze_axes = helper.get_attribute_value(node.origin.attribute[0])
+    squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
+    attrs = {'axes': squeeze_axes}
+    temp_perm = cur_perm.copy()
+    sub_list = [0] * len(cur_perm)
+    for axis in squeeze_axes:
+        temp_perm.remove(axis)
+        for axis_sub_ in range(axis+1, len(cur_perm)):
+            sub_list[axis_sub_] = sub_list[axis_sub_] + 1
+
+    for idx_ in range(len(temp_perm)):
+        temp_perm[idx_] = temp_perm[idx_] - sub_list[temp_perm[idx_]]
+    target_perm = temp_perm
+    new_node_name = node.origin.name + '_squeeze_' + str(PushTransposeSolution.transpose_number)
+    node.origin = helper.make_node('Squeeze', node.origin.input, node.origin.output, new_node_name, **attrs)
+    PushTransposeSolution.transpose_number += 1
+    cur_perm_map[node.unique_name] = target_perm
+    return cur_perm_map
+
+
+def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map):
+    unsqueeze_axes = helper.get_attribute_value(node.origin.attribute[0])
+    unsqueeze_axes = [idx_ + 1 for idx_ in unsqueeze_axes]
+
+    attrs = {'axes': unsqueeze_axes}
+    new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
+    node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
+    PushTransposeSolution.transpose_number += 1
+    cur_perm_map[node.unique_name] = [0, 2, 3, 1]
+    return cur_perm_map
+
+
+def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map):
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    add_initilizer = numpy_helper.from_array(np.asarray(cur_perm).astype(np.int64), name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+    PushTransposeSolution.transpose_number += 1
+    node.initializers = [add_initilizer]
+    node.precedence.remove(node.get_precedence_by_idx(3))
+    node.in_redirect(node.get_input_by_idx(3), add_initilizer.name)
+    cur_perm_map[node.unique_name] = cur_perm
+    return cur_perm_map
+
+
+def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map):
+    type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze, 'Unsqueeze': _process_transpose_unsqueeze,
+                     'Slice': _process_transpose_slice}
+
+    if node.origin.op_type in _broadcast_types:
+        node_list, cur_perm_map = _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+    elif node.origin.op_type in type_func_map:
+        cur_perm_map = type_func_map[node.origin.op_type](node, node_list, node_transpose_pass_name, cur_perm_map)
+    else:
+        for idx_ in range(len(node.precedence)):
+            pred_name = node.get_precedence_by_idx(idx_).unique_name
+            if pred_name in cur_perm_map:
+                cur_perm_map[node.unique_name] = cur_perm_map[pred_name]
+                break
+    return node_list, cur_perm_map
+
+
+class PushTransposeSolution(Solution):
+
+    transpose_number = 0
+    processed_conv_unique_name = set()
+
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        cur_perm = Solution.get_perm(self.begin_n.origin)
+        cur_perm_map = {self.begin_n.unique_name: cur_perm}
+        candidate_queue = list()
+        visited = set()
+        for successor_ in self.begin_n.successor:
+            candidate_queue.append((successor_, self.begin))
+        node_transpose_no_pass = list()
+        node_transpose_pass = list()
+        node_transpose_pass_name = {self.begin_n.unique_name}
+        while len(candidate_queue) > 0:
+            (node, prev) = candidate_queue.pop(0)
+            if node.unique_name in visited:
+                continue
+            visited.add(node.unique_name)
+            if _transpose_pass(node):
+                node_transpose_pass_name.add(node.unique_name)
+                node_transpose_pass.append((node, prev))
+                for successor_ in node.successor:
+                    candidate_queue.append((successor_, node))
+            else:
+                node_transpose_no_pass.append((node, prev))
+
+        for node_pair_ in node_transpose_pass:
+            (node, prev) = node_pair_
+            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
+
+        # add transpose
+        for node_pair_ in node_transpose_no_pass:
+            (node, prev) = node_pair_
+            if prev.unique_name == self.begin.unique_name:
+                PushTransposeSolution.processed_conv_unique_name.add(self.begin.unique_name)
+                return node_list
+            cur_perm = cur_perm_map[prev.unique_name]
+
+        for node_pair_ in node_transpose_no_pass:
+            node = node_pair_[0]
+            if node.origin is None:
+                prev = node_pair_[1]
+                successor_list = list(prev.successor)
+                for suc in successor_list:
+                    if suc.origin is None:
+                        output_name = list(prev.output.values())[0]
+                        push_transpose_in_node_output_name = 'push_transpose_out_' + str(PushTransposeSolution.transpose_number)
+                        prev.out_redirect(output_name, push_transpose_in_node_output_name)
+                        PushTransposeSolution.transpose_number += 1
+                        for suc_2 in successor_list:
+                            suc_2.in_redirect(output_name, push_transpose_in_node_output_name)
+                transpose_output_name = [output_name]
+            else:
+                transpose_output_name = ['push_transpose_out_' + str(PushTransposeSolution.transpose_number)]
+
+            for prev in node.precedence:
+                if prev.origin is not None and prev.unique_name in cur_perm_map:
+                    cur_perm = cur_perm_map[prev.unique_name]
+                    nnode = LinkedNode(
+                        helper.make_node(
+                            'Transpose',
+                            ['push_transpose_in_' + str(PushTransposeSolution.transpose_number)],
+                            transpose_output_name,
+                            perm=cur_perm,
+                            name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
+                    PushTransposeSolution.transpose_number += 1
+                    node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
+
+        node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
+        return node_list
+
+
+_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization']
+_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus', 'Softsign', 'Tanh']
+
+class PushTransposeOptimizer(object):
+    opt_number = 0
+    @staticmethod
+    def find(node_list):
+        first_node_type = _nchw_input_node_type + _activation_node_type
+        solution = None
+        for n_ in node_list:
+            if n_.unique_name in PushTransposeSolution.processed_conv_unique_name:
+                continue
+            if n_.origin.op_type in first_node_type and len(n_.successor) == 1 and n_.successor[0] is not None:
+                pred_nchw = False
+                if n_.origin.op_type in _activation_node_type:
+                    for pred in n_.precedence:
+                        if pred.origin is not None and pred.origin.op_type in _nchw_input_node_type:
+                            pred_nchw = True
+                            break
+                if pred_nchw or n_.origin.op_type in _nchw_input_node_type:
+                    next = n_.successor[0]
+                    if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
+                        solution = PushTransposeSolution(n_, next, next.successor[0], None)
+                        return solution
+
+        return solution
+
+
 def _find_an_optimization(node_list, target_opset=None):
-    optimizers = [RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
+    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
