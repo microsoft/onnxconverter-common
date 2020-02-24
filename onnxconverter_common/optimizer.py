@@ -877,7 +877,25 @@ def _get_reverse_perm(perm):
     return target_perm
 
 
-def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_idx):
+    for axis_ in range(len(cur_perm) - len(init_pred_value.shape)):
+        init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
+    init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
+    add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+    PushTransposeSolution.transpose_number += 1
+    node.initializers = [add_initilizer]
+    prev = node.get_precedence_by_idx(init_idx)
+    prev.successor.remove(node)
+    node.precedence.remove(prev)
+    node.in_redirect(node.get_input_by_idx(init_idx), add_initilizer.name)
+    return node
+
+
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu'}
+
+
+def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
     count_init = 0
     init_pred = None
     init_idx = None
@@ -898,32 +916,61 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
         if pred.origin is not None and pred.unique_name in cur_perm_map:
             cur_perm = cur_perm_map[pred.unique_name]
 
+    return count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm
+
+
+def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+    count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
+        = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
+    if count_init == 1 or count_pass_node == 2:
+        return True
+    else:
+        can_process = True
+        for add_transpose_idx_ in add_transpose_idx_list:
+            prev = node.get_precedence_by_idx(add_transpose_idx_)
+            if prev.origin.op_type == 'Identity':
+                while prev.origin is not None and prev.origin.op_type == 'Identity':
+                    prev = prev.get_precedence_by_idx(0)
+                if prev.origin is not None:
+                    can_process = False
+                    break
+            elif prev.origin.op_type not in _broadcast_flip_whitelist:
+                can_process = False
+                break
+        return can_process
+
+
+def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+    count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
+        = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
+
+    cur_perm_map[node.unique_name] = cur_perm
+
     if count_init == 1:
         init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
-        for axis_ in range(len(cur_perm) - len(init_pred_value.shape)):
-            init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
-        init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
-        add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name+'_initializer_'+str(PushTransposeSolution.transpose_number))
-        PushTransposeSolution.transpose_number += 1
-        node.initializers = [add_initilizer]
-        node.precedence.remove(node.get_precedence_by_idx(init_idx))
-        node.in_redirect(node.get_input_by_idx(init_idx), add_initilizer.name)
+        _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_idx)
     elif count_pass_node == 2:
         pass
     else:
         for add_transpose_idx_ in add_transpose_idx_list:
             prev = node.get_precedence_by_idx(add_transpose_idx_)
-            nnode = LinkedNode(
-                helper.make_node(
-                    'Transpose',
-                    ['push_transpose_in' + str(PushTransposeSolution.transpose_number)],
-                    ['push_transpose_out' + str(PushTransposeSolution.transpose_number)],
-                    perm=_get_reverse_perm(cur_perm),
-                    name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
-            PushTransposeSolution.transpose_number += 1
-            node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
+            if prev.origin.op_type == 'Identity':
+                while prev.origin is not None and prev.origin.op_type == 'Identity':
+                    prev = prev.get_precedence_by_idx(0)
+                if prev.origin is None:
+                    init_pred_value = numpy_helper.to_array(prev.tensors[0])
+                    _update_broadcast_from_initializers(node, init_pred_value, cur_perm, add_transpose_idx_)
+            elif prev.origin.op_type in _broadcast_flip_whitelist:
+                nnode = LinkedNode(
+                    helper.make_node(
+                        'Transpose',
+                        ['push_transpose_in' + str(PushTransposeSolution.transpose_number)],
+                        ['push_transpose_out' + str(PushTransposeSolution.transpose_number)],
+                        perm=_get_reverse_perm(cur_perm),
+                        name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
+                PushTransposeSolution.transpose_number += 1
+                node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
 
-    cur_perm_map[node.unique_name] = cur_perm
     return node_list, cur_perm_map
 
 
@@ -1015,12 +1062,13 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
 class PushTransposeSolution(Solution):
 
     transpose_number = 0
-    processed_conv_unique_name = set()
+    processed_unique_name = set()
 
     def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
+        PushTransposeSolution.processed_unique_name.add(self.begin.unique_name)
         cur_perm = Solution.get_perm(self.begin_n.origin)
         cur_perm_map = {self.begin_n.unique_name: cur_perm}
         candidate_queue = list()
@@ -1044,6 +1092,13 @@ class PushTransposeSolution(Solution):
                 node_transpose_no_pass.append((node, prev))
 
         for node_pair_ in node_transpose_pass:
+            node = node_pair_[0]
+            success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+            if not success:
+                PushTransposeSolution.processed_unique_name.add(self.begin.unique_name)
+                return node_list
+
+        for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
             node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
 
@@ -1051,7 +1106,7 @@ class PushTransposeSolution(Solution):
         for node_pair_ in node_transpose_no_pass:
             (node, prev) = node_pair_
             if prev.unique_name == self.begin.unique_name:
-                PushTransposeSolution.processed_conv_unique_name.add(self.begin.unique_name)
+                PushTransposeSolution.processed_unique_name.add(self.begin.unique_name)
                 return node_list
             cur_perm = cur_perm_map[prev.unique_name]
 
@@ -1099,7 +1154,7 @@ class PushTransposeOptimizer(object):
         first_node_type = _nchw_input_node_type + _activation_node_type
         solution = None
         for n_ in node_list:
-            if n_.unique_name in PushTransposeSolution.processed_conv_unique_name:
+            if n_.unique_name in PushTransposeSolution.processed_unique_name:
                 continue
             if n_.origin.op_type in first_node_type and len(n_.successor) == 1 and n_.successor[0] is not None:
                 pred_nchw = False
