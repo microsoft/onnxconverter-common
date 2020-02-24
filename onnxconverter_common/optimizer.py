@@ -903,6 +903,7 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     prev.successor.remove(node)
     node.precedence.remove(prev)
     node.in_redirect(node.get_input_by_idx(init_idx), add_initilizer.name)
+    return node
 
 
 _broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu'}
