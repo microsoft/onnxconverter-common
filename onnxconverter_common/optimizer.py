@@ -326,7 +326,6 @@ class Solution(object):
     Solution is the base class for solutions, and it has a basic function is to
      delete the node range of (begin, begin_n, end_p, end), where 'begin' and 'end' are excluded.
     """
-    type = 'Basic'
 
     def __init__(self, begin, begin_n, end_p, end):
         self.begin = begin
@@ -440,8 +439,6 @@ def match_perm(perm0, perm1):
 
 
 class MergeSolution(Solution):
-    type = 'Merge'
-
     def apply(self, node_list):
         perm0 = self.get_perm(self.begin_n.origin)
         perm1 = self.get_perm(self.end_p.origin)
@@ -462,8 +459,6 @@ class MergeSolution(Solution):
 
 
 class MoveForwardSolution(Solution):
-    type = 'MoveForward'
-
     def apply(self, node_list):
         self.begin_n.successor[0].in_redirect(self.begin_n.single_output, self.begin.get_output_by_idx(0))
         self.begin_n.in_redirect(self.begin.get_output_by_idx(0), self.end_p.single_output)
@@ -483,7 +478,6 @@ class MoveForwardSolution(Solution):
 
 
 class FanOutSolution(Solution):
-    type = 'FanOut'
     number = 0
 
     def apply(self, node_list):
@@ -515,8 +509,6 @@ class FanOutSolution(Solution):
 
 
 class TransposeFanOutSolution(Solution):
-    type = 'TransposeFanOut'
-
     def apply(self, node_list):
         successor_list = list(self.begin_n.successor)
         for suc_ in successor_list:
@@ -526,7 +518,6 @@ class TransposeFanOutSolution(Solution):
 
 
 class FanInSolution(Solution):
-    type = 'FanIn'
     number = 0
 
     def __init__(self, begin, begin_n, end_p, end, perm):
@@ -578,7 +569,6 @@ class FanInSolution(Solution):
 
 
 class MergePadConvSolution(Solution):
-    type = 'MergePadConv'
     processed_unique_name = set()
 
     def __init__(self, begin, begin_n, end_p, end):
@@ -625,8 +615,6 @@ class MergePadConvSolution(Solution):
 
 
 class NextToOutputSolution(Solution):
-    type = 'NextToOutput'
-
     def apply(self, node_list):
         for idx_, succ_ in enumerate(self.begin.successor):
             if succ_ == self.begin_n:
@@ -648,8 +636,6 @@ class NextToOutputSolution(Solution):
 
 
 class ConvBatchNormSolution(Solution):
-    type = 'ConvBatchNorm'
-
     def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
@@ -1075,7 +1061,6 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
 
 class PushTransposeSolution(Solution):
 
-    type = 'PushTranspose'
     transpose_number = 0
     processed_unique_name = set()
 
