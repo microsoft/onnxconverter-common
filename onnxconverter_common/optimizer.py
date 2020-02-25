@@ -210,6 +210,25 @@ class LinkedNode(object):
                 return pred
         return None
 
+    def get_precedence_tensor_by_idx(self, idx=0):
+        input_tensor_name = self.get_input_by_idx(idx)
+        for initializer_ in self.initializers:
+            if input_tensor_name == initializer_.name:
+                return initializer_
+
+        for pred in self.precedence:
+            if input_tensor_name in pred.output.values():
+                return pred.tensors[0]
+        return None
+
+    def get_attribute(self, attr_name, default_value=None):
+        if attr_name in self.attributes:
+            return self.attributes[attr_name]
+        found = [attr for attr in self.origin.attribute if attr.name == attr_name]
+        if found:
+            return helper.get_attribute_value(found[0])
+        return default_value
+
     def generate(self):
         updated = False
         if self.attributes:
@@ -235,7 +254,7 @@ class LinkedNode(object):
             onode.attribute.extend(
                 attr for attr in self.origin.attribute if attr.name not in self.attributes)
             onode.attribute.extend(
-                helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
+                helper.make_attribute(attr, self.attributes[attr]) for attr in self.attributes)
 
             return [onode]
 
@@ -575,8 +594,13 @@ class MergePadConvSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        if len(self.begin_n.origin.attribute) > 1:
-            pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
+        auto_pad_value = self.end_p.get_attribute('mode', 'constant')
+        if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            MergePadConvSolution.processed_unique_name.add(self.begin_n.unique_name)
+            return node_list
+
+        if len(self.begin_n.origin.input) == 1:
+            pads = self.begin_n.get_attribute('pads')
         else:
             pad_tensor = self.begin_n.get_precedence_by_idx(1)
             if pad_tensor is None:
@@ -584,30 +608,16 @@ class MergePadConvSolution(Solution):
             else:
                 pads = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0]).tolist()
         half_len_pads = len(pads) // 2
-        pads_new = pads[2:half_len_pads]
-        pads_new.extend(pads[half_len_pads + 2:])
-        attrs = {'pads': pads_new}
-        pads_new = np.asarray(pads_new)
-        auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
-        if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
-            MergePadConvSolution.processed_unique_name.add(self.begin_n.unique_name)
-            return node_list
+        pads_new_list = pads[2:half_len_pads]
+        pads_new_list.extend(pads[half_len_pads + 2:])
+        pads_new = np.asarray(pads_new_list, dtype=np.int64)
 
-        for attr_idx in range(len(self.end_p.origin.attribute)):
-            if attr_idx == 0:
-                # for other cases, set auto_pad = 'NOTSET'
-                attrs.update({'auto_pad': 'NOTSET'})
-                continue
-            cur_attr = self.end_p.origin.attribute[attr_idx]
-            if cur_attr.name == "pads":
-                conv_pads = np.asarray(helper.get_attribute_value(cur_attr))
-                pads_new = list(pads_new + conv_pads)
-                attrs.update({cur_attr.name: pads_new})
-            else:
-                attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
-
-        self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
-                                             self.end_p.origin.name + "_0", **attrs)
+        self.end_p.attributes['auto_pad'] = 'NOTSET'
+        pads = self.end_p.get_attribute('pads')
+        if pads:
+            conv_pads = np.asarray(pads, dtype=np.int64)
+            pads_new_list = list(pads_new + conv_pads)
+        self.end_p.attributes['pads'] = pads_new_list
 
         node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
 
@@ -648,7 +658,7 @@ class ConvBatchNormSolution(Solution):
         B = numpy_helper.to_array(self.end_p.get_precedence_by_idx(2).tensors[0])
         mean = numpy_helper.to_array(self.end_p.get_precedence_by_idx(3).tensors[0])
         var = numpy_helper.to_array(self.end_p.get_precedence_by_idx(4).tensors[0])
-        epsilon = helper.get_attribute_value(self.end_p.origin.attribute[0])
+        epsilon = self.end_p.get_attribute('epsilon', 1.0e-5)
         adjusted_scale = scale / np.sqrt(var + epsilon)
         conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
         conv_bias = (conv_ori_bias - mean) * adjusted_scale + B
@@ -975,32 +985,42 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
 
 
 def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map):
-    pad_tensor = node.get_precedence_by_idx(1)
-    if pad_tensor is None:
-        pads_value = numpy_helper.to_array(node.initializers[0])
+    if len(node.origin.input) == 1:
+        pads_value = node.get_attribute('pads')
     else:
-        pads_value = numpy_helper.to_array(pad_tensor.tensors[0])
+        pad_tensor = node.get_precedence_tensor_by_idx(1)
+        pads_value = numpy_helper.to_array(pad_tensor).tolist()
+
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
     target_perm = _get_reverse_perm(cur_perm)
     target_perm_shift = [perm_ + len(target_perm) for perm_ in target_perm]
     reshape_perm = target_perm + target_perm_shift
-    pads_value = np.asarray([pads_value[reshape_perm[idx_]] for idx_ in range(len(reshape_perm))])
+    pads_value = np.asarray([pads_value[reshape_perm[idx_]] for idx_ in range(len(reshape_perm))], dtype=np.int64)
     add_initilizer = numpy_helper.from_array(pads_value, name=node.origin.name + '_initializer_' + str(
         PushTransposeSolution.transpose_number))
-    PushTransposeSolution.transpose_number += 1
-    node.initializers = [add_initilizer]
-    if pad_tensor is not None:
-        node.precedence.remove(node.get_precedence_by_idx(1))
-    node.in_redirect(node.get_input_by_idx(1), add_initilizer.name)
+
+    if len(node.origin.input) == 1:
+        node.attributes['pads'] = pads_value.tolist()
+    else:
+        PushTransposeSolution.transpose_number += 1
+        node.initializers = [add_initilizer]
+        pred_1 = node.get_precedence_by_idx(1)
+        if pred_1 is not None:
+            node.precedence.remove(pred_1)
+        node.in_redirect(node.get_input_by_idx(1), add_initilizer.name)
+
     cur_perm_map[node.unique_name] = cur_perm
     return cur_perm_map
 
 
 def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map):
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
-    squeeze_axes = helper.get_attribute_value(node.origin.attribute[0])
-    squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
-    attrs = {'axes': squeeze_axes}
+    squeeze_axes = node.get_attribute('axes')
+    if squeeze_axes is None:
+        attrs = {}
+    else:
+        squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
+        attrs = {'axes': squeeze_axes}
     temp_perm = cur_perm.copy()
     sub_list = [0] * len(cur_perm)
     for axis in squeeze_axes:
@@ -1019,10 +1039,12 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
 
 
 def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map):
-    unsqueeze_axes = helper.get_attribute_value(node.origin.attribute[0])
-    unsqueeze_axes = [idx_ + 1 for idx_ in unsqueeze_axes]
-
-    attrs = {'axes': unsqueeze_axes}
+    unsqueeze_axes = node.get_attribute('axes')
+    if unsqueeze_axes is None:
+        attrs = {}
+    else:
+        unsqueeze_axes = [idx_ + 1 for idx_ in unsqueeze_axes]
+        attrs = {'axes': unsqueeze_axes}
     new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
     node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
     PushTransposeSolution.transpose_number += 1
