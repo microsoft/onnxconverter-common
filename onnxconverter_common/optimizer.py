@@ -864,6 +864,69 @@ class ConvBatchNormOptimizer(object):
         return solution
 
 
+def _is_good_for_match_shape(first_shape, second_shape):
+    if len(first_shape) < len(second_shape):
+        return False
+    if -1 in second_shape:
+        minus_one_idx = second_shape.index(-1)
+        if first_shape[0: minus_one_idx] != second_shape[0: minus_one_idx]:
+            return False
+        end_length = len(second_shape) - minus_one_idx - 1
+        return first_shape[-end_length:] == second_shape[-end_length:]
+    return first_shape == second_shape
+
+
+class MergeReshapeOptimizer(object):
+    @staticmethod
+    def find(node_list):
+        solution = None
+        for n_ in node_list:
+            if n_.origin.op_type == 'Reshape' and len(n_.successor) == 1:
+                n_tensors = n_.get_precedence_by_idx(1).tensors
+                if len(n_tensors) > 0:
+                    reshape_value_0 = numpy_helper.to_array(n_tensors[0]).tolist()
+                    next = n_.successor[0]
+                    if next.origin is not None and next.origin.op_type == 'Reshape':
+                        next_tensors = next.get_precedence_by_idx(1).tensors
+                        if len(next_tensors) > 0:
+                            reshape_value_1 = numpy_helper.to_array(next_tensors[0]).tolist()
+                            if _is_good_for_match_shape(reshape_value_0, reshape_value_1):
+                                solution = Solution(n_.get_precedence_by_idx(0), n_, next, next)
+                                return solution
+
+        return solution
+
+
+class MergeCastOptimizer(object):
+    @staticmethod
+    def find(node_list):
+        solution = None
+        for n_ in node_list:
+            if n_.origin.op_type == 'Cast' and len(n_.successor) == 1:
+                next = n_.successor[0]
+                if next.origin is not None and next.origin.op_type == 'Cast':
+                    solution = Solution(n_.get_precedence_by_idx(0), n_, next, next)
+                    return solution
+
+        return solution
+
+
+class MergeSqueezeUnsqueezeOptimizer(object):
+    @staticmethod
+    def find(node_list):
+        solution = None
+        for n_ in node_list:
+            if n_.origin.op_type == 'Squeeze' and len(n_.successor) == 1:
+                axes_0 = n_.get_attribute('axes')
+                next = n_.successor[0]
+                if next.origin is not None and next.origin.op_type == 'Unsqueeze' and len(next.successor) == 1:
+                    axes_1 = next.get_attribute('axes')
+                    if axes_0 == axes_1:
+                        solution = Solution(n_.get_precedence_by_idx(0), n_, next, next.successor[0])
+                        return solution
+
+        return solution
+
 _transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
 _broadcast_types = {'Add', 'Mul', 'PRelu'}
 
@@ -1195,7 +1258,9 @@ class PushTransposeOptimizer(object):
 
 
 def _find_an_optimization(node_list, target_opset=None):
-    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer]
+    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
+                  MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
+                  MergeSqueezeUnsqueezeOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
