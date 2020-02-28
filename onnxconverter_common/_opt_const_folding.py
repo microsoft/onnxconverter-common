@@ -1,5 +1,6 @@
 import onnx
 from onnx import numpy_helper, mapping, helper
+from .utils import reserve_node_for_embedded_graph
 
 
 class OnnxGraphContext:
@@ -81,40 +82,6 @@ class OnnxGraphContext:
         return [retval]
 
 
-def _fix_unamed_node(graph):
-    # type: (onnx.GraphProto)->onnx.GraphProto
-    node_id = [1]
-
-    def _ensure_node_named(node, incre_id):
-        if node.name:
-            return node
-        name = node.op_type.lower() + "_{}".format(incre_id[0])
-        incre_id[0] += 1
-        node.name = name
-        return node
-
-    named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in graph.node]
-
-    if node_id[0] == 1:
-        return graph
-
-    del graph.node[:]
-    graph.node.extend(named_nodes)
-    return graph
-
-
-def _reserve_node_for_embedded_graph(graph):
-    # type: (onnx.GraphProto)->frozenset
-    ginputs = []
-    for nd_ in graph.node:
-        if nd_.op_type in ['Loop', 'Scan']:
-            inner_graph = OnnxGraphContext.get_attribute(nd_, 'body')
-            inner_inputs = frozenset([i_.name for i_ in inner_graph.input])
-            for sub_nd_ in inner_graph.node:
-                ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
-    return frozenset(ginputs)
-
-
 def _dfs_calc(graph, node, reserved_names, node_status):
     # type: (OnnxGraphContext, onnx.NodeProto, frozenset, dict) -> int
     if node.name in node_status:
@@ -161,9 +128,8 @@ def _remove_unused_initializers(nodes, initializers, reversed_names):
 
 def const_folding_optimizer(graph):
     # type: (onnx.GraphProto)->onnx.GraphProto
-    fixed_graph = _fix_unamed_node(graph)
+    fixed_graph, reserved_names = reserve_node_for_embedded_graph(graph)
     opt_graph = OnnxGraphContext(fixed_graph)
-    reserved_names = _reserve_node_for_embedded_graph(fixed_graph)
     node_status = {}
     for ts_ in graph.output:
         _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], reserved_names, node_status)
