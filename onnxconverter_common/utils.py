@@ -7,7 +7,6 @@ import numbers, six
 import numpy as np
 import warnings
 from distutils.version import LooseVersion
-from onnx import helper
 
 
 def sparkml_installed():
@@ -334,45 +333,3 @@ def check_input_and_output_types(operator, good_input_types=None, good_output_ty
                 raise RuntimeError('Operator %s (type: %s) got an output %s with a wrong type %s. Only %s are allowed' \
                                    % (operator.full_name, operator.type, variable.full_name, type(variable.type),
                                       good_output_types))
-
-
-def _fix_unamed_node(graph):
-    # type: (onnx.GraphProto)->onnx.GraphProto
-    node_id = [1]
-
-    def _ensure_node_named(node, incre_id):
-        if node.name:
-            return node
-        name = node.op_type.lower() + "_{}".format(incre_id[0])
-        incre_id[0] += 1
-        node.name = name
-        return node
-
-    named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in graph.node]
-
-    if node_id[0] == 1:
-        return graph
-
-    del graph.node[:]
-    graph.node.extend(named_nodes)
-    return graph
-
-
-def _get_attribute(node, attr_name, default_value=None):
-    found = [attr for attr in node.attribute if attr.name == attr_name]
-    if found:
-        return helper.get_attribute_value(found[0])
-    return default_value
-
-
-def reserve_node_for_embedded_graph(graph):
-    # type: (onnx.GraphProto)->frozenset
-    fixed_graph = _fix_unamed_node(graph)
-    ginputs = []
-    for nd_ in fixed_graph.node:
-        if nd_.op_type in ['Loop', 'Scan']:
-            inner_graph = _get_attribute(nd_, 'body')
-            inner_inputs = frozenset([i_.name for i_ in inner_graph.input])
-            for sub_nd_ in inner_graph.node:
-                ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
-    return fixed_graph, frozenset(ginputs)

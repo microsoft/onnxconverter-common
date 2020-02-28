@@ -8,8 +8,7 @@ import numpy as np
 import onnx
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
-from .utils import reserve_node_for_embedded_graph
-from ._opt_const_folding import const_folding_optimizer
+from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph
 
 reserved_names_in_graph = frozenset()
 
@@ -184,7 +183,7 @@ class LinkedNode(object):
         return self.origin.output[0]
 
     @property
-    def should_be_reserved(self):
+    def is_reserved(self):
         if self.origin is None:
             return False
         for node_output_ in self.origin.output:
@@ -446,8 +445,8 @@ class Solution(object):
 
     def apply(self, node_list):
         node = self.begin_n  # type: LinkedNode
-        if node.should_be_reserved:
-            return node_list, False
+        if node.is_reserved:
+            return None, False
         if len(node.successor) > 1:
             node_list = self.delete_node_1ton(node_list, self.begin, node, self.end)
         else:
@@ -455,8 +454,8 @@ class Solution(object):
             while node != self.end:
                 assert len(node.successor) == 1
                 end = node.successor[0]
-                if node.should_be_reserved:
-                    return node_list, False
+                if node.is_reserved:
+                    return None, False
                 node = self.end if self.end is None else end
 
             node = self.begin_n
@@ -480,8 +479,8 @@ def match_perm(perm0, perm1):
 
 class MergeSolution(Solution):
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved or self.end_p.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved or self.end_p.is_reserved:
+            return None, False
 
         perm0 = self.get_perm(self.begin_n.origin)
         perm1 = self.get_perm(self.end_p.origin)
@@ -524,8 +523,8 @@ class FanOutSolution(Solution):
     number = 0
 
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved:
+            return None, False
         cur_perm = Solution.get_perm(self.begin_n.origin)
         # make a copy of self.end_p.successor
         successor_list = list(self.end_p.successor)
@@ -555,8 +554,8 @@ class FanOutSolution(Solution):
 
 class TransposeFanOutSolution(Solution):
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved:
+            return None, False
         successor_list = list(self.begin_n.successor)
         for suc_ in successor_list:
             node_list = Solution.delete_node_1ton(node_list, self.begin_n, suc_, suc_.successor[0])
@@ -575,8 +574,8 @@ class FanInSolution(Solution):
         # make a copy of self.begin.precedence
         precedence_list = list(self.begin.precedence)
         for branch in precedence_list:
-            if branch.should_be_reserved:
-                return node_list, False
+            if branch.is_reserved:
+                return None, False
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
@@ -624,11 +623,11 @@ class MergePadConvSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved:
+            return None, False
         auto_pad_value = self.end_p.get_attribute('mode', 'constant')
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
-            return node_list, False
+            return None, False
 
         if len(self.begin_n.origin.input) == 1:
             pads = self.begin_n.get_attribute('pads')
@@ -652,13 +651,13 @@ class MergePadConvSolution(Solution):
 
         node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
 
-        return node_list, False
+        return None, False
 
 
 class NextToOutputSolution(Solution):
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved:
+            return None, False
         for idx_, succ_ in enumerate(self.begin.successor):
             if succ_ == self.begin_n:
                 self.begin.successor[idx_] = self.begin_n.successor[0]
@@ -683,8 +682,8 @@ class ConvBatchNormSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        if self.end_p.should_be_reserved:
-            return node_list, False
+        if self.end_p.is_reserved:
+            return None, False
         conv_ori_weight = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0])
         conv_ori_bias = 0
         if len(self.begin_n.precedence) > 2:
@@ -1113,8 +1112,8 @@ class PushTransposeSolution(Solution):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        if self.begin_n.should_be_reserved:
-            return node_list, False
+        if self.begin_n.is_reserved:
+            return None, False
         cur_perm = Solution.get_perm(self.begin_n.origin)
         cur_perm_map = {self.begin_n.unique_name: cur_perm}
         candidate_queue = list()
@@ -1141,7 +1140,7 @@ class PushTransposeSolution(Solution):
             node = node_pair_[0]
             success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
             if not success:
-                return node_list, False
+                return None, False
 
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
@@ -1151,7 +1150,7 @@ class PushTransposeSolution(Solution):
         for node_pair_ in node_transpose_no_pass:
             (node, prev) = node_pair_
             if prev.unique_name == self.begin.unique_name:
-                return node_list, False
+                return None, False
             cur_perm = cur_perm_map[prev.unique_name]
 
         for node_pair_ in node_transpose_no_pass:
@@ -1231,9 +1230,10 @@ def _process_optimization(node_list, target_opset=None):
                     continue
                 solution = optm.find(node_)
                 if solution is not None:
-                    node_list, success = _apply_optimization(solution, node_list)
+                    temp_list, success = _apply_optimization(solution, node_list)
                     if success:
                         solution_find += 1
+                        node_list = temp_list
                     else:
                         blockout.add(node_)
         if solution_find == 0:
