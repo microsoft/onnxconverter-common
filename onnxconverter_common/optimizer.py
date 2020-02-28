@@ -8,8 +8,10 @@ import numpy as np
 import onnx
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
+from .utils import reserve_node_for_embedded_graph
 from ._opt_const_folding import const_folding_optimizer
 
+reserved_names_in_graph = frozenset()
 
 class LinkedNode(object):
     UNIQUE_NAME_INDEX = 0
@@ -181,6 +183,15 @@ class LinkedNode(object):
         assert self.origin is not None and len(self.output) == 1
         return self.origin.output[0]
 
+    @property
+    def should_be_reserved(self):
+        if self.origin is None:
+            return False
+        for node_output_ in self.origin.output:
+            if node_output_ in reserved_names_in_graph:
+                return True
+        return False
+
     def in_redirect(self, old_name, name):
         if old_name in self.input:
             self.input[old_name] = name
@@ -262,7 +273,6 @@ class LinkedNode(object):
         self.precedence.append(pre)
         pre.successor.append(self)
         assert tname in self.input.values() and tname in pre.output.values()
-
 
     @staticmethod
     def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None):
@@ -579,7 +589,7 @@ class FanInSolution(Solution):
                         transpose_output_name,
                         perm=self.perm,
                         name='TransposeFanIn_succ_' + str(FanInSolution.number)))
-                FanInSolution.number = FanInSolution.number + 1
+            FanInSolution.number = FanInSolution.number + 1
             node_list = Solution.add_siso_node(node_list, self.begin, suc, list(self.begin.output.values())[0], nnode)
 
         for branch in precedence_list:
@@ -692,12 +702,20 @@ class RedundantOptimizer(object):
         solution = None
         for n_ in node_list:
             if n_.is_identity:
+                if n_.should_be_reserved:
+                    continue
                 if n_.in_single_path:
                     end = n_.successor[0]
                     end_pre = n_
+                    should_be_reserved = False
                     while end is not None and end.is_identity and end.in_single_path:
+                        if end.should_be_reserved:
+                            should_be_reserved = True
+                            break
                         end_pre = end
                         end = end.successor[0]
+                    if should_be_reserved:
+                        continue
                     solution = Solution(n_.get_precedence_by_idx(0), n_, end_pre, end)
                     return solution
                 elif n_.in_single_path_to_output:
@@ -716,7 +734,10 @@ class TransposeOptimizer(object):
     def find(node_list):
         solution = None
         for n_ in node_list:
+            should_be_reserved = False
             if n_.is_transpose:
+                if n_.should_be_reserved:
+                    continue
                 perm = Solution.get_perm(n_.origin)
                 if n_.in_single_path:  # n_.in_single_path_and_inner:
                     if Solution.is_useless_transpose(perm):
@@ -725,11 +746,16 @@ class TransposeOptimizer(object):
                     else:
                         succ = n_.successor[0]  # type: LinkedNode
                         while succ.in_single_path:
+                            if succ.should_be_reserved:
+                                should_be_reserved = True
+                                break
                             if succ.is_transpose: break
                             if succ.element_wise or succ.broadcast:
                                 succ = succ.successor[0]
                             else:
                                 break
+                        if should_be_reserved:
+                            continue
                         if succ.is_transpose:
                             solution = MergeSolution(n_.get_precedence_by_idx(0), n_, succ, succ.successor[0])
                             return solution
@@ -738,9 +764,15 @@ class TransposeOptimizer(object):
                     test_node = n_.successor[0]
                     switch_transpose = False
                     while test_node.is_transpose_switchable_single_path and not test_node.successor[0].in_or_out:
+                        if test_node.should_be_reserved:
+                            should_be_reserved = True
+                            break
                         switch_transpose = True
                         last_switchable = test_node
                         test_node = test_node.successor[0]
+
+                    if should_be_reserved:
+                        continue
                     if switch_transpose:
                         solution = MoveForwardSolution(n_.get_precedence_by_idx(0), n_, last_switchable,
                                                        last_switchable.successor[0])
@@ -786,6 +818,9 @@ class TransposeOptimizer(object):
                 number_branch = 0
                 good_branch = 0
                 for branch in n_.precedence:
+                    if branch.should_be_reserved:
+                        should_be_reserved = True
+                        break
                     if branch.is_transpose and branch.in_single_path_and_inner:
                         if number_branch == 0:
                             branch_perm = Solution.get_perm(branch.origin)
@@ -798,6 +833,8 @@ class TransposeOptimizer(object):
                     else:
                         break
                     number_branch = number_branch + 1
+                if should_be_reserved:
+                    continue
                 find_switch = good_branch == len(n_.precedence)
 
                 if find_switch:
@@ -805,6 +842,12 @@ class TransposeOptimizer(object):
                     return solution
             eligible_concat = n_.is_eligible_concat_and_inner
             if eligible_concat[0]:
+                for branch in n_.precedence:
+                    if branch.should_be_reserved:
+                        should_be_reserved = True
+                        break
+                if should_be_reserved:
+                    continue
                 perm = Solution.get_perm(n_.get_precedence_by_idx(0).origin)
                 solution = FanInSolution(n_, n_.successor[0], None, None, perm)
                 onnx_node = helper.make_node('Concat', n_.origin.input, n_.origin.output,
@@ -822,7 +865,7 @@ class MergePadConvOptimizer(object):
         for n_ in node_list:
             if n_.unique_name in MergePadConvSolution.processed_unique_name:
                 continue
-            if n_.origin.op_type == 'Pad':
+            if n_.origin.op_type == 'Pad' and not n_.should_be_reserved:
                 next = n_.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Conv':
                     if n_.in_single_path_and_inner:
@@ -846,7 +889,7 @@ class ConvBatchNormOptimizer(object):
                 if len(n_.initializers) > 0:
                     continue
                 next = n_.successor[0]
-                if next.origin is not None and next.origin.op_type == 'BatchNormalization':
+                if next.origin is not None and next.origin.op_type == 'BatchNormalization' and not next.should_be_reserved:
                     if len(n_.initializers) > 0:
                         continue
                     if len(n_.get_precedence_by_idx(1).tensors) == 0:
@@ -1187,6 +1230,8 @@ class PushTransposeOptimizer(object):
                             break
                 if pred_nchw or n_.origin.op_type in _nchw_input_node_type:
                     next = n_.successor[0]
+                    if next.should_be_reserved:
+                        continue
                     if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
                         solution = PushTransposeSolution(n_, next, next.successor[0], None)
                         return solution
@@ -1277,6 +1322,11 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs])
+
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    global reserved_names_in_graph
+    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
+
     solution = _find_an_optimization(node_list)
     while solution:
         node_list = _apply_optimization(solution, node_list)
@@ -1285,6 +1335,20 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     if target_opset is None or target_opset < 9:
         node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
+
+
+def _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs):
+    regenerated = []
+    initializers_copy = initializers.copy()
+    for n_ in node_list:
+        nodes = n_.generate()
+        regenerated.extend(nodes)
+        if len(n_.initializers) > 0:
+            initializers_copy.extend(n_.initializers)
+    nodes = regenerated
+    graph = helper.make_graph(nodes, model_name, inputs,
+                              outputs, initializers_copy)
+    return graph
 
 
 def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
@@ -1324,23 +1388,18 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
                                            [] if in_inputs is None else [i_.name for i_ in in_inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs],
                                            initializers)
+
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    global reserved_names_in_graph
+    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
+
     solution = _find_an_optimization(node_list, target_opset)
     while solution:
         node_list = _apply_optimization(solution, node_list)
         solution = _find_an_optimization(node_list, target_opset)
 
     node_list = [n_ for n_ in node_list if n_.origin is not None]
-    regenerated = []
-    for n_ in node_list:
-        nodes = n_.generate()
-        regenerated.extend(nodes)
-        if len(n_.initializers) > 0:
-            initializers.extend(n_.initializers)
-    nodes = regenerated
-
-    # Create a graph from its main components
-    graph = helper.make_graph(nodes, model_name, inputs,
-                              outputs, initializers)
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
     # Add extra information related to the graph
     graph.value_info.extend(model_value_info)
 
