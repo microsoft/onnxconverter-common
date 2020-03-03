@@ -171,7 +171,7 @@ def const_folding_optimizer(graph):
     # type: (onnx.GraphProto)->onnx.GraphProto
     fixed_graph = _fix_unamed_node(graph)
     opt_graph = OnnxGraphContext(fixed_graph)
-    reserved_names = _reserve_node_for_embedded_graph(fixed_graph)
+    reserved_names = reserve_node_for_embedded_graph(fixed_graph)[1]
     node_status = {}
     for ts_ in graph.output:
         _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], reserved_names, node_status)
