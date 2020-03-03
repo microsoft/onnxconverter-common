@@ -206,10 +206,14 @@ class LinkedNode(object):
             self.output[key] = name
 
     def get_input_by_idx(self, idx=0):
+        if self.origin is None:
+            return list(self.input.values())[0]
         onode_input_name = self.origin.input[idx]
         return self.input[onode_input_name]
 
     def get_output_by_idx(self, idx=0):
+        if self.origin is None:
+            return list(self.output.values())[0]
         onode_output_name = self.origin.output[idx]
         return self.output[onode_output_name]
 
