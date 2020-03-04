@@ -1300,17 +1300,26 @@ def _process_optimization(node_list, target_opset=None):
         solution_find = 0
         for optm in optimizers:
             blockout = set()
-            for node_ in node_list:
-                if node_ in blockout:
-                    continue
-                solution = optm.find(node_)
-                if solution is not None:
-                    temp_list, success = _apply_optimization(solution, node_list)
-                    if success:
-                        solution_find += 1
-                        node_list = temp_list
-                    else:
-                        blockout.add(node_)
+            cur_optm_process = True
+            while cur_optm_process:
+                success = False
+                for node_ in node_list:
+                    if node_ in blockout:
+                        continue
+                    solution = optm.find(node_)
+                    if solution is not None:
+                        temp_list, success = _apply_optimization(solution, node_list)
+                        if success:
+                            break
+                        else:
+                            blockout.add(node_)
+
+                if success:
+                    solution_find += 1
+                    node_list = temp_list
+                else:
+                    cur_optm_process = False
+
         if solution_find == 0:
             need_optimize = False
     return node_list
