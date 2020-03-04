@@ -1382,6 +1382,10 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs])
+    initializers = []
+    graph = _generate_graph_from_nodelist(node_list, initializers, '', inputs, outputs)
+    global reserved_names_in_graph
+    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
     node_list = _process_optimization(node_list, target_opset)
 
     if target_opset is None or target_opset < 9:
