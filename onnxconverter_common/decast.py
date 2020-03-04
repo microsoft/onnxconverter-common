@@ -21,7 +21,7 @@ def remove_cast(lnodes, op_set):
             break
 
         for s_ in sln:
-            lnodes = s_.apply(lnodes)
+            lnodes = s_.apply(lnodes)[0]
 
     return lnodes
 
