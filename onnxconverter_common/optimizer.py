@@ -1284,6 +1284,64 @@ class PushTransposeOptimizer(object):
         return None
 
 
+class SwapOpSolution(Solution):
+    def apply(self, node_list):
+        if self.begin_n.is_reserved or self.end_p.is_reserved:
+            return None, False
+
+        self.begin.successor[0] = self.end_p
+        self.begin_n.successor[0] = self.end
+        self.end_p.successor[0] = self.begin_n
+
+        self.begin_n.precedence[0] = self.end_p
+        self.end_p.precedence[0] = self.begin
+        self.end.precedence[0] = self.begin_n
+
+        self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
+        self.end_p.in_redirect(self.begin_n.single_output, self.begin.single_output)
+        self.end.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+
+        return node_list, True
+
+
+_move_cast_support_types = {'Reshape', 'Squeeze', 'Unsqueeze', 'Slice'}
+
+
+class SwapOpOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.in_single_path_and_inner:
+            if node.origin.op_type == 'Cast':
+                to_value = node.get_attribute('to')
+                if to_value == 1 and node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif to_value in [6, 7] and node.precedence[0].in_single_path_and_inner \
+                        and node.precedence[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0].precedence[0], node.precedence[0], node, node.successor[0])
+                    return solution
+
+            if node.origin.op_type in _activation_node_type:
+                if node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif node.successor[0].in_miso_and_inner and node.successor[0].origin.op_type in _move_cast_support_types:
+                    num_successor_inputs = len(node.successor[0].precedence)
+                    all_initializers = True
+                    for idx_ in range(1, num_successor_inputs):
+                        if node.successor[0].get_precedence_by_idx(idx_).origin is not None:
+                            all_initializers = False
+                            break
+                    if all_initializers:
+                        solution = SwapOpSolution(node.precedence[0], node, node.successor[0],
+                                                  node.successor[0].successor[0])
+                    return solution
+
+        return None
+
+
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
@@ -1291,7 +1349,7 @@ def _apply_optimization(solution, node_list):
 def _process_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
-                  MergeSqueezeUnsqueezeOptimizer]
+                  MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
