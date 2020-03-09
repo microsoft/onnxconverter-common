@@ -1,3 +1,4 @@
+import numpy as np
 import onnx
 from onnx import numpy_helper, mapping, helper
 
@@ -51,15 +52,68 @@ class OnnxGraphContext:
     def _OnConst(self, node, inputs):
         return [OnnxGraphContext.get_attribute(node, 'value')]
 
+    def _OnAdd(self, node, inputs):
+        return [np.add(inputs[0], inputs[1])]
+
     def _OnCast(self, node, inputs):
         np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[OnnxGraphContext.get_attribute(node, 'to')]
         casted = inputs[0].astype(np_dtype)
         return [casted]
 
+    def _OnGather(self, node, inputs):
+        data_val = inputs[0]
+        idx_val = inputs[1]
+        axis = OnnxGraphContext.get_attribute(node, 'axis')
+        retval = np.take(data_val, idx_val, axis).astype(inputs[0].dtype)
+        return [retval]
+
+    def _OnGreater(self, node, inputs):
+        return [np.greater(inputs[0], inputs[1])]
+
+    def _OnLess(self, node, inputs):
+        return [np.less(inputs[0], inputs[1])]
+
     def _OnTranspose(self, node, inputs):
         perm_attr = OnnxGraphContext.get_attribute(node, 'perm')
         retval = inputs[0].transpose(perm_attr)
         return [retval]
+
+    def _OnRange(self, node, inputs):
+        retval = np.asarray(list(range(inputs[0].item(0), inputs[1].item(0), inputs[2].item(0))))
+        return [retval]
+
+    def _OnSlice(self, node, inputs):
+        data_val = inputs[0]
+        rank = len(inputs[0].shape)
+        starts = inputs[1].tolist()
+        ends = inputs[2].tolist()
+        axes = inputs[3].tolist() if len(node.input) > 3 else list(range(0, rank))
+        steps = inputs[4].tolist() if len(node.input) > 4 else [1] * rank
+        exp_all = list()
+        for axis_ in range(0, rank):
+            if axis_ in axes:
+                idx = axes.index(axis_)
+                cur_starts = starts[idx]
+                cur_ends = ends[idx]
+                cur_step = steps[idx]
+            else:
+                cur_starts = 0
+                cur_ends = np.iinfo(np.int64).max
+                cur_step = 1
+
+            cur_starts = max(cur_starts, -inputs[0].shape[axis_])
+            cur_ends = min(cur_ends, inputs[0].shape[axis_])
+            exp = slice(cur_starts, cur_ends, cur_step)
+            exp_all.append(exp)
+
+        retval = data_val[tuple(exp_all)]
+        return [retval]
+
+    def _OnSqrt(self, node, inputs):
+        return [np.sqrt(inputs[0].tolist(), dtype=inputs[0].dtype)]
+
+    def _OnSub(self, node, inputs):
+        return [np.subtract(inputs[0], inputs[1])]
 
     def _OnUnsqueeze(self, node, inputs):
         axes = OnnxGraphContext.get_attribute(node, 'axes')
