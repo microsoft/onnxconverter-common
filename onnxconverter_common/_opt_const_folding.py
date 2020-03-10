@@ -73,6 +73,12 @@ class OnnxGraphContext:
     def _OnLess(self, node, inputs):
         return [np.less(inputs[0], inputs[1])]
 
+    def _OnMul(self, node, inputs):
+        return [np.multiply(inputs[0], inputs[1])]
+
+    def _OnNot(self, node, inputs):
+        return [np.logical_not(inputs[0])]
+
     def _OnTranspose(self, node, inputs):
         perm_attr = OnnxGraphContext.get_attribute(node, 'perm')
         retval = inputs[0].transpose(perm_attr)
