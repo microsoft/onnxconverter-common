@@ -998,7 +998,7 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     return node
 
 
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu'}
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add'}
 
 
 def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
@@ -1211,9 +1211,10 @@ class PushTransposeSolution(Solution):
 
         for node_pair_ in node_transpose_pass:
             node = node_pair_[0]
-            success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
-            if not success:
-                return None, False
+            if node.origin.op_type in _broadcast_types:
+                success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+                if not success:
+                    return None, False
 
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
