@@ -191,7 +191,7 @@ class OptimizerTestCase(unittest.TestCase):
         graph = helper.make_graph(new_nodes, 'test0', [input0], [output0])
         model = helper.make_model(graph)
         onnx.save_model(model, self.get_temp_file('temp_after.onnx'))
-        self.assertEqual(len(new_nodes), 7)
+        self.assertEqual(len(new_nodes), 6)
         self.assertIsNotNone(model)
 
     def test_NextToOutputSolution(self):
@@ -255,7 +255,7 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
         optd_model = optimize_onnx_model(model)
-        self.assertEqual(len(optd_model.graph.node), 6)
+        self.assertEqual(len(optd_model.graph.node), 5)
 
 
 if __name__ == '__main__':
