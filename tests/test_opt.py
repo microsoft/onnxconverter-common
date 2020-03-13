@@ -257,6 +257,48 @@ class OptimizerTestCase(unittest.TestCase):
         optd_model = optimize_onnx_model(model)
         self.assertEqual(len(optd_model.graph.node), 5)
 
+    def test_merge_common(self):
+        val = np.asarray([[[[1.0, 2.0, 3.0], [1.1, 2.1, 3.1]]]], np.float32)
+
+        nodes = []
+        nodes[0:] = \
+            [helper.make_node('Constant', [], ['const1'], value=helper.make_tensor(
+                name='const0',
+                data_type=onnx_proto.TensorProto.FLOAT,
+                dims=val.shape,
+                vals=val.flatten().astype(float)),
+                              name="0")]
+        nodes[1:] = [helper.make_node('Identity', ['const1'], ['identity1'], name="1")]
+        nodes[2:] = [helper.make_node('Identity', ['identity1'], ['identity2'], name="2")]
+        nodes[3:] = [helper.make_node('Max', ['input1', 'identity2'], ['max0'], name="3")]
+        nodes[4:] = [helper.make_node('LeakyRelu', ['max0'], ['leak0'], name="4")]
+        nodes[5:] = [helper.make_node('LeakyRelu', ['leak0'], ['leak1'], name="5")]
+        nodes[6:] = [helper.make_node('LeakyRelu', ['leak0'], ['leak2'], name="6")]
+        nodes[7:] = [helper.make_node('Cast', ['leak1'], ['cast0'], to=6, name="7")]
+        nodes[8:] = [helper.make_node('Cast', ['cast0'], ['cast1'], to=1, name="8")]
+        nodes[9:] = [helper.make_node('Cast', ['leak2'], ['cast2'], to=6, name="9")]
+        nodes[10:] = [helper.make_node('Cast', ['cast2'], ['cast3'], to=7, name="10")]
+        nodes[11:] = [helper.make_node('Cast', ['cast3'], ['cast4'], to=1, name="11")]
+        nodes[12:] = [helper.make_node('Add', ['cast1', 'cast4'], ['add0'], name="12")]
+        nodes[13:] = [helper.make_node('Transpose', ['add0'], ['tranpose2'], perm=[0, 3, 1, 2], name="13")]
+        nodes[14:] = [helper.make_node('Conv', ['tranpose2'], ['output0'], name="14")]
+
+        input0 = helper.make_tensor_value_info('input1', onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info('output0', onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+
+        graph = helper.make_graph(nodes, 'test0', [input0], [output0])
+        model = helper.make_model(graph)
+        self.assertIsNotNone(model)
+
+        onnx.save_model(model, self.get_temp_file('temp_before.onnx'))
+        new_nodes = optimize_onnx(nodes, inputs=[input0], outputs=[output0])
+        new_nodes = [n_ for n_ in new_nodes if not isinstance(n_, tuple)]
+        graph = helper.make_graph(new_nodes, 'test0', [input0], [output0])
+        model = helper.make_model(graph)
+        onnx.save_model(model, self.get_temp_file('temp_after.onnx'))
+        self.assertEqual(len(new_nodes), 8)
+        self.assertIsNotNone(model)
+
 
 if __name__ == '__main__':
     unittest.main()

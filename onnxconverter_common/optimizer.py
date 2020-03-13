@@ -1415,7 +1415,8 @@ class MergeCommonSequenceOptimizer(object):
             pred_0 = node_0.get_precedence_by_idx(idx_)
             pred_1 = node_1.get_precedence_by_idx(idx_)
             if pred_0.unique_name == node.unique_name:
-                if node_0.origin.input[idx_] != node_1.origin.input[idx_]:
+                if node_0.input[node_0.origin.input[idx_]] != \
+                        node_1.input[node_1.origin.input[idx_]]:
                     return False
                 continue
             if pred_0.origin is not None or pred_1.origin is not None:
