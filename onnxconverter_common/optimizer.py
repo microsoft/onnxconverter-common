@@ -1408,8 +1408,19 @@ class MergeCommonSequenceOptimizer(object):
         if node_0.origin.op_type != node_1.origin.op_type:
             return False
 
+        if node_0.origin.op_type == 'Transpose':
+            return False
+
         if node_0.origin.attribute != node_1.origin.attribute:
             return False
+
+        for node_succ_ in [node_0, node_1]:
+            count = 0
+            for succ_ in node.successor:
+                if succ_ == node_succ_:
+                    count += 1
+            if count > 1:
+                return False
 
         for idx_ in range(len(node_0.precedence)):
             pred_0 = node_0.get_precedence_by_idx(idx_)
