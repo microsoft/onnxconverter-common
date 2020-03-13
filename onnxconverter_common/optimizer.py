@@ -1360,39 +1360,9 @@ class MergeCommonSequenceSolution(Solution):
         return node_list, True
 
 
-def is_same_node_merge(node_0, node_1, node):
-    if node_0.origin is None or node_1.origin is None:
-        return False
-    if node_0.origin.name == node_1.origin.name:
-        return False
-    for node_suc_ in node_0.successor:
-        if node_suc_.origin is None:
-            return False
-    for node_suc_ in node_1.successor:
-        if node_suc_.origin is None:
-            return False
-    if node_0.origin.op_type != node_1.origin.op_type:
-        return False
-
-    if node_0.origin.attribute != node_1.origin.attribute:
-        return False
-
-    for idx_ in range(len(node_0.precedence)):
-        pred_0 = node_0.get_precedence_by_idx(idx_)
-        pred_1 = node_1.get_precedence_by_idx(idx_)
-        if pred_0.unique_name == node.unique_name:
-            continue
-        if pred_0.origin is not None or pred_1.origin is not None:
-            return False
-        val_0 = numpy_helper.to_array(pred_0.tensors[0])
-        val_1 = numpy_helper.to_array(pred_1.tensors[0])
-        if not np.array_equal(val_0, val_1):
-            return False
-
-    return True
-
-
 class MergeCommonSequenceOptimizer(object):
+    _no_merge_types = {'LSTM'}
+
     @staticmethod
     def find(node):
         succ_len = len(node.successor)
@@ -1407,11 +1377,55 @@ class MergeCommonSequenceOptimizer(object):
                         continue
                     if succ_0.origin.op_type != succ_1.origin.op_type:
                         continue
-                    if is_same_node_merge(succ_0, succ_1, node):
+                    if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
                         solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
                         return solution
 
         return None
+
+    @staticmethod
+    def is_same_node_merge(node_0, node_1, node):
+        if node_0.origin is None or node_1.origin is None:
+            return False
+        if node_0.origin.name == node_1.origin.name:
+            return False
+        no_merge_count = 0
+        for node_suc_ in node_0.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 0:
+                no_merge_count += 1
+
+        for node_suc_ in node_1.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 1:
+                no_merge_count += 1
+
+        if no_merge_count == 2:
+            return False
+
+        if node_0.origin.op_type != node_1.origin.op_type:
+            return False
+
+        if node_0.origin.attribute != node_1.origin.attribute:
+            return False
+
+        for idx_ in range(len(node_0.precedence)):
+            pred_0 = node_0.get_precedence_by_idx(idx_)
+            pred_1 = node_1.get_precedence_by_idx(idx_)
+            if pred_0.unique_name == node.unique_name:
+                if node_0.origin.input[idx_] != node_1.origin.input[idx_]:
+                    return False
+                continue
+            if pred_0.origin is not None or pred_1.origin is not None:
+                return False
+            val_0 = numpy_helper.to_array(pred_0.tensors[0])
+            val_1 = numpy_helper.to_array(pred_1.tensors[0])
+            if not np.array_equal(val_0, val_1):
+                return False
+
+        return True
 
 
 def _apply_optimization(solution, node_list):
