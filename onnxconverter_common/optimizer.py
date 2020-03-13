@@ -1343,6 +1343,92 @@ class SwapOpOptimizer(object):
         return None
 
 
+class MergeCommonSequenceSolution(Solution):
+    def apply(self, node_list):
+        if self.end_p.is_reserved:
+            return None, False
+
+        for end_p_succ_ in self.end_p.successor:
+            end_p_succ_.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+            for idx_ in range(len(end_p_succ_.precedence)):
+                if end_p_succ_.precedence[idx_].unique_name == self.end_p.unique_name:
+                    end_p_succ_.precedence[idx_] = self.begin_n
+                    self.begin_n.successor.append(end_p_succ_)
+
+        self.begin.successor.remove(self.end_p)
+        node_list.remove(self.end_p)
+        return node_list, True
+
+
+class MergeCommonSequenceOptimizer(object):
+    _no_merge_types = {'LSTM'}
+
+    @staticmethod
+    def find(node):
+        succ_len = len(node.successor)
+        if node.origin is not None and  succ_len > 1:
+            for idx_0 in range(succ_len):
+                succ_0 = node.successor[idx_0]
+                if succ_0.origin is None:
+                    continue
+                for idx_1 in range(succ_len):
+                    succ_1 = node.successor[idx_1]
+                    if idx_1 == idx_0 or succ_1.origin is None:
+                        continue
+                    if succ_0.origin.op_type != succ_1.origin.op_type:
+                        continue
+                    if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
+                        solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
+                        return solution
+
+        return None
+
+    @staticmethod
+    def is_same_node_merge(node_0, node_1, node):
+        if node_0.origin is None or node_1.origin is None:
+            return False
+        if node_0.origin.name == node_1.origin.name:
+            return False
+        no_merge_count = 0
+        for node_suc_ in node_0.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 0:
+                no_merge_count += 1
+
+        for node_suc_ in node_1.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 1:
+                no_merge_count += 1
+
+        if no_merge_count == 2:
+            return False
+
+        if node_0.origin.op_type != node_1.origin.op_type:
+            return False
+
+        if node_0.origin.attribute != node_1.origin.attribute:
+            return False
+
+        for idx_ in range(len(node_0.precedence)):
+            pred_0 = node_0.get_precedence_by_idx(idx_)
+            pred_1 = node_1.get_precedence_by_idx(idx_)
+            if pred_0.unique_name == node.unique_name:
+                if node_0.input[node_0.origin.input[idx_]] != \
+                        node_1.input[node_1.origin.input[idx_]]:
+                    return False
+                continue
+            if pred_0.origin is not None or pred_1.origin is not None:
+                return False
+            val_0 = numpy_helper.to_array(pred_0.tensors[0])
+            val_1 = numpy_helper.to_array(pred_1.tensors[0])
+            if not np.array_equal(val_0, val_1):
+                return False
+
+        return True
+
+
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
@@ -1350,7 +1436,7 @@ def _apply_optimization(solution, node_list):
 def _process_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
-                  MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer]
+                  MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
