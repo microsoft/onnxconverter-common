@@ -998,7 +998,7 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     return node
 
 
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu'}
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add'}
 
 
 def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
@@ -1211,9 +1211,10 @@ class PushTransposeSolution(Solution):
 
         for node_pair_ in node_transpose_pass:
             node = node_pair_[0]
-            success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
-            if not success:
-                return None, False
+            if node.origin.op_type in _broadcast_types:
+                success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+                if not success:
+                    return None, False
 
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
@@ -1284,6 +1285,161 @@ class PushTransposeOptimizer(object):
         return None
 
 
+class SwapOpSolution(Solution):
+    def apply(self, node_list):
+        if self.begin_n.is_reserved or self.end_p.is_reserved:
+            return None, False
+
+        self.begin.successor[0] = self.end_p
+        self.begin_n.successor[0] = self.end
+        self.end_p.successor[0] = self.begin_n
+
+        self.begin_n.precedence[0] = self.end_p
+        self.end_p.precedence[0] = self.begin
+        self.end.precedence[0] = self.begin_n
+
+        self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
+        self.end_p.in_redirect(self.begin_n.single_output, self.begin.single_output)
+        self.end.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+
+        return node_list, True
+
+
+_move_cast_support_types = {'Reshape', 'Squeeze', 'Unsqueeze', 'Slice'}
+
+
+class SwapOpOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.in_single_path_and_inner:
+            if node.origin.op_type == 'Cast':
+                to_value = node.get_attribute('to')
+                if to_value == 1 and node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif to_value in [6, 7] and node.precedence[0].in_single_path_and_inner \
+                        and node.precedence[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0].precedence[0], node.precedence[0], node, node.successor[0])
+                    return solution
+
+            if node.origin.op_type in _activation_node_type:
+                if node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif node.successor[0].in_miso_and_inner and node.successor[0].origin.op_type in _move_cast_support_types:
+                    num_successor_inputs = len(node.successor[0].precedence)
+                    all_initializers = True
+                    for idx_ in range(1, num_successor_inputs):
+                        if node.successor[0].get_precedence_by_idx(idx_).origin is not None:
+                            all_initializers = False
+                            break
+                    if all_initializers:
+                        solution = SwapOpSolution(node.precedence[0], node, node.successor[0],
+                                                  node.successor[0].successor[0])
+                    return solution
+
+        return None
+
+
+class MergeCommonSequenceSolution(Solution):
+    def apply(self, node_list):
+        if self.end_p.is_reserved:
+            return None, False
+
+        for end_p_succ_ in self.end_p.successor:
+            end_p_succ_.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+            for idx_ in range(len(end_p_succ_.precedence)):
+                if end_p_succ_.precedence[idx_].unique_name == self.end_p.unique_name:
+                    end_p_succ_.precedence[idx_] = self.begin_n
+                    self.begin_n.successor.append(end_p_succ_)
+
+        self.begin.successor.remove(self.end_p)
+        node_list.remove(self.end_p)
+        return node_list, True
+
+
+class MergeCommonSequenceOptimizer(object):
+    _no_merge_types = {'LSTM'}
+
+    @staticmethod
+    def find(node):
+        succ_len = len(node.successor)
+        if node.origin is not None and  succ_len > 1:
+            for idx_0 in range(succ_len):
+                succ_0 = node.successor[idx_0]
+                if succ_0.origin is None:
+                    continue
+                for idx_1 in range(succ_len):
+                    succ_1 = node.successor[idx_1]
+                    if idx_1 == idx_0 or succ_1.origin is None:
+                        continue
+                    if succ_0.origin.op_type != succ_1.origin.op_type:
+                        continue
+                    if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
+                        solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
+                        return solution
+
+        return None
+
+    @staticmethod
+    def is_same_node_merge(node_0, node_1, node):
+        if node_0.origin is None or node_1.origin is None:
+            return False
+        if node_0.origin.name == node_1.origin.name:
+            return False
+        no_merge_count = 0
+        for node_suc_ in node_0.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 0:
+                no_merge_count += 1
+
+        for node_suc_ in node_1.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 1:
+                no_merge_count += 1
+
+        if no_merge_count == 2:
+            return False
+
+        if node_0.origin.op_type != node_1.origin.op_type:
+            return False
+
+        if node_0.origin.op_type == 'Transpose':
+            return False
+
+        if node_0.origin.attribute != node_1.origin.attribute:
+            return False
+
+        for node_succ_ in [node_0, node_1]:
+            count = 0
+            for succ_ in node.successor:
+                if succ_ == node_succ_:
+                    count += 1
+            if count > 1:
+                return False
+
+        for idx_ in range(len(node_0.precedence)):
+            pred_0 = node_0.get_precedence_by_idx(idx_)
+            pred_1 = node_1.get_precedence_by_idx(idx_)
+            if pred_0.unique_name == node.unique_name:
+                if node_0.input[node_0.origin.input[idx_]] != \
+                        node_1.input[node_1.origin.input[idx_]]:
+                    return False
+                continue
+            if pred_0.origin is not None or pred_1.origin is not None:
+                return False
+            val_0 = numpy_helper.to_array(pred_0.tensors[0])
+            val_1 = numpy_helper.to_array(pred_1.tensors[0])
+            if not np.array_equal(val_0, val_1):
+                return False
+
+        return True
+
+
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
@@ -1291,7 +1447,7 @@ def _apply_optimization(solution, node_list):
 def _process_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
-                  MergeSqueezeUnsqueezeOptimizer]
+                  MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
 
