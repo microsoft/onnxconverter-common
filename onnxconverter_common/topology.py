@@ -840,7 +840,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
 
     # Add extra information
     add_metadata_props(onnx_model, topology.metadata_props, target_opset)
-    onnx_model.ir_version = onnx_proto.IR_VERSION
+    onnx_model.ir_version = 6  # onnx_proto.IR_VERSION
     onnx_model.producer_name = utils.get_producer()
     onnx_model.producer_version = utils.get_producer_version()
     onnx_model.domain = utils.get_domain()
