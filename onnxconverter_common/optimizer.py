@@ -554,7 +554,7 @@ class FanOutSolution(Solution):
             FanOutSolution.number = FanOutSolution.number + 1
             node_list = Solution.add_siso_node(node_list, self.end_p, suc, list(self.end_p.output.values())[0], nnode)
 
-        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end)
         return node_list, True
 
 
@@ -799,22 +799,16 @@ class TransposeOptimizer(object):
                         else:
                             delta_node = delta_node + 1
                     if delta_node <= 0:
-                        solution = FanOutSolution(node.get_precedence_by_idx(0), node, next_node, None)
+                        solution = FanOutSolution(node.get_precedence_by_idx(0), node, next_node, next_node)
                         return solution
             else:  # simo Transpose op
                 simo_transpose_case = True
-                cur_perm = None
                 for succ_ in node.successor:
                     if not succ_.is_transpose:
                         simo_transpose_case = False
                         break
-                    if not cur_perm:
-                        cur_perm = Solution.get_perm(succ_.origin)
-                    elif cur_perm != Solution.get_perm(succ_.origin):
-                        simo_transpose_case = False
-                        break
-                if simo_transpose_case and match_perm(perm, cur_perm):
-                    solution = TransposeFanOutSolution(node.get_precedence_by_idx(0), node, None, None)
+                if simo_transpose_case:
+                    solution = FanOutSolution(node.get_precedence_by_idx(0), node, node, node.successor)
                     return solution
         elif node.is_transpose_switchable_mi:
             branch_perm = []
@@ -998,7 +992,7 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     return node
 
 
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add'}
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add', 'Mul'}
 
 
 def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
@@ -1192,7 +1186,7 @@ class PushTransposeSolution(Solution):
         candidate_queue = list()
         visited = set()
         for successor_ in self.begin_n.successor:
-            candidate_queue.append((successor_, self.begin))
+            candidate_queue.append((successor_, self.begin_n))
         node_transpose_no_pass = list()
         node_transpose_pass = list()
         node_transpose_pass_name = {self.begin_n.unique_name}
@@ -1221,11 +1215,11 @@ class PushTransposeSolution(Solution):
             node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
 
         # add transpose
-        for node_pair_ in node_transpose_no_pass:
-            (node, prev) = node_pair_
-            if prev.unique_name == self.begin.unique_name:
-                return None, False
-            cur_perm = cur_perm_map[prev.unique_name]
+        if len(self.begin_n.successor) == 1:
+            for node_pair_ in node_transpose_no_pass:
+                (node, prev) = node_pair_
+                if prev.unique_name == self.begin_n.unique_name:
+                    return None, False
 
         for node_pair_ in node_transpose_no_pass:
             node = node_pair_[0]
@@ -1257,7 +1251,7 @@ class PushTransposeSolution(Solution):
                     PushTransposeSolution.transpose_number += 1
                     node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
 
-        node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
         return node_list, True
 
 
@@ -1278,8 +1272,8 @@ class PushTransposeOptimizer(object):
                         break
             if pred_nchw or node.origin.op_type in _nchw_input_node_type:
                 next = node.successor[0]
-                if next.origin is not None and next.origin.op_type == 'Transpose' and len(next.successor) == 1:
-                    solution = PushTransposeSolution(node, next, next.successor[0], None)
+                if next.origin is not None and next.origin.op_type == 'Transpose':
+                    solution = PushTransposeSolution(node, next, next.successor, None)
                     return solution
 
         return None
@@ -1425,6 +1419,8 @@ class MergeCommonSequenceOptimizer(object):
         for idx_ in range(len(node_0.precedence)):
             pred_0 = node_0.get_precedence_by_idx(idx_)
             pred_1 = node_1.get_precedence_by_idx(idx_)
+            if pred_0 is None or pred_1 is None:
+                return False
             if pred_0.unique_name == node.unique_name:
                 if node_0.input[node_0.origin.input[idx_]] != \
                         node_1.input[node_1.origin.input[idx_]]:
