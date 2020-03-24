@@ -700,7 +700,14 @@ class ConvBatchNormSolution(Solution):
         var = numpy_helper.to_array(self.end_p.get_precedence_by_idx(4).tensors[0])
         epsilon = self.end_p.get_attribute('epsilon', 1.0e-5)
         adjusted_scale = scale / np.sqrt(var + epsilon)
-        conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
+        if len(conv_ori_weight.shape) == 4:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
+        elif len(conv_ori_weight.shape) == 3:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None, None]
+        elif len(conv_ori_weight.shape) == 2:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None]
+        else:
+            return None, False
         conv_bias = (conv_ori_bias - mean) * adjusted_scale + B
 
         conv_weight_name = self.begin_n.origin.name+'_W_new'
