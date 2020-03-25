@@ -20,6 +20,7 @@ class OptimizerTestCase(unittest.TestCase):
         return os.path.join(tmp_path, name)
 
     def tearDown(self):
+        return
         for fl in glob.glob(os.path.join(tmp_path, '*.onnx')):
             os.remove(fl)
 
@@ -296,7 +297,7 @@ class OptimizerTestCase(unittest.TestCase):
         graph = helper.make_graph(new_nodes, 'test0', [input0], [output0])
         model = helper.make_model(graph)
         onnx.save_model(model, self.get_temp_file('temp_after.onnx'))
-        self.assertEqual(len(new_nodes), 8)
+        self.assertEqual(len(new_nodes), 11)
         self.assertIsNotNone(model)
 
 

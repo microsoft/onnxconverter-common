@@ -9,6 +9,8 @@
 
 import numpy as np
 from onnx import onnx_pb as onnx_proto
+from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
+from .oopb import OnnxOperatorBuilder
 
 
 def _create_name_or_use_existing_one(scope, op_type, name):
@@ -79,10 +81,30 @@ def apply_add(scope, input_names, output_name, container, operator_name=None, ax
                                      axis=axis, broadcast=broadcast)
 
 
-def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1):
+def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1, select_last_index=0):
     name = _create_name_or_use_existing_one(scope, 'ArgMax', operator_name)
-    container.add_node('ArgMax', input_name, output_name, op_version=1, name=name,
-                       axis=axis, keepdims=keepdims)
+    attrs = {'axis': axis, 'keepdims': keepdims}
+    if container.target_opset < 11:
+        op_version = 1
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+        attrs['select_last_index'] = select_last_index
+    container.add_node('ArgMax', input_name, output_name, op_version=op_version, name=name, **attrs)
+
+
+def apply_argmin(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1, select_last_index=0):
+    name = _create_name_or_use_existing_one(scope, 'ArgMin', operator_name)
+    attrs = {'axis': axis, 'keepdims': keepdims}
+    if container.target_opset < 11:
+        op_version = 1
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+        attrs['select_last_index'] = select_last_index
+    container.add_node('ArgMin', input_name, output_name, op_version=op_version, name=name, **attrs)
 
 
 def apply_affine(scope, input_name, output_name, container, operator_name=None, alpha=1., beta=0.):
@@ -187,7 +209,10 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
         container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
     else:
-        op_version = 11
+        if container.target_opset < 12:
+            op_version = 11
+        else:
+            op_version = 12
         if min is None and max is not None:
             raise RuntimeError("Operator 'Clip': min must be specified if max is.")
         inputs = [input_name]
@@ -207,10 +232,14 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
                 # container in sklearn-onnx stores the computation type in
                 # container.dtype.
-                min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
-                container.add_initializer(min_name, getattr(container, 'proto_dtype',
-                                                            onnx_proto.TensorProto.FLOAT), [], [min[0]])
+                if op_version < 12:
+                    min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
+                    container.add_initializer(min_name, getattr(container, 'proto_dtype',
+                                                                onnx_proto.TensorProto.FLOAT), [], [min[0]])
+                else:
+                    min = np.array(min)
+                    container.add_initializer(min_name, NP_TYPE_TO_TENSOR_TYPE[min.dtype], [], [min[0]])
                 min = min_name
             if isinstance(min, str):
                 inputs.append(min)
@@ -232,10 +261,14 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 else:
                     max = [max]
 
-                max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
                 max_name = scope.get_unique_variable_name('clip_max')
-                container.add_initializer(max_name, getattr(container, 'proto_dtype',
-                                                            onnx_proto.TensorProto.FLOAT), [], [max[0]])
+                if op_version < 12:
+                    max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
+                    container.add_initializer(max_name, getattr(container, 'proto_dtype',
+                                                                onnx_proto.TensorProto.FLOAT), [], [max[0]])
+                else:
+                    max= np.array(max)
+                    container.add_initializer(max_name, NP_TYPE_TO_TENSOR_TYPE[max.dtype], [], [max[0]])
                 max = max_name
             if isinstance(max, str):
                 inputs.append(max)
@@ -265,12 +298,26 @@ def apply_constant(scope, output_name, container, operator_name=None, value=None
     if not value:
         raise ValueError('Attribute "value" is a required argument.')
 
-    attrs = {'name': name, 'value': value}
-
     if container.target_opset < 9:
         op_version = 1
-    else:
+    elif container.target_opset < 11:
         op_version = 9
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+
+    if op_version < 12:
+        attrs = {'name': name, 'value': value}
+    else:
+        if isinstance(value, float):
+            attrs = {'name': name, 'value_float': value}
+        elif isinstance(value, int):
+            attrs = {'name': name, 'value_int': value}
+        elif isinstance(value, str):
+            attrs = {'name': name, 'value_string': value}
+        else:
+            attrs = {'name': name, 'value': value}
 
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
 
@@ -401,6 +448,47 @@ def apply_greater(scope, input_names, output_name, container, operator_name=None
     container.add_node('Greater', input_names, output_name, name=name, op_version=op_version)
 
 
+def _convert_compare_equal(scope, input_names, output_name, container, operator_name, tf_op_string, onnx_op_string_rev, onnx_op_string):
+    if container.target_opset < 7:
+        raise ValueError(tf_op_string + " op is not supported for opset < 7")
+    if container.target_opset < 9:
+        op_version = 7
+    elif container.target_opset < 12:
+        op_version = 9
+    else:
+        op_version = 12
+    oopb = OnnxOperatorBuilder(container, scope)
+    name = _create_name_or_use_existing_one(scope, tf_op_string, operator_name)
+    if op_version < 9:
+        compare_input_0 = oopb.add_node('Cast', [input_names[0]],
+                                        name + '_input_0_cast', to=oopb.float)
+        compare_input_1 = oopb.add_node('Cast', [input_names[1]],
+                                        name + '_input_1_cast', to=oopb.float)
+        less_out = oopb.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
+                                 name + '_' + onnx_op_string_rev.lower())
+        oopb.add_node_with_output('Not', less_out,
+                                  output_name,
+                                  name=name + '_not')
+    elif op_version < 12:
+        compare_node = oopb.add_node(onnx_op_string_rev,
+                                     input_names,
+                                     name + '_' + onnx_op_string_rev.lower())
+        oopb.add_node_with_output('Not',
+                                  [compare_node],
+                                  output_name,
+                                  name=name)
+    else:
+        oopb.add_node_with_output(onnx_op_string, input_names, output_name, name=name, op_version=op_version)
+
+
+def apply_greater_or_equal(scope, input_names, output_name, container, operator_name=None):
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'GreaterEqual', 'Less', 'GreaterOrEqual')
+
+
+def apply_less_or_equal(scope, input_names, output_name, container, operator_name=None):
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'LessEqual', 'Greater', 'LessOrEqual')
+
+
 def apply_gru(scope, input_names, output_names, container, operator_name=None, output_seq=0, reset_after=0, **attrs):
     name = _create_name_or_use_existing_one(scope, 'GRU', operator_name)
     if container.target_opset < 3:
@@ -440,8 +528,29 @@ def apply_instance_norm(scope, input_names, output_name, container, operator_nam
     container.add_node('InstanceNormalization', input_names, output_name, op_version=op_version, **attrs)
 
 
+def apply_inverse(scope, input_name, output_name, container, operator_name=None):
+    if container.target_opset < 12:
+        raise ValueError("tf op MatrixInverse is not supported for opset < 12")
+    else:
+        op_version = 12
+    name = _create_name_or_use_existing_one(scope, 'Inverse', operator_name)
+    container.add_node('Inverse', input_name, output_name, name=name, op_version=op_version)
+
+
 def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
+
+
+def apply_less(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Less', operator_name)
+    if container.target_opset < 7:
+        op_version = 1
+    elif container.target_opset < 9:
+        op_version = 7
+    else:
+        op_version = 9
+
+    container.add_node('Less', input_names, output_name, name=name, op_version=op_version)
 
 
 def apply_log(scope, input_name, output_name, container, operator_name=None):
@@ -585,9 +694,12 @@ def apply_pow(scope, input_names, output_name, container, operator_name=None, ax
         if broadcast is not None:
             attrs['broadcast'] = broadcast
         op_version = 1
-    else:
+    elif container.target_opset < 12:
         # Since ONNX-1.2, broadcasting behavior is Numpy-like, so we don't need to specify any attributes
         op_version = 7
+    else:
+        op_version = 12
+
     container.add_node('Pow', input_names, output_name, op_version=op_version, **attrs)
 
 
