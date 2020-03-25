@@ -20,7 +20,6 @@ class OptimizerTestCase(unittest.TestCase):
         return os.path.join(tmp_path, name)
 
     def tearDown(self):
-        return
         for fl in glob.glob(os.path.join(tmp_path, '*.onnx')):
             os.remove(fl)
 
