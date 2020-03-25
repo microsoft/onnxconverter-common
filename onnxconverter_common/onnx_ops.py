@@ -10,7 +10,6 @@
 import numpy as np
 from onnx import onnx_pb as onnx_proto
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
-from .oopb import OnnxOperatorBuilder
 
 
 def _create_name_or_use_existing_one(scope, op_type, name):
@@ -451,34 +450,32 @@ def apply_greater(scope, input_names, output_name, container, operator_name=None
 def _convert_compare_equal(scope, input_names, output_name, container, operator_name, tf_op_string, onnx_op_string_rev, onnx_op_string):
     if container.target_opset < 7:
         raise ValueError(tf_op_string + " op is not supported for opset < 7")
-    if container.target_opset < 9:
+    elif container.target_opset < 9:
         op_version = 7
     elif container.target_opset < 12:
         op_version = 9
     else:
         op_version = 12
-    oopb = OnnxOperatorBuilder(container, scope)
     name = _create_name_or_use_existing_one(scope, tf_op_string, operator_name)
     if op_version < 9:
-        compare_input_0 = oopb.add_node('Cast', [input_names[0]],
-                                        name + '_input_0_cast', to=oopb.float)
-        compare_input_1 = oopb.add_node('Cast', [input_names[1]],
-                                        name + '_input_1_cast', to=oopb.float)
-        less_out = oopb.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
-                                 name + '_' + onnx_op_string_rev.lower())
-        oopb.add_node_with_output('Not', less_out,
-                                  output_name,
-                                  name=name + '_not')
+        compare_input_0 = scope.get_unique_variable_name(name + '_input_0_cast')
+        container.add_node('Cast', [input_names[0]], compare_input_0, name=name + '_input_0_cast', to=1)
+        compare_input_1 = scope.get_unique_variable_name(name + '_input_1_cast')
+        container.add_node('Cast', [input_names[1]], compare_input_1, name=name + '_input_1_cast', to=1)
+        less_out = scope.get_unique_variable_name(name + '_less_out')
+        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
+                           name=name + '_' + onnx_op_string_rev.lower(),
+                           op_version = op_version)
+        container.add_node('Not', less_out, output_name, name=name + '_not')
     elif op_version < 12:
-        compare_node = oopb.add_node(onnx_op_string_rev,
-                                     input_names,
-                                     name + '_' + onnx_op_string_rev.lower())
-        oopb.add_node_with_output('Not',
-                                  [compare_node],
-                                  output_name,
-                                  name=name)
+        compare_node = scope.get_unique_variable_name(name + '_compare_node')
+        container.add_node(onnx_op_string_rev, input_names, compare_node,
+                           name=name + '_' + onnx_op_string_rev.lower(),
+                           op_version = op_version)
+        container.add_node('Not', [compare_node], output_name, name=name)
     else:
-        oopb.add_node_with_output(onnx_op_string, input_names, output_name, name=name, op_version=op_version)
+        container.add_node(onnx_op_string_rev, input_names, output_name,
+                           name=name + '_' + onnx_op_string_rev.lower(), op_version=op_version)
 
 
 def apply_greater_or_equal(scope, input_names, output_name, container, operator_name=None):
