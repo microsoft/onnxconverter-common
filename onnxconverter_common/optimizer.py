@@ -71,7 +71,7 @@ class LinkedNode(object):
     @property
     def broadcast(self):
         return False if self.origin is None else \
-            self.origin.op_type in ['Add', 'Div', 'Max']
+            self.origin.op_type in ['Add', 'Div', 'Max', 'Mul']
 
     @property
     def in_single_path_and_inner(self):
@@ -1262,7 +1262,7 @@ class PushTransposeSolution(Solution):
         return node_list, True
 
 
-_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization']
+_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
 _activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus', 'Softsign', 'Tanh']
 
 class PushTransposeOptimizer(object):
