@@ -936,13 +936,21 @@ class MergeReshapeOptimizer(object):
 
 
 class MergeCastOptimizer(object):
+    # Based on TensorProto DataType in onnx.proto3
+    to_priority_array = [3, 5, 6, 7, 1]
+
     @staticmethod
     def find(node):
         if node.origin.op_type == 'Cast' and len(node.successor) == 1:
+            to_0 = node.get_attribute('to')
             next = node.successor[0]
             if next.origin is not None and next.origin.op_type == 'Cast':
-                solution = Solution(node.get_precedence_by_idx(0), node, next, next)
-                return solution
+                to_1 = next.get_attribute('to')
+                if to_0 in MergeCastOptimizer.to_priority_array \
+                    and to_1 in MergeCastOptimizer.to_priority_array \
+                    and MergeCastOptimizer.to_priority_array.index(to_0) > MergeCastOptimizer.to_priority_array.index(to_1):
+                    solution = Solution(node.get_precedence_by_idx(0), node, next, next)
+                    return solution
 
         return None
 
