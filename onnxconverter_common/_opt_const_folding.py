@@ -85,7 +85,9 @@ class OnnxGraphContext:
         return [retval]
 
     def _OnRange(self, node, inputs):
-        retval = np.asarray(list(range(inputs[0].item(0), inputs[1].item(0), inputs[2].item(0))))
+        retval = np.asarray(list(range(inputs[0].astype(np.int32).item(0),
+                                       inputs[1].astype(np.int32).item(0),
+                                       inputs[2].astype(np.int32).item(0))))
         return [retval]
 
     def _OnSlice(self, node, inputs):
