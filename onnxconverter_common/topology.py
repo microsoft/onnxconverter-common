@@ -20,6 +20,12 @@ from .optimizer import optimize_onnx
 from .interface import OperatorBase
 
 
+OPSET_TO_IR_VERSION = {
+    1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3,
+    7: 3, 8: 4, 9: 4, 10: 5, 11: 6, 12: 7
+}
+
+
 class Variable:
 
     def __init__(self, raw_name, onnx_name, scope, type=None):
@@ -791,8 +797,10 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             getLogger('onnxmltools').warning('The maximum opset needed by this model is only %d.' % op_version)
 
     # Add extra information
-    add_metadata_props(onnx_model, topology.metadata_props, target_opset)
-    onnx_model.ir_version = onnx_proto.IR_VERSION
+    add_metadata_props(onnx_model, topology.metadata_props, container.target_opset)
+    opv = _get_main_opset_version(onnx_model) or container.target_opset
+    irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
+    onnx_model.ir_version = irv
     onnx_model.producer_name = utils.get_producer()
     onnx_model.producer_version = utils.get_producer_version()
     onnx_model.domain = utils.get_domain()
@@ -800,3 +808,13 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
     onnx_model.doc_string = doc_string
 
     return onnx_model
+
+
+def _get_main_opset_version(model):
+    """
+    Returns the main opset version.
+    """
+    for op in model.opset_import:
+        if op.domain == '':
+            return op.version
+    return None
