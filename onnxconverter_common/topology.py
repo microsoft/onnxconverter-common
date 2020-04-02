@@ -22,7 +22,7 @@ OPSET_TO_IR_VERSION = {
     7: 3, 8: 4, 9: 4, 10: 5, 11: 6, 12: 7
 }
 
-DEFAULT_OPSET_NUMBER = 11  # In the current codebase, the maximum opset supported by the converter.
+DEFAULT_OPSET_NUMBER = 11  # The maximum opset supported by the converter in the code branch.
 
 
 class Variable:
@@ -710,8 +710,8 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
-        raise RuntimeError("target_opset %d is higher than the number of the installed onnx package"
-                           + " or the converter support.")
+        raise RuntimeError(("target_opset %d is higher than the number of the installed onnx package"
+                            + " or the converter support (%d).") % (target_opset, opset_from_onnx_version))
 
     topology._initialize_graph_status_for_traversing()
 
