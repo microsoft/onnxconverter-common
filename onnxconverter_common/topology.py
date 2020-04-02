@@ -19,11 +19,12 @@ from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
 from .interface import OperatorBase
 
-
 OPSET_TO_IR_VERSION = {
     1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3,
     7: 3, 8: 4, 9: 4, 10: 5, 11: 6, 12: 7
 }
+
+DEFAULT_OPSET_NUMBER = 11  # The maximum opset supported by the converter in the code branch.
 
 
 class Variable:
@@ -657,11 +658,12 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (
                 onnx.__version__, targeted_onnx))
 
-    opset_from_onnx_version = onnx.defs.onnx_opset_version()
+    opset_from_onnx_version = min(onnx.defs.onnx_opset_version(), DEFAULT_OPSET_NUMBER)
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
-        raise RuntimeError("target_opset %d is higher than the number of the installed onnx package.")
+        raise RuntimeError(("target_opset %d is higher than the number of the installed onnx package"
+                            + " or the converter support (%d).") % (target_opset, opset_from_onnx_version))
 
     topology._initialize_graph_status_for_traversing()
 
