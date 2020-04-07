@@ -28,6 +28,10 @@ def onnx_builtin_opset_version():
     return onnx_defs.onnx_opset_version()
 
 
+def get_maximum_opset_supported():
+    return min(DEFAULT_OPSET_NUMBER, onnx_builtin_opset_version())
+
+
 def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_props=None, **kwargs):
     onnx_model = helper.make_model(graph, **kwargs)
 
