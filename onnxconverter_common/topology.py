@@ -4,12 +4,13 @@
 # license information.
 ###############################################################################
 import re
+import onnx
 import warnings
 from distutils.version import StrictVersion
 from onnx import helper
 from . import registration
-from .data_types import *
-from .onnx_ex import make_model_ex, OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER
+from .data_types import TensorType, Int64Type, FloatType, StringType
+from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
 from .interface import OperatorBase, ScopeBase
@@ -696,7 +697,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (
                 onnx.__version__, targeted_onnx))
 
-    opset_from_onnx_version = min(onnx.defs.onnx_opset_version(), DEFAULT_OPSET_NUMBER)
+    opset_from_onnx_version = min(onnx_builtin_opset_version(), DEFAULT_OPSET_NUMBER)
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
@@ -806,15 +807,6 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
 
     # Add extra information related to the graph
     graph.value_info.extend(container.value_info)
-
-    # Merge operator sets for the same domain, the largest version number would be kept
-    purified_operator_set = dict()
-    for op_domain, op_version in container.node_domain_version_pair_sets:
-        if op_domain not in purified_operator_set:
-            purified_operator_set[op_domain] = op_version
-        else:
-            purified_operator_set[op_domain] = max(purified_operator_set[op_domain], op_version)
-
-    onnx_model = make_model_ex(graph, purified_operator_set,
+    onnx_model = make_model_ex(graph, container.node_domain_version_pair_sets,
                                target_opset, topology.metadata_props, doc_string=doc_string)
     return onnx_model

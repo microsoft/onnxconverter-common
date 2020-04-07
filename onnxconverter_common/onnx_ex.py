@@ -3,16 +3,15 @@
 # license information.
 ###############################################################################
 from logging import getLogger
-from onnx import helper, onnx_pb as onnx_proto
+from onnx import helper, defs as onnx_defs, onnx_pb as onnx_proto
 from . import utils
 from .metadata_props import add_metadata_props
 
+DEFAULT_OPSET_NUMBER = 11  # The maximum opset supported by the converter in the code branch.
 OPSET_TO_IR_VERSION = {
     1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3,
     7: 3, 8: 4, 9: 4, 10: 5, 11: 6, 12: 7
 }
-
-DEFAULT_OPSET_NUMBER = 11  # The maximum opset supported by the converter in the code branch.
 
 
 def _get_main_opset_version(model):
@@ -23,6 +22,10 @@ def _get_main_opset_version(model):
         if op.domain == '' or op.domain == 'ai.onnx':
             return op.version
     return None
+
+
+def onnx_builtin_opset_version():
+    return onnx_defs.onnx_opset_version()
 
 
 def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_props=None, **kwargs):
