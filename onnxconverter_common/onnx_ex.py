@@ -64,3 +64,4 @@ def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_pr
     onnx_model.producer_version = utils.get_producer_version()
     onnx_model.domain = utils.get_domain()
     onnx_model.model_version = utils.get_model_version()
+    return onnx_model
