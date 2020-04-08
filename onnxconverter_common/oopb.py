@@ -106,6 +106,13 @@ class OnnxOperatorBuilder:
                                  name=self._scope.get_unique_operator_name(name), **attrs)
         return ox_output[0] if outputs is None else ox_output
 
+    def add_node_with_output(self, op_type, inputs, outputs, name, op_domain='', op_version=None, **attrs):
+        if op_version is None:
+            op_version = self._container.target_opset
+        ox_inputs = self._process_inputs(inputs, name)
+        self._container.add_node(op_type, ox_inputs, outputs, op_domain, op_version, name=name, **attrs)
+        return outputs
+
     def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):
         name = self._generate_name(apply_func, name)
         if outputs is None:
