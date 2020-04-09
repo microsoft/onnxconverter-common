@@ -377,7 +377,7 @@ class Solution(object):
 
     @staticmethod
     def is_useless_transpose(perm):
-        return perm == list(range(len(perm))
+        return perm == list(range(len(perm)))
 
     @staticmethod
     def delete_node_nto1(node_list, begin, node, end):  # type: ([],LinkedNode, LinkedNode, LinkedNode)->[]
