@@ -3,7 +3,6 @@
 # license information.
 ###############################################################################
 
-import six
 import numpy as np
 import onnx
 from onnx import numpy_helper, helper
@@ -165,7 +164,7 @@ class LinkedNode(object):
     @property
     def single_input(self):
         assert self.origin is not None and len(self.input) == 1
-        return next(value for (key, value) in six.iteritems(self.input))
+        return next(value for (key, value) in self.input.items())
 
     @property
     def single_origin_input(self):
@@ -175,7 +174,7 @@ class LinkedNode(object):
     @property
     def single_output(self):
         assert self.origin is not None and len(self.output) == 1
-        return next(value for (key, value) in six.iteritems(self.output))
+        return next(value for (key, value) in self.output.items())
 
     @property
     def single_origin_output(self):
@@ -195,14 +194,14 @@ class LinkedNode(object):
         if old_name in self.input:
             self.input[old_name] = name
         else:
-            key = next(k for k, v in six.iteritems(self.input) if v == old_name)
+            key = next(k for k, v in self.input.items() if v == old_name)
             self.input[key] = name
 
     def out_redirect(self, old_name, name):
         if old_name in self.output:
             self.output[old_name] = name
         else:
-            key = next(k for k, v in six.iteritems(self.output) if v == old_name)
+            key = next(k for k, v in self.output.items() if v == old_name)
             self.output[key] = name
 
     def get_input_by_idx(self, idx=0):
@@ -249,9 +248,9 @@ class LinkedNode(object):
         updated = False
         if self.attributes:
             updated = True
-        elif len([k for k, v in six.iteritems(self.input) if k != v]) > 0:
+        elif len([k for k, v in self.input.items() if k != v]) > 0:
             updated = True
-        elif len([k for k, v in six.iteritems(self.output) if k != v]) > 0:
+        elif len([k for k, v in self.output.items() if k != v]) > 0:
             updated = True
 
         if not updated:
@@ -378,7 +377,7 @@ class Solution(object):
 
     @staticmethod
     def is_useless_transpose(perm):
-        return perm == list(six.moves.range(len(perm)))
+        return perm == list(range(len(perm))
 
     @staticmethod
     def delete_node_nto1(node_list, begin, node, end):  # type: ([],LinkedNode, LinkedNode, LinkedNode)->[]
@@ -1518,7 +1517,7 @@ def _topological_sort(node_list):
     name_to_node_map = dict()
 
     def _get_unmark_node(name_to_node_map):
-        for k, v in six.iteritems(name_to_node_map):
+        for k, v in name_to_node_map.items():
             if v.status == 'unmark':
                 return k
         return None
