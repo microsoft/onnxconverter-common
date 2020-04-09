@@ -3,7 +3,7 @@
 # license information.
 ###############################################################################
 
-import numbers, six
+import numbers
 import numpy as np
 import warnings
 from distutils.version import LooseVersion
@@ -187,10 +187,7 @@ def get_model_version():
 
 
 def is_numeric_type(item):
-    if six.PY2:
-        numeric_types = (int, float, long, complex)
-    else:
-        numeric_types = (int, float, complex)
+    numeric_types = (int, float, complex)
     types = numeric_types
 
     if isinstance(item, list):
@@ -201,12 +198,11 @@ def is_numeric_type(item):
 
 
 def is_string_type(item):
-    types = (six.string_types, six.text_type)
     if isinstance(item, list):
-        return all(isinstance(i, types) for i in item)
+        return all(isinstance(i, str) for i in item)
     if isinstance(item, np.ndarray):
         return np.issubdtype(item.dtype, np.str_)
-    return isinstance(item, types)
+    return isinstance(item, str)
 
 
 def cast_list(type, items):
@@ -214,7 +210,6 @@ def cast_list(type, items):
 
 
 def convert_to_python_value(var):
-    import numbers
     if isinstance(var, numbers.Integral):
         return int(var)
     elif isinstance(var, numbers.Real):
