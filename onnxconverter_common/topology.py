@@ -9,7 +9,7 @@ import warnings
 from distutils.version import StrictVersion
 from onnx import helper
 from . import registration
-from .data_types import TensorType, Int64Type, FloatType, StringType
+from .data_types import TensorType, FloatTensorType, Int64Type, FloatType, StringType
 from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
