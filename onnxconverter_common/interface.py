@@ -7,12 +7,10 @@
 
 
 import abc
-import six
 
 
-@six.add_metaclass(abc.ABCMeta)
 class ModelContainer:
-    __metaclass = abc.ABCMeta
+    __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
     def add_initializer(self, name, onnx_type, shape, content):
@@ -42,7 +40,6 @@ class ModelContainer:
         return
 
 
-@six.add_metaclass(abc.ABCMeta)
 class OperatorBase:
     __metaclass__ = abc.ABCMeta
 
@@ -79,7 +76,6 @@ class OperatorBase:
         pass
 
 
-@six.add_metaclass(abc.ABCMeta)
 class ScopeBase:
     __metaclass__ = abc.ABCMeta
 

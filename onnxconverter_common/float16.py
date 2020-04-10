@@ -3,8 +3,8 @@
 # license information.
 ###########################################################################
 
-import numpy as np
 import itertools
+import numpy as np
 import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
