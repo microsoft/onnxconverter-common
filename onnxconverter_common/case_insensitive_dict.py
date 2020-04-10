@@ -3,10 +3,7 @@
 # license information.
 ###############################################################################
 
-try:
-    from collections.abc import Mapping, MutableMapping
-except ImportError:
-    from collections import Mapping, MutableMapping
+from collections.abc import Mapping, MutableMapping
 from collections import OrderedDict
 
 

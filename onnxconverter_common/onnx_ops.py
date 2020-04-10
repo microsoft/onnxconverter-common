@@ -80,7 +80,8 @@ def apply_add(scope, input_names, output_name, container, operator_name=None, ax
                                      axis=axis, broadcast=broadcast)
 
 
-def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1, select_last_index=0):
+def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1,
+                 select_last_index=0):
     name = _create_name_or_use_existing_one(scope, 'ArgMax', operator_name)
     attrs = {'axis': axis, 'keepdims': keepdims}
     if container.target_opset < 11:
@@ -93,7 +94,8 @@ def apply_argmax(scope, input_name, output_name, container, operator_name=None, 
     container.add_node('ArgMax', input_name, output_name, op_version=op_version, name=name, **attrs)
 
 
-def apply_argmin(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1, select_last_index=0):
+def apply_argmin(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1,
+                 select_last_index=0):
     name = _create_name_or_use_existing_one(scope, 'ArgMin', operator_name)
     attrs = {'axis': axis, 'keepdims': keepdims}
     if container.target_opset < 11:
@@ -266,7 +268,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     container.add_initializer(max_name, getattr(container, 'proto_dtype',
                                                                 onnx_proto.TensorProto.FLOAT), [], [max[0]])
                 else:
-                    max= np.array(max)
+                    max = np.array(max)
                     container.add_initializer(max_name, NP_TYPE_TO_TENSOR_TYPE[max.dtype], [], [max[0]])
                 max = max_name
             if isinstance(max, str):
@@ -447,7 +449,8 @@ def apply_greater(scope, input_names, output_name, container, operator_name=None
     container.add_node('Greater', input_names, output_name, name=name, op_version=op_version)
 
 
-def _convert_compare_equal(scope, input_names, output_name, container, operator_name, tf_op_string, onnx_op_string_rev, onnx_op_string):
+def _convert_compare_equal(scope, input_names, output_name, container, operator_name, tf_op_string, onnx_op_string_rev,
+                           onnx_op_string):
     if container.target_opset < 7:
         raise ValueError(tf_op_string + " op is not supported for opset < 7")
     elif container.target_opset < 9:
@@ -465,13 +468,13 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
         less_out = scope.get_unique_variable_name(name + '_less_out')
         container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
                            name=name + '_' + onnx_op_string_rev.lower(),
-                           op_version = op_version)
+                           op_version=op_version)
         container.add_node('Not', less_out, output_name, name=name + '_not')
     elif op_version < 12:
         compare_node = scope.get_unique_variable_name(name + '_compare_node')
         container.add_node(onnx_op_string_rev, input_names, compare_node,
                            name=name + '_' + onnx_op_string_rev.lower(),
-                           op_version = op_version)
+                           op_version=op_version)
         container.add_node('Not', [compare_node], output_name, name=name)
     else:
         container.add_node(onnx_op_string_rev, input_names, output_name,
@@ -479,11 +482,13 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
 
 
 def apply_greater_or_equal(scope, input_names, output_name, container, operator_name=None):
-    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'GreaterEqual', 'Less', 'GreaterOrEqual')
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'GreaterEqual', 'Less',
+                           'GreaterOrEqual')
 
 
 def apply_less_or_equal(scope, input_names, output_name, container, operator_name=None):
-    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'LessEqual', 'Greater', 'LessOrEqual')
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'LessEqual', 'Greater',
+                           'LessOrEqual')
 
 
 def apply_gru(scope, input_names, output_names, container, operator_name=None, output_seq=0, reset_after=0, **attrs):
@@ -922,7 +927,8 @@ def apply_sqrt(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sqrt', input_name, output_name, container, operator_name=operator_name)
 
 
-def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axes=[0], rank=0):
+def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axes=[0],
+                             rank=0):
     name = _create_name_or_use_existing_one(scope, squeeze_str, operator_name)
     if container.target_opset < 11:
         op_version = 1
@@ -1012,7 +1018,7 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
     else:
         # ONNX-1.2 has a new Tile and we use it here
         if isinstance(repeats, str):
-            container.add_node('Tile', input_name + [ repeats ], output_name, op_version=6, name=name)
+            container.add_node('Tile', input_name + [repeats], output_name, op_version=6, name=name)
         else:
             repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
             container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)

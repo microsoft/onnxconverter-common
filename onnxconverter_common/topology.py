@@ -3,12 +3,13 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
+
 import re
 import onnx
 import warnings
 from distutils.version import StrictVersion
 from onnx import helper
-from . import registration
+from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
 from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
 from .container import ModelComponentContainer
@@ -103,7 +104,7 @@ class Operator(OperatorBase):
 
     def infer_types(self):
         # Invoke a core inference function
-        registration.get_shape_calculator(self.type)(self)
+        get_shape_calculator(self.type)(self)
 
 
 class Scope(ScopeBase):
@@ -773,7 +774,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             topology.custom_conversion_functions[operator.type](scope, operator, container)
         else:
             # Convert the selected operator into some ONNX objects and save them into the container
-            registration.get_converter(operator.type)(scope, operator, container)
+            get_converter(operator.type)(scope, operator, container)
 
     # When calling ModelComponentContainer's add_initializer(...), nothing is added into the input list.
     # However, for ONNX target opset < 9, initializers should also be model's (GraphProto) inputs.
