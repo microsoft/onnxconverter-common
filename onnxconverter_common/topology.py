@@ -680,7 +680,7 @@ class Topology:
         self._check_structure()
 
 
-def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx, channel_first_inputs=None):
+def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None):
     '''
     This function is used to convert our Topology object defined in _parser.py into a ONNX model (type: ModelProto).
     :param topology: The Topology object we are going to convert

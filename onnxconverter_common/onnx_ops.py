@@ -296,7 +296,7 @@ def apply_concat(scope, input_names, output_name, container, operator_name=None,
 def apply_constant(scope, output_name, container, operator_name=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Constant', operator_name)
 
-    if not value:
+    if value is None:
         raise ValueError('Attribute "value" is a required argument.')
 
     if container.target_opset < 9:
@@ -927,7 +927,7 @@ def apply_sqrt(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sqrt', input_name, output_name, container, operator_name=operator_name)
 
 
-def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axes=[0],
+def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axes=None,
                              rank=0):
     name = _create_name_or_use_existing_one(scope, squeeze_str, operator_name)
     if container.target_opset < 11:
@@ -938,7 +938,9 @@ def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_
     container.add_node(squeeze_str, input_name, output_name, name=name, op_version=op_version, axes=axes)
 
 
-def apply_squeeze(scope, input_name, output_name, container, operator_name=None, axes=[0], rank=0):
+def apply_squeeze(scope, input_name, output_name, container, operator_name=None, axes=None, rank=0):
+    if axes is None:
+        axes = [0]
     _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Squeeze', operator_name, axes, rank)
 
 
@@ -1082,5 +1084,7 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
                      scales)
 
 
-def apply_unsqueeze(scope, input_name, output_name, container, operator_name=None, axes=[0], rank=0):
+def apply_unsqueeze(scope, input_name, output_name, container, operator_name=None, axes=None, rank=0):
+    if axes is None:
+        axes = [0]
     _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Unsqueeze', operator_name, axes, rank)
