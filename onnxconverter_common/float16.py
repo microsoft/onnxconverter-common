@@ -3,8 +3,8 @@
 # license information.
 ###########################################################################
 
-import numpy as np
 import itertools
+import numpy as np
 import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
@@ -93,7 +93,8 @@ def convert_float_to_float16(model):
 
     # create black list
     op_black_list = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
-                     'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor', 'Normalizer',
+                     'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
+                     'Normalizer',
                      'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
                      'TreeEnsembleRegressor', 'ZipMap']
     # create a queue for BFS

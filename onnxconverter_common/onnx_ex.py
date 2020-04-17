@@ -2,6 +2,7 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
+
 from logging import getLogger
 from onnx import helper, defs as onnx_defs, onnx_pb as onnx_proto
 from . import utils
