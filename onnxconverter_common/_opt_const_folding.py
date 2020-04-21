@@ -122,6 +122,12 @@ class OnnxGraphContext:
         retval = data_val[tuple(exp_all)]
         return [retval]
 
+    def _OnDiv(self, node, inputs):
+        return [np.divide(inputs[0], inputs[1])]
+
+    def _OnPow(self, node, inputs):
+        return [np.power(inputs[0], inputs[1])]
+
     def _OnSqrt(self, node, inputs):
         return [np.sqrt(inputs[0].tolist(), dtype=inputs[0].dtype)]
 
