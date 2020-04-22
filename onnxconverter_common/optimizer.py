@@ -1340,7 +1340,8 @@ class SwapOpOptimizer(object):
                     num_successor_inputs = len(node.successor[0].precedence)
                     all_initializers = True
                     for idx_ in range(1, num_successor_inputs):
-                        if node.successor[0].get_precedence_by_idx(idx_).origin is not None:
+                        suc_pred = node.successor[0].get_precedence_by_idx(idx_)
+                        if suc_pred and suc_pred.origin is not None:
                             all_initializers = False
                             break
                     if all_initializers:
