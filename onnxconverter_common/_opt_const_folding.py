@@ -90,9 +90,10 @@ class OnnxGraphContext:
         return [retval]
 
     def _OnRange(self, node, inputs):
-        retval = np.asarray(list(range(inputs[0].astype(np.int32).item(0),
-                                       inputs[1].astype(np.int32).item(0),
-                                       inputs[2].astype(np.int32).item(0))))
+        retval = np.arange(inputs[0].item(0),
+                           inputs[1].item(0),
+                           inputs[2].item(0),
+                           dtype=inputs[0].dtype)
         return [retval]
 
     def _OnSlice(self, node, inputs):
@@ -121,6 +122,12 @@ class OnnxGraphContext:
 
         retval = data_val[tuple(exp_all)]
         return [retval]
+
+    def _OnDiv(self, node, inputs):
+        return [np.divide(inputs[0], inputs[1])]
+
+    def _OnPow(self, node, inputs):
+        return [np.power(inputs[0], inputs[1])]
 
     def _OnSqrt(self, node, inputs):
         return [np.sqrt(inputs[0].tolist(), dtype=inputs[0].dtype)]
