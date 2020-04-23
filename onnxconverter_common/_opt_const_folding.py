@@ -196,7 +196,8 @@ def _dfs_calc(graph, node, reserved_names, node_status):
         return node_status[node.name]
 
     if len(node.input) == 0:
-        assert node.op_type == 'Constant', "Assume only a constant node hasn't any inputs"
+        assert node.op_type in ['Constant', 'RandomNormal', 'RandomUniform'],\
+            "Assume only the generator operation node hasn't any inputs"
         if all(o_ not in reserved_names for o_ in node.output):
             graph.calculate(node)
         return 0
