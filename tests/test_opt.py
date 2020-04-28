@@ -300,7 +300,7 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
     def test_onnx_models(self):
-        model_names = ['mobile_segnet_no_opt.onnx', 'srgan_no_opt.onnx']
+        model_names = ['mobile_segnet_no_opt.onnx', 'srgan_no_opt.onnx', 'test_model_0_no_opt.onnx']
         dir_path = os.path.dirname(os.path.realpath(__file__))
         for model_name_ in model_names:
             model_dir = dir_path + '/data/' + model_name_
