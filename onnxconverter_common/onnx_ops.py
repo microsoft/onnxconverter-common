@@ -466,7 +466,7 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
         compare_input_1 = scope.get_unique_variable_name(name + '_input_1_cast')
         container.add_node('Cast', [input_names[1]], compare_input_1, name=name + '_input_1_cast', to=1)
         less_out = scope.get_unique_variable_name(name + '_less_out')
-        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
+        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1], less_out,
                            name=name + '_' + onnx_op_string_rev.lower(),
                            op_version=op_version)
         container.add_node('Not', less_out, output_name, name=name + '_not')
