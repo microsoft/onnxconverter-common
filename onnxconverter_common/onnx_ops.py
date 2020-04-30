@@ -466,7 +466,7 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
         compare_input_1 = scope.get_unique_variable_name(name + '_input_1_cast')
         container.add_node('Cast', [input_names[1]], compare_input_1, name=name + '_input_1_cast', to=1)
         less_out = scope.get_unique_variable_name(name + '_less_out')
-        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1],
+        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1], less_out,
                            name=name + '_' + onnx_op_string_rev.lower(),
                            op_version=op_version)
         container.add_node('Not', less_out, output_name, name=name + '_not')
@@ -1031,15 +1031,21 @@ def apply_topk(scope, input_name, output_names, container, k, operator_name=None
     name = _create_name_or_use_existing_one(scope, 'TopK', operator_name)
 
     if container.target_opset < 10:
+        if isinstance(k, str):
+            raise ValueError('topk k cannot be string type before opset 10')
         container.add_node('TopK', input_name, output_names, name=name, k=k, op_version=1)
     else:
         if container.target_opset == 10:
             op_version = 10
         else:
             op_version = 11
-        k_value_name = scope.get_unique_variable_name('k_value')
-        container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
-        container.add_node('TopK', [input_name, k_value_name], output_names, name=name, op_version=op_version)
+
+        if isinstance(k, str):
+            k_value_name = k
+        else:
+            k_value_name = scope.get_unique_variable_name('k_value')
+            container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
+        container.add_node('TopK', input_name + [k_value_name], output_names, name=name, op_version=op_version)
 
 
 def apply_transpose(scope, input_name, output_name, container, operator_name=None, perm=None):
