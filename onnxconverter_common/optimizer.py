@@ -1147,12 +1147,15 @@ def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_
     if unsqueeze_axes is None:
         attrs = {}
     else:
-        unsqueeze_axes = [idx_ + 1 for idx_ in unsqueeze_axes]
         attrs = {'axes': unsqueeze_axes}
     new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
     node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
     PushTransposeSolution.transpose_number += 1
-    cur_perm_map[node.unique_name] = [0, 2, 3, 1]
+    prev_perm = cur_perm_map[node.precedence[0].unique_name]
+    cur_axes = unsqueeze_axes[0]
+    prev_perm_adjust = [idx_ + 1 if idx_ >= cur_axes else idx_ for idx_ in prev_perm]
+    target_perm = prev_perm_adjust[0:cur_axes] + [cur_axes] + prev_perm_adjust[cur_axes:]
+    cur_perm_map[node.unique_name] = target_perm
     return cur_perm_map
 
 
@@ -1222,6 +1225,10 @@ class PushTransposeSolution(Solution):
             if node.origin.op_type in _broadcast_types:
                 success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
                 if not success:
+                    return None, False
+            elif node.origin.op_type == 'Unsqueeze':
+                unsqueeze_axes = node.get_attribute('axes')
+                if unsqueeze_axes and len(unsqueeze_axes) > 1:
                     return None, False
 
         for node_pair_ in node_transpose_pass:
