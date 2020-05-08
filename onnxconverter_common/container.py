@@ -1,10 +1,8 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
 
-import six
 from onnx import helper
 from .interface import ModelContainer
 
@@ -39,47 +37,6 @@ class RawModelContainer(object):
         raise NotImplementedError()
 
 
-class SparkmlModelContainer(RawModelContainer):
-
-    def __init__(self, sparkml_model):
-        super(SparkmlModelContainer, self).__init__(sparkml_model)
-        # Sparkml models have no input and output specified, so we create them and store them in this container.
-        self._inputs = []
-        self._outputs = []
-
-    @property
-    def input_names(self):
-        return [variable.raw_name for variable in self._inputs]
-
-    @property
-    def output_names(self):
-        return [variable.raw_name for variable in self._outputs]
-
-    def add_input(self, variable):
-        # The order of adding variables matters. The final model's input names are sequentially added as this list
-        if variable not in self._inputs:
-            self._inputs.append(variable)
-
-    def add_output(self, variable):
-        # The order of adding variables matters. The final model's output names are sequentially added as this list
-        if variable not in self._outputs:
-            self._outputs.append(variable)
-
-
-class CoremlModelContainer(RawModelContainer):
-
-    def __init__(self, coreml_model):
-        super(CoremlModelContainer, self).__init__(coreml_model)
-
-    @property
-    def input_names(self):
-        return [str(var.name) for var in self.raw_model.description.input]
-
-    @property
-    def output_names(self):
-        return [str(var.name) for var in self.raw_model.description.output]
-
-
 class CommonSklearnModelContainer(RawModelContainer):
 
     def __init__(self, sklearn_model):
@@ -105,48 +62,6 @@ class CommonSklearnModelContainer(RawModelContainer):
         # The order of adding variables matters. The final model's output names are sequentially added as this list
         if variable not in self._outputs:
             self._outputs.append(variable)
-
-
-class SklearnModelContainer(CommonSklearnModelContainer):
-    pass
-
-
-class LibSvmModelContainer(CommonSklearnModelContainer):
-    pass
-
-
-class LightGbmModelContainer(CommonSklearnModelContainer):
-    pass
-
-
-class XGBoostModelContainer(CommonSklearnModelContainer):
-    pass
-
-
-class KerasModelContainer(RawModelContainer):
-
-    def __init__(self, keras_model):
-        super(KerasModelContainer, self).__init__(keras_model)
-        self._input_raw_names = list()
-        self._output_raw_names = list()
-
-    def add_input_name(self, name):
-        # The order of adding strings matters. The final model's input names are sequentially added as this list
-        if name not in self._input_raw_names:
-            self._input_raw_names.append(name)
-
-    def add_output_name(self, name):
-        # The order of adding strings matters. The final model's output names are sequentially added as this list
-        if name not in self._output_raw_names:
-            self._output_raw_names.append(name)
-
-    @property
-    def input_names(self):
-        return [name for name in self._input_raw_names]
-
-    @property
-    def output_names(self):
-        return [name for name in self._output_raw_names]
 
 
 class ModelComponentContainer(ModelContainer):
@@ -229,14 +144,14 @@ class ModelComponentContainer(ModelContainer):
         :param attrs: A Python dictionary. Keys and values are attributes' names and attributes' values, respectively.
         '''
 
-        if isinstance(inputs, (six.string_types, six.text_type)):
+        if isinstance(inputs, str):
             inputs = [inputs]
-        if isinstance(outputs, (six.string_types, six.text_type)):
+        if isinstance(outputs, str):
             outputs = [outputs]
-        if not isinstance(inputs, list) or not all(isinstance(s, (six.string_types, six.text_type)) for s in inputs):
+        if not isinstance(inputs, (list, tuple)) or not all(isinstance(s, str) for s in inputs):
             type_list = ','.join(list(str(type(s)) for s in inputs))
             raise ValueError('Inputs must be a list of string but get [%s]' % type_list)
-        if not isinstance(outputs, list) or not all(isinstance(s, (six.string_types, six.text_type)) for s in outputs):
+        if not isinstance(outputs, (list, tuple)) or not all(isinstance(s, str) for s in outputs):
             type_list = ','.join(list(str(type(s)) for s in outputs))
             raise ValueError('Outputs must be a list of string but get [%s]' % type_list)
         for k, v in attrs.items():

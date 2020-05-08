@@ -1,23 +1,20 @@
-# -------------------------------------------------------------------------
+# coding=utf-8
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
 
 import re
-import warnings
-from logging import getLogger
-from distutils.version import StrictVersion
 import onnx
-from onnx import onnx_pb as onnx_proto
+import warnings
+from distutils.version import StrictVersion
 from onnx import helper
-from .metadata_props import add_metadata_props
-from . import registration
-from . import utils
-from .data_types import *
+from .registration import get_converter, get_shape_calculator
+from .data_types import TensorType, Int64Type, FloatType, StringType
+from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
-from .interface import OperatorBase
+from .interface import OperatorBase, ScopeBase
 
 
 class Variable:
@@ -107,10 +104,10 @@ class Operator(OperatorBase):
 
     def infer_types(self):
         # Invoke a core inference function
-        registration.get_shape_calculator(self.type)(self)
+        get_shape_calculator(self.type)(self)
 
 
-class Scope:
+class Scope(ScopeBase):
 
     def __init__(self, name, parent_scopes=None, variable_name_set=None, operator_name_set=None, target_opset=None):
         '''
@@ -342,32 +339,82 @@ class Topology:
                 if is_root[name] or is_sink[name]]
 
     def topological_operator_iterator(self):
-        '''
-        This is an iterator of all operators in Topology object. Operators may be produced in a topological order.
-        If you want to simply go though all operators without considering their topological structure, please use
-        another function, unordered_operator_iterator.
-        '''
+        """
+        This is an iterator of all operators in Topology object.
+        Operators may be produced in a topological order. If you want to
+        simply go though all operators without considering their
+        topological structure, please use another function,
+        unordered_operator_iterator.
+        """
         self._initialize_graph_status_for_traversing()
-        priorities = {'tensorToProbabilityMap': 2, 'tensorToLabel': 1}
-        while not all(operator.is_evaluated for scope in self.scopes for operator in scope.operators.values()):
+        priorities = {
+            'tensorToProbabilityMap': 2,
+            'tensorToLabel': 1
+        }
+        while not all(operator.is_evaluated for scope in self.scopes
+                      for operator in scope.operators.values()):
             is_evaluation_happened = False
             for operator in sorted(self.unordered_operator_iterator(),
-                                   key=lambda op: priorities[op.type] if op.type in priorities else 0):
-                if all(variable.is_fed for variable in operator.inputs) and not operator.is_evaluated:
-                    # Check if over-writing problem occurs (i.e., multiple operators produce results on one variable).
+                                   key=lambda op: priorities[op.type]
+                                   if op.type in priorities else 0):
+                if (all(variable.is_fed for variable in operator.inputs)
+                        and not operator.is_evaluated):
+                    # Check if over-writing problem occurs (i.e., multiple
+                    # operators produce results on one variable).
                     for variable in operator.outputs:
-                        # Throw an error if this variable has been treated as an output somewhere
+                        # Throw an error if this variable has been treated as
+                        # an output somewhere
                         if variable.is_fed:
-                            raise RuntimeError('One variable can only be assigned once')
+                            raise RuntimeError(
+                                "A variable is already assigned ({}) "
+                                "for operator '{}' (name='{}'). This "
+                                "may still happen if a converter is a "
+                                "combination of sub-operators and one of "
+                                "of them is producing this output. "
+                                "In that case, an identity node must be "
+                                "added.".format(
+                                    variable, operator.type,
+                                    operator.onnx_name))
                         # Mark this variable as filled
                         variable.is_fed = True
                     # Make this operator as handled
                     operator.is_evaluated = True
                     is_evaluation_happened = True
+
                     # Send out an operator
                     yield operator
-            # After scanning through the whole computational graph, at least one operator should be evaluated. If not,
-            # we need to terminate this procedure to avoid dead lock.
+
+                    # This step may create new nodes if the
+                    # the converter is called while looping on
+                    # the nodes. The outputs of an operator
+                    # are not necessary the inputs of the next
+                    # one and but can processed by other ONNX nodes
+                    # inserted in the container. As a result, some
+                    # variables never have is_fed set to True which
+                    # is updated now unless they are an operator
+                    # output.
+                    known_outputs = {}
+                    for op in self.unordered_operator_iterator():
+                        for out in op.outputs:
+                            if hasattr(out, 'onnx_name'):
+                                known_outputs[out.onnx_name] = out
+                            else:
+                                known_outputs[out] = out
+                    for variable in self.unordered_variable_iterator():
+                        if variable.is_fed:
+                            continue
+                        if variable.onnx_name in known_outputs:
+                            continue
+                        update = (False if self.root_names and
+                                           variable.onnx_name not in self.root_names
+                                  else True)
+                        if update:
+                            variable.is_fed = True
+                            is_evaluation_happened = True
+
+            # After scanning through the whole computational graph, at
+            # least one operator should be evaluated. If not, we need
+            # to terminate this procedure to avoid dead lock.
             if not is_evaluation_happened:
                 break
 
@@ -633,7 +680,7 @@ class Topology:
         self._check_structure()
 
 
-def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx, channel_first_inputs=None):
+def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None):
     '''
     This function is used to convert our Topology object defined in _parser.py into a ONNX model (type: ModelProto).
     :param topology: The Topology object we are going to convert
@@ -651,11 +698,12 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (
                 onnx.__version__, targeted_onnx))
 
-    opset_from_onnx_version = onnx.defs.onnx_opset_version()
+    opset_from_onnx_version = min(onnx_builtin_opset_version(), DEFAULT_OPSET_NUMBER)
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
-        raise RuntimeError("target_opset %d is higher than the number of the installed onnx package.")
+        raise RuntimeError(("target_opset %d is higher than the number of the installed onnx package"
+                            + " or the converter support (%d).") % (target_opset, opset_from_onnx_version))
 
     topology._initialize_graph_status_for_traversing()
 
@@ -726,7 +774,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             topology.custom_conversion_functions[operator.type](scope, operator, container)
         else:
             # Convert the selected operator into some ONNX objects and save them into the container
-            registration.get_converter(operator.type)(scope, operator, container)
+            get_converter(operator.type)(scope, operator, container)
 
     # When calling ModelComponentContainer's add_initializer(...), nothing is added into the input list.
     # However, for ONNX target opset < 9, initializers should also be model's (GraphProto) inputs.
@@ -760,43 +808,6 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
 
     # Add extra information related to the graph
     graph.value_info.extend(container.value_info)
-
-    # Create model
-    onnx_model = helper.make_model(graph)
-
-    # Merge operator sets for the same domain, the largest version number would be kept
-    purified_operator_set = dict()
-    for op_domain, op_version in container.node_domain_version_pair_sets:
-        if op_domain not in purified_operator_set:
-            purified_operator_set[op_domain] = op_version
-        else:
-            purified_operator_set[op_domain] = max(purified_operator_set[op_domain], op_version)
-
-    # Fill operator sets
-    i = 0
-    for op_domain, op_version in purified_operator_set.items():
-        if i == 0 and len(onnx_model.opset_import) == 1:
-            # Overwrite the default operator set created by helper.make_model(...)
-            op_set = onnx_model.opset_import[0]
-        else:
-            # Just create one ONNX element in opset_import
-            op_set = onnx_model.opset_import.add()
-        op_set.domain = op_domain
-        op_set.version = op_version
-        i += 1
-        if container.target_opset < op_version:
-            raise RuntimeError(('The specified opset %d is too low to convert this model, ' +
-                               'which requires at least opset %d.') % (container.target_opset, op_version))
-        elif container.target_opset > op_version:
-            getLogger('onnxmltools').warning('The maximum opset needed by this model is only %d.' % op_version)
-
-    # Add extra information
-    add_metadata_props(onnx_model, topology.metadata_props, target_opset)
-    onnx_model.ir_version = onnx_proto.IR_VERSION
-    onnx_model.producer_name = utils.get_producer()
-    onnx_model.producer_version = utils.get_producer_version()
-    onnx_model.domain = utils.get_domain()
-    onnx_model.model_version = utils.get_model_version()
-    onnx_model.doc_string = doc_string
-
+    onnx_model = make_model_ex(graph, container.node_domain_version_pair_sets,
+                               target_opset, topology.metadata_props, doc_string=doc_string)
     return onnx_model

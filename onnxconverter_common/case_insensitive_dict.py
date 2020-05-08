@@ -1,7 +1,9 @@
-try:
-    from collections.abc import Mapping, MutableMapping
-except ImportError:
-    from collections import Mapping, MutableMapping
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+###############################################################################
+
+from collections.abc import Mapping, MutableMapping
 from collections import OrderedDict
 
 

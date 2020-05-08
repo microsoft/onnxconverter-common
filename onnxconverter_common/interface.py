@@ -1,19 +1,18 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
-# This file defines the interface of the converter internal object for callback,
-# So the usage of the methods and properties list here will not be affected among the different versions.
+###############################################################################
 
+"""
+This file defines the interface of the converter internal object for callback,
+So the usage of the methods and properties list here will not be affected among the different versions.
+"""
 
 import abc
-import six
 
 
-@six.add_metaclass(abc.ABCMeta)
 class ModelContainer:
-    __metaclass = abc.ABCMeta
+    __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
     def add_initializer(self, name, onnx_type, shape, content):
@@ -43,7 +42,6 @@ class ModelContainer:
         return
 
 
-@six.add_metaclass(abc.ABCMeta)
 class OperatorBase:
     __metaclass__ = abc.ABCMeta
 
@@ -80,7 +78,6 @@ class OperatorBase:
         pass
 
 
-@six.add_metaclass(abc.ABCMeta)
 class ScopeBase:
     __metaclass__ = abc.ABCMeta
 

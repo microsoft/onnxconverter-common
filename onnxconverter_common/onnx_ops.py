@@ -1,14 +1,15 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
+
 # This file contains some high-level APIs for applying operations on variables specified by names. We should try our
 # best to use those functions because they can produce ONNX operators according to the ONNX version specified in the
 # `container` argument. Notice that those function behaviors are defined in a way very similar to ONNX-1.2.
 
 import numpy as np
 from onnx import onnx_pb as onnx_proto
+from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 
 
 def _create_name_or_use_existing_one(scope, op_type, name):
@@ -79,10 +80,32 @@ def apply_add(scope, input_names, output_name, container, operator_name=None, ax
                                      axis=axis, broadcast=broadcast)
 
 
-def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1):
+def apply_argmax(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1,
+                 select_last_index=0):
     name = _create_name_or_use_existing_one(scope, 'ArgMax', operator_name)
-    container.add_node('ArgMax', input_name, output_name, op_version=1, name=name,
-                       axis=axis, keepdims=keepdims)
+    attrs = {'axis': axis, 'keepdims': keepdims}
+    if container.target_opset < 11:
+        op_version = 1
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+        attrs['select_last_index'] = select_last_index
+    container.add_node('ArgMax', input_name, output_name, op_version=op_version, name=name, **attrs)
+
+
+def apply_argmin(scope, input_name, output_name, container, operator_name=None, axis=0, keepdims=1,
+                 select_last_index=0):
+    name = _create_name_or_use_existing_one(scope, 'ArgMin', operator_name)
+    attrs = {'axis': axis, 'keepdims': keepdims}
+    if container.target_opset < 11:
+        op_version = 1
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+        attrs['select_last_index'] = select_last_index
+    container.add_node('ArgMin', input_name, output_name, op_version=op_version, name=name, **attrs)
 
 
 def apply_affine(scope, input_name, output_name, container, operator_name=None, alpha=1., beta=0.):
@@ -187,7 +210,10 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
         container.add_node('Clip', input_name, output_name, op_version=op_version, **attrs)
     else:
-        op_version = 11
+        if container.target_opset < 12:
+            op_version = 11
+        else:
+            op_version = 12
         if min is None and max is not None:
             raise RuntimeError("Operator 'Clip': min must be specified if max is.")
         inputs = [input_name]
@@ -198,7 +224,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 if isinstance(min, np.ndarray):
                     if len(min.shape) == 0:
                         min = [min]
-                    elif min.shape == (1, ):
+                    elif min.shape == (1,):
                         min = list(min[0])
                     else:
                         raise RuntimeError("min must be an array of one element.")
@@ -207,10 +233,14 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
 
                 # container in sklearn-onnx stores the computation type in
                 # container.dtype.
-                min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
                 min_name = scope.get_unique_variable_name('clip_min')
-                container.add_initializer(min_name, getattr(container, 'proto_dtype',
-                    onnx_proto.TensorProto.FLOAT), [], [min[0]])
+                if op_version < 12:
+                    min = np.array(min, dtype=getattr(container, 'dtype', np.float32))
+                    container.add_initializer(min_name, getattr(container, 'proto_dtype',
+                                                                onnx_proto.TensorProto.FLOAT), [], [min[0]])
+                else:
+                    min = np.array(min)
+                    container.add_initializer(min_name, NP_TYPE_TO_TENSOR_TYPE[min.dtype], [], [min[0]])
                 min = min_name
             if isinstance(min, str):
                 inputs.append(min)
@@ -232,10 +262,14 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                 else:
                     max = [max]
 
-                max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
                 max_name = scope.get_unique_variable_name('clip_max')
-                container.add_initializer(max_name, getattr(container, 'proto_dtype',
-                    onnx_proto.TensorProto.FLOAT), [], [max[0]])
+                if op_version < 12:
+                    max = np.array(max, dtype=getattr(container, 'dtype', np.float32))
+                    container.add_initializer(max_name, getattr(container, 'proto_dtype',
+                                                                onnx_proto.TensorProto.FLOAT), [], [max[0]])
+                else:
+                    max = np.array(max)
+                    container.add_initializer(max_name, NP_TYPE_TO_TENSOR_TYPE[max.dtype], [], [max[0]])
                 max = max_name
             if isinstance(max, str):
                 inputs.append(max)
@@ -262,17 +296,42 @@ def apply_concat(scope, input_names, output_name, container, operator_name=None,
 def apply_constant(scope, output_name, container, operator_name=None, value=None):
     name = _create_name_or_use_existing_one(scope, 'Constant', operator_name)
 
-    if not value:
+    if value is None:
         raise ValueError('Attribute "value" is a required argument.')
-
-    attrs = {'name': name, 'value': value}
 
     if container.target_opset < 9:
         op_version = 1
-    else:
+    elif container.target_opset < 11:
         op_version = 9
+    elif container.target_opset < 12:
+        op_version = 11
+    else:
+        op_version = 12
+
+    if op_version < 12:
+        attrs = {'name': name, 'value': value}
+    else:
+        if isinstance(value, float):
+            attrs = {'name': name, 'value_float': value}
+        elif isinstance(value, int):
+            attrs = {'name': name, 'value_int': value}
+        elif isinstance(value, str):
+            attrs = {'name': name, 'value_string': value}
+        else:
+            attrs = {'name': name, 'value': value}
 
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
+
+
+def apply_conv(scope, input_names, output_name, container, operator_name=None, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'Conv', operator_name)
+
+    if container.target_opset < 11:
+        op_version = 1
+    else:
+        op_version = 11
+
+    container.add_node('Conv', input_names, output_name, name=name, op_version=op_version, **attrs)
 
 
 def apply_crop_height_width(scope, input_name, output_name, container, operator_name=None,
@@ -336,6 +395,27 @@ def apply_floor(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Floor', input_name, output_name, container, operator_name=operator_name)
 
 
+def apply_flatten(scope, input_name, output_name, container, operator_name=None, axis=1):
+    name = _create_name_or_use_existing_one(scope, 'Flatten', operator_name)
+    if container.target_opset < 9:
+        op_version = 1
+    elif container.target_opset < 11:
+        op_version = 9
+    else:
+        op_version = 11
+    container.add_node('Flatten', input_name, output_name, name=name, op_version=op_version, axis=axis)
+
+
+def apply_gather(scope, input_names, output_name, container, operator_name=None, axis=0):
+    name = _create_name_or_use_existing_one(scope, 'Gather', operator_name)
+    if container.target_opset < 11:
+        op_version = 1
+    else:
+        op_version = 11
+
+    container.add_node('Gather', input_names, output_name, name=name, op_version=op_version, axis=axis)
+
+
 def apply_gemm(scope, input_name, output_name, container, operator_name=None, alpha=1.0, beta=1.0,
                transA=0, transB=0):
     """
@@ -355,6 +435,76 @@ def apply_gemm(scope, input_name, output_name, container, operator_name=None, al
         attrs['op_version'] = 11
 
     container.add_node('Gemm', input_name, output_name, name=name, **attrs)
+
+
+def apply_greater(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Greater', operator_name)
+    if container.target_opset < 7:
+        op_version = 1
+    elif container.target_opset < 9:
+        op_version = 7
+    else:
+        op_version = 9
+
+    container.add_node('Greater', input_names, output_name, name=name, op_version=op_version)
+
+
+def _convert_compare_equal(scope, input_names, output_name, container, operator_name, tf_op_string, onnx_op_string_rev,
+                           onnx_op_string):
+    if container.target_opset < 7:
+        raise ValueError(tf_op_string + " op is not supported for opset < 7")
+    elif container.target_opset < 9:
+        op_version = 7
+    elif container.target_opset < 12:
+        op_version = 9
+    else:
+        op_version = 12
+    name = _create_name_or_use_existing_one(scope, tf_op_string, operator_name)
+    if op_version < 9:
+        compare_input_0 = scope.get_unique_variable_name(name + '_input_0_cast')
+        container.add_node('Cast', [input_names[0]], compare_input_0, name=name + '_input_0_cast', to=1)
+        compare_input_1 = scope.get_unique_variable_name(name + '_input_1_cast')
+        container.add_node('Cast', [input_names[1]], compare_input_1, name=name + '_input_1_cast', to=1)
+        less_out = scope.get_unique_variable_name(name + '_less_out')
+        container.add_node(onnx_op_string_rev, [compare_input_0, compare_input_1], less_out,
+                           name=name + '_' + onnx_op_string_rev.lower(),
+                           op_version=op_version)
+        container.add_node('Not', less_out, output_name, name=name + '_not')
+    elif op_version < 12:
+        compare_node = scope.get_unique_variable_name(name + '_compare_node')
+        container.add_node(onnx_op_string_rev, input_names, compare_node,
+                           name=name + '_' + onnx_op_string_rev.lower(),
+                           op_version=op_version)
+        container.add_node('Not', [compare_node], output_name, name=name)
+    else:
+        container.add_node(onnx_op_string_rev, input_names, output_name,
+                           name=name + '_' + onnx_op_string_rev.lower(), op_version=op_version)
+
+
+def apply_greater_or_equal(scope, input_names, output_name, container, operator_name=None):
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'GreaterEqual', 'Less',
+                           'GreaterOrEqual')
+
+
+def apply_less_or_equal(scope, input_names, output_name, container, operator_name=None):
+    _convert_compare_equal(scope, input_names, output_name, container, operator_name, 'LessEqual', 'Greater',
+                           'LessOrEqual')
+
+
+def apply_gru(scope, input_names, output_names, container, operator_name=None, output_seq=0, reset_after=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'GRU', operator_name)
+    if container.target_opset < 3:
+        op_version = 1
+        attrs['output_sequence'] = 1 if output_seq else 0
+    else:
+        attrs['linear_before_reset'] = 1 if reset_after else 0
+        if container.target_opset <= 5:
+            attrs['output_sequence'] = 1 if output_seq else 0
+            op_version = 3
+        else:
+            op_version = 7
+
+    container.add_node('GRU', input_names, output_names, name=name, op_version=op_version, **attrs)
 
 
 def apply_hard_sigmoid(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
@@ -380,18 +530,53 @@ def apply_instance_norm(scope, input_names, output_name, container, operator_nam
     container.add_node('InstanceNormalization', input_names, output_name, op_version=op_version, **attrs)
 
 
+def apply_inverse(scope, input_name, output_name, container, operator_name=None):
+    if container.target_opset < 12:
+        raise ValueError("tf op MatrixInverse is not supported for opset < 12")
+    else:
+        op_version = 12
+    name = _create_name_or_use_existing_one(scope, 'Inverse', operator_name)
+    container.add_node('Inverse', input_name, output_name, name=name, op_version=op_version)
+
+
 def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
+
+
+def apply_less(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Less', operator_name)
+    if container.target_opset < 7:
+        op_version = 1
+    elif container.target_opset < 9:
+        op_version = 7
+    else:
+        op_version = 9
+
+    container.add_node('Less', input_names, output_name, name=name, op_version=op_version)
 
 
 def apply_log(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Log', input_name, output_name, container, operator_name=operator_name)
 
 
+def apply_lstm(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'LSTM', operator_name)
+    if container.target_opset <= 6:
+        attrs['output_sequence'] = 1 if output_seq else 0
+        op_version = 1
+    else:
+        op_version = 7
+    container.add_node('LSTM', input_names, output_names, name=name, op_version=op_version, **attrs)
+
+
 def apply_matmul(scope, input_names, output_name, container, operator_name=None):
     op_type = 'MatMul'
     name = _create_name_or_use_existing_one(scope, op_type, operator_name)
-    container.add_node(op_type, input_names, output_name, op_version=9, name=name)
+    if container.target_opset <= 9:
+        op_version = 1
+    else:
+        op_version = 9
+    container.add_node(op_type, input_names, output_name, op_version=op_version, name=name)
 
 
 def apply_max(scope, input_names, output_name, container, operator_name=None):
@@ -420,22 +605,40 @@ def apply_normalization(scope, input_name, output_name, container, operator_name
     container.add_node('LpNormalization', input_name, output_name, name=name, p=p, axis=axis)
 
 
-def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None):
+def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None,
+              onnx_type=onnx_proto.TensorProto.FLOAT):
     name = _create_name_or_use_existing_one(scope, 'Pad', operator_name)
     attrs = {'name': name}
+    inputs = input_name if isinstance(input_name, list) else [input_name]
 
     if mode is not None:
         attrs['mode'] = mode
-    if value is not None:
-        attrs['value'] = value
-    if container.target_opset < 2:
-        attrs['paddings'] = pads
-        op_version = 1
-    else:
-        attrs['pads'] = pads
-        op_version = 2
 
-    container.add_node('Pad', input_name, output_name, op_version=op_version, **attrs)
+    if container.target_opset < 11:
+        if isinstance(pads, str):
+            raise ValueError("Dynamic pad is not supported for opset < 11.")
+        if value is not None:
+            attrs['value'] = value
+        if container.target_opset < 2:
+            attrs['paddings'] = pads
+            op_version = 1
+        else:
+            attrs['pads'] = pads
+            op_version = 2
+    else:
+        op_version = 11
+        if isinstance(pads, str):
+            inputs.append(pads)
+        else:
+            pads_name = scope.get_unique_variable_name(name + '_pads')
+            container.add_initializer(pads_name, onnx_proto.TensorProto.INT64, [len(pads)], pads)
+            inputs.append(pads_name)
+        if value is not None:
+            value_name = scope.get_unique_variable_name(name + '_value')
+            container.add_initializer(value_name, onnx_type, [], [value])
+            inputs.append(value_name)
+
+    container.add_node('Pad', inputs, output_name, op_version=op_version, **attrs)
 
 
 def apply_parametric_softplus(scope, input_name, output_name, container, operator_name=None, alpha=None, beta=None):
@@ -493,9 +696,12 @@ def apply_pow(scope, input_names, output_name, container, operator_name=None, ax
         if broadcast is not None:
             attrs['broadcast'] = broadcast
         op_version = 1
-    else:
+    elif container.target_opset < 12:
         # Since ONNX-1.2, broadcasting behavior is Numpy-like, so we don't need to specify any attributes
         op_version = 7
+    else:
+        op_version = 12
+
     container.add_node('Pow', input_names, output_name, op_version=op_version, **attrs)
 
 
@@ -531,7 +737,7 @@ def apply_relu(scope, input_name, output_name, container, operator_name=None):
 
 
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
-    if len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
+    if not isinstance(desired_shape, str) and len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
         raise ValueError('There can only be one -1 in the targeted shape of a Reshape but got %s' % desired_shape)
 
     name = _create_name_or_use_existing_one(scope, 'Reshape', operator_name)
@@ -540,15 +746,23 @@ def apply_reshape(scope, input_name, output_name, container, operator_name=None,
         container.add_node('Reshape', input_name, output_name, op_version=1, name=name, shape=desired_shape,
                            consumed_inputs=[0])
     else:
-        # The shape attribute of Reshape becomes a tensor input, so we create one tensor to store that attribute.
-        desired_shape_name = scope.get_unique_variable_name('shape_tensor')
-        container.add_initializer(desired_shape_name, onnx_proto.TensorProto.INT64, [len(desired_shape)], desired_shape)
+        if isinstance(desired_shape, str):
+            desired_shape_name = desired_shape
+        else:
+            desired_shape_name = scope.get_unique_variable_name('shape_tensor')
+            container.add_initializer(desired_shape_name, onnx_proto.TensorProto.INT64, [len(desired_shape)],
+                                      desired_shape)
 
         # Create ONNX Reshape operator
-        container.add_node('Reshape', [input_name, desired_shape_name], output_name, op_version=5, name=name)
+        if isinstance(input_name, list):
+            input_name.append(desired_shape_name)
+        else:
+            input_name = [input_name, desired_shape_name]
+        container.add_node('Reshape', input_name, output_name, op_version=5, name=name)
 
 
-def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
+def apply_resize(scope, input_name, output_name, container, operator_name=None, mode='nearest',
+                 coordinate_transformation_mode='asymmetric', scales=None):
     '''
     :param mode: "nearest" or "linear"
     :param scales: a float tensor for scaling (upsampling or downsampling) all input dimensions
@@ -565,13 +779,26 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
         op_version = 11
         roi_tensor_name = scope.get_unique_variable_name(name + '_roi')
         roi = [0.0] * len(scales) + [1.0] * len(scales)
-        container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2*len(scales)], roi)
+        container.add_initializer(roi_tensor_name, onnx_proto.TensorProto.FLOAT, [2 * len(scales)], roi)
         inputs.append(roi_tensor_name)
+        attrs['coordinate_transformation_mode'] = coordinate_transformation_mode
+        if attrs['mode'] == 'nearest':
+            attrs['nearest_mode'] = 'floor'
 
     scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
     container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
     inputs.append(scales_tensor_name)
     container.add_node('Resize', inputs, output_name, op_version=op_version, **attrs)
+
+
+def apply_rnn(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+    name = _create_name_or_use_existing_one(scope, 'RNN', operator_name)
+    if container.target_opset <= 6:
+        attrs['output_sequence'] = 1 if output_seq else 0
+        op_version = 1
+    else:
+        op_version = 7
+    container.add_node('RNN', input_names, output_names, name=name, op_version=op_version, **attrs)
 
 
 def apply_sigmoid(scope, input_name, output_name, container, operator_name=None):
@@ -628,33 +855,51 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
     name = _create_name_or_use_existing_one(scope, 'Slice', operator_name)
 
     if container.target_opset < 10:
-        container.add_node('Slice', input_name, output_name, name=name,
-                           starts=starts, ends=ends, axes=axes, op_version=1)
+        if axes is None:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, op_version=1)
+        else:
+            container.add_node('Slice', input_name, output_name, name=name,
+                               starts=starts, ends=ends, axes=axes, op_version=1)
     else:
         if container.target_opset == 10:
             op_version = 10
         else:
             op_version = 11
-        inputs = [input_name]
-        starts_name = scope.get_unique_variable_name('starts')
-        ends_name = scope.get_unique_variable_name('ends')
-        container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
-                                  [len(starts)], starts)
-        container.add_initializer(ends_name, onnx_proto.TensorProto.INT64,
-                                  [len(ends)], ends)
+        inputs = input_name if isinstance(input_name, list) else [input_name]
+        if isinstance(starts, str):
+            starts_name = starts
+        else:
+            starts_name = scope.get_unique_variable_name('starts')
+            container.add_initializer(starts_name, onnx_proto.TensorProto.INT64,
+                                      [len(starts)], starts)
+
+        if isinstance(ends, str):
+            ends_name = ends
+        else:
+            ends_name = scope.get_unique_variable_name('ends')
+            container.add_initializer(ends_name, onnx_proto.TensorProto.INT64,
+                                      [len(ends)], ends)
+
         inputs.append(starts_name)
         inputs.append(ends_name)
         if axes:
-            axes_name = scope.get_unique_variable_name('axes')
-            container.add_initializer(axes_name, onnx_proto.TensorProto.INT64,
-                                      [len(axes)], axes)
+            if isinstance(axes, str):
+                axes_name = axes
+            else:
+                axes_name = scope.get_unique_variable_name('axes')
+                container.add_initializer(axes_name, onnx_proto.TensorProto.INT64,
+                                          [len(axes)], axes)
             inputs.append(axes_name)
         if steps:
             if not axes:
                 inputs.append('')
-            steps_name = scope.get_unique_variable_name('steps')
-            container.add_initializer(steps_name, onnx_proto.TensorProto.INT64,
-                                      [len(steps)], steps)
+            if isinstance(steps, str):
+                steps_name = steps
+            else:
+                steps_name = scope.get_unique_variable_name('steps')
+                container.add_initializer(steps_name, onnx_proto.TensorProto.INT64,
+                                          [len(steps)], steps)
             inputs.append(steps_name)
         container.add_node('Slice', inputs, output_name, name=name,
                            op_version=op_version)
@@ -680,6 +925,23 @@ def apply_split(scope, input_name, output_names, container, operator_name=None, 
 
 def apply_sqrt(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Sqrt', input_name, output_name, container, operator_name=operator_name)
+
+
+def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_str, operator_name=None, axes=None,
+                             rank=0):
+    name = _create_name_or_use_existing_one(scope, squeeze_str, operator_name)
+    if container.target_opset < 11:
+        op_version = 1
+        axes = [axis if axis >= 0 else axis + rank + 1 for axis in axes]
+    else:
+        op_version = 11
+    container.add_node(squeeze_str, input_name, output_name, name=name, op_version=op_version, axes=axes)
+
+
+def apply_squeeze(scope, input_name, output_name, container, operator_name=None, axes=None, rank=0):
+    if axes is None:
+        axes = [0]
+    _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Squeeze', operator_name, axes, rank)
 
 
 def apply_sub(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=0):
@@ -719,13 +981,15 @@ def apply_thresholded_relu(scope, input_name, output_name, container, operator_n
 def apply_tile(scope, input_name, output_name, container, operator_name=None, repeats=None):
     name = _create_name_or_use_existing_one(scope, 'Tile', operator_name)
 
-    if repeats is None or all(repeat_count == 1 for repeat_count in repeats):
+    if repeats is None or (not isinstance(repeats, str) and all(repeat_count == 1 for repeat_count in repeats)):
         container.add_node('Identity', input_name, output_name, name=name)
         return
 
-    if container.target_opset < 7:
+    if container.target_opset < 6:
         intermediate_input_name = input_name
         intermediate_output_name = None
+        if isinstance(repeats, str):
+            raise ValueError('repeats cannot be string type before opset 6')
 
         for axis, repeat_count in enumerate(repeats):
             if repeat_count == 1:
@@ -755,24 +1019,33 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
         container.add_node('Identity', intermediate_output_name, output_name, op_version=1, name=name)
     else:
         # ONNX-1.2 has a new Tile and we use it here
-        repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
-        container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
-        container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=7, name=name)
+        if isinstance(repeats, str):
+            container.add_node('Tile', input_name + [repeats], output_name, op_version=6, name=name)
+        else:
+            repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
+            container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
+            container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=6, name=name)
 
 
 def apply_topk(scope, input_name, output_names, container, k, operator_name=None):
     name = _create_name_or_use_existing_one(scope, 'TopK', operator_name)
 
     if container.target_opset < 10:
+        if isinstance(k, str):
+            raise ValueError('topk k cannot be string type before opset 10')
         container.add_node('TopK', input_name, output_names, name=name, k=k, op_version=1)
     else:
         if container.target_opset == 10:
             op_version = 10
         else:
             op_version = 11
-        k_value_name = scope.get_unique_variable_name('k_value')
-        container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
-        container.add_node('TopK', [input_name, k_value_name], output_names, name=name, op_version=op_version)
+
+        if isinstance(k, str):
+            k_value_name = k
+        else:
+            k_value_name = scope.get_unique_variable_name('k_value')
+            container.add_initializer(k_value_name, onnx_proto.TensorProto.INT64, [1], [k])
+        container.add_node('TopK', input_name + [k_value_name], output_names, name=name, op_version=op_version)
 
 
 def apply_transpose(scope, input_name, output_name, container, operator_name=None, perm=None):
@@ -780,7 +1053,8 @@ def apply_transpose(scope, input_name, output_name, container, operator_name=Non
     container.add_node('Transpose', input_name, output_name, name=name, perm=perm)
 
 
-def apply_upsample(scope, input_name, output_name, container, operator_name=None, mode='nearest', scales=None):
+def apply_upsample(scope, input_name, output_name, container, operator_name=None, mode='nearest',
+                   coordinate_transformation_mode='asymmetric', scales=None):
     '''
     :param mode: nearest or linear
     :param scales: an integer list of scaling-up rate of all input dimensions
@@ -812,4 +1086,11 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
     else:
         # Upsample op is deprecated in ONNX opset 10
         # We implement Upsample through Resize instead
-        apply_resize(scope, input_name, output_name, container, operator_name, mode, scales)
+        apply_resize(scope, input_name, output_name, container, operator_name, mode, coordinate_transformation_mode,
+                     scales)
+
+
+def apply_unsqueeze(scope, input_name, output_name, container, operator_name=None, axes=None, rank=0):
+    if axes is None:
+        axes = [0]
+    _apply_squeeze_unsqueeze(scope, input_name, output_name, container, 'Unsqueeze', operator_name, axes, rank)

@@ -1,19 +1,20 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
-import six
+###############################################################################
+
 import numpy as np
 import onnx
-from onnx import helper
+from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
+from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph
 
+reserved_names_in_graph = frozenset()
 
 class LinkedNode(object):
     UNIQUE_NAME_INDEX = 0
 
-    def __init__(self, node=None, in_n=None, out_n=None):
+    def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
         self.origin = node  # type: onnx_proto.NodeProto
         if in_n is None and node is not None:
             in_n = node.input
@@ -21,10 +22,11 @@ class LinkedNode(object):
             out_n = node.output
         self.input = {} if in_n is None else {i_: i_ for i_ in in_n}
         self.output = {} if out_n is None else {o_: o_ for o_ in out_n}
+        self.tensors = [] if tensors_n is None else tensors_n
+        self.initializers = []
         self.precedence = []
         self.successor = []
         self.attributes = {}
-        self.tensors = []
         LinkedNode.UNIQUE_NAME_INDEX += 1
         self.unique_name = "{}__{}".format(
             self.origin.name if self.origin and self.origin.name else 'unnamed',
@@ -54,16 +56,21 @@ class LinkedNode(object):
                len(self.precedence) == 1
 
     @property
+    def in_single_path_to_output(self):
+        return len(self.successor) == 1 and self.successor[0].in_or_out and \
+               len(self.precedence) == 1 and not self.precedence[0].in_or_out
+
+    @property
     def element_wise(self):
         return False if self.origin is None else \
             self.origin.op_type in ['Relu', 'LeakyRelu', 'PRelu', 'Tanh'] + \
             ['Abs', 'Acos', 'Acosh', 'Log', 'Affine', 'Elu'] + \
-            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity']
+            ['Sigmoid', 'ScaledTanh', 'HardSigmoid', 'Softsign', 'Softplus', 'Identity', 'Neg', 'Clip']
 
     @property
     def broadcast(self):
         return False if self.origin is None else \
-            self.origin.op_type in ['Add', 'Div', 'Max']
+            self.origin.op_type in ['Add', 'And', 'Div', 'Equal', 'Max', 'Mean', 'Min', 'Mul', 'Sub', 'Sum']
 
     @property
     def in_single_path_and_inner(self):
@@ -87,7 +94,7 @@ class LinkedNode(object):
         Test if a node is miso: multiple input and single output
         """
         return len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and \
-               len(self.precedence) > 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out
+               len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.get_precedence_by_idx(0).in_or_out
 
     @property
     def in_mi_and_inner(self):
@@ -100,7 +107,7 @@ class LinkedNode(object):
             if len(pre_.successor) > 1:
                 return False
         return len(self.successor) >= 1 and \
-               len(self.precedence) > 1 and self.precedence[0] is not None and not self.successor[0].in_or_out
+               len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.successor[0].in_or_out
 
     @property
     def is_eligible_concat_and_inner(self):
@@ -157,7 +164,7 @@ class LinkedNode(object):
     @property
     def single_input(self):
         assert self.origin is not None and len(self.input) == 1
-        return next(value for (key, value) in six.iteritems(self.input))
+        return next(value for (key, value) in self.input.items())
 
     @property
     def single_origin_input(self):
@@ -167,40 +174,85 @@ class LinkedNode(object):
     @property
     def single_output(self):
         assert self.origin is not None and len(self.output) == 1
-        return next(value for (key, value) in six.iteritems(self.output))
+        return next(value for (key, value) in self.output.items())
 
     @property
     def single_origin_output(self):
         assert self.origin is not None and len(self.output) == 1
         return self.origin.output[0]
 
+    @property
+    def is_reserved(self):
+        if self.origin is None:
+            return False
+        for node_output_ in self.origin.output:
+            if node_output_ in reserved_names_in_graph:
+                return True
+        return False
+
     def in_redirect(self, old_name, name):
         if old_name in self.input:
             self.input[old_name] = name
         else:
-            key = next(k for k, v in six.iteritems(self.input) if v == old_name)
+            key = next(k for k, v in self.input.items() if v == old_name)
             self.input[key] = name
 
     def out_redirect(self, old_name, name):
-        assert self.in_or_out
         if old_name in self.output:
             self.output[old_name] = name
         else:
-            key = next(k for k, v in six.iteritems(self.output) if v == old_name)
+            key = next(k for k, v in self.output.items() if v == old_name)
             self.output[key] = name
 
-    def reshape_input_for_broadcast(self, perm):
-        assert len(self.origin.input) == 2
-        self.tensors.append((np.reshape, self.origin.input[1]))
+    def get_input_by_idx(self, idx=0):
+        if self.origin is None:
+            assert idx == 0
+            return list(self.input.values())[0]
+        onode_input_name = self.origin.input[idx]
+        return self.input[onode_input_name]
+
+    def get_output_by_idx(self, idx=0):
+        if self.origin is None:
+            assert idx == 0
+            return list(self.output.values())[0]
+        onode_output_name = self.origin.output[idx]
+        return self.output[onode_output_name]
+
+    def get_precedence_by_idx(self, idx=0):
+        input_tensor_name = self.get_input_by_idx(idx)
+        for pred in self.precedence:
+            if input_tensor_name in pred.output.values():
+                return pred
+        return None
+
+    def get_precedence_tensor_by_idx(self, idx=0):
+        input_tensor_name = self.get_input_by_idx(idx)
+        for initializer_ in self.initializers:
+            if input_tensor_name == initializer_.name:
+                return initializer_
+
+        for pred in self.precedence:
+            if input_tensor_name in pred.output.values():
+                return pred.tensors[0]
+        return None
+
+    def get_attribute(self, attr_name, default_value=None):
+        if attr_name in self.attributes:
+            return self.attributes[attr_name]
+        found = [attr for attr in self.origin.attribute if attr.name == attr_name]
+        if found:
+            return helper.get_attribute_value(found[0])
+        return default_value
 
     def generate(self):
         updated = False
-        if self.attributes or self.tensors:
+        if self.attributes:
             updated = True
-        elif len([k for k, v in six.iteritems(self.input) if k != v]) > 0:
+        elif len([k for k, v in self.input.items() if k != v]) > 0:
             updated = True
-        elif len([k for k, v in six.iteritems(self.output) if k != v]) > 0:
+        elif len([k for k, v in self.output.items() if k != v]) > 0:
             updated = True
+
         if not updated:
             return [self.origin]
         else:
@@ -208,23 +260,27 @@ class LinkedNode(object):
             onode.name = self.origin.name
             onode.op_type = self.origin.op_type
             onode.input.extend([self.input.get(i_, i_) for i_ in self.origin.input])
+            for input_ in self.initializers:
+                if input_.name not in onode.input:
+                    onode.input.append(input_.name)
             onode.output.extend([self.output.get(o_, o_) for o_ in self.origin.output])
             onode.doc_string = self.origin.doc_string
             onode.domain = self.origin.domain
             onode.attribute.extend(
                 attr for attr in self.origin.attribute if attr.name not in self.attributes)
             onode.attribute.extend(
-                helper.make_attribute(attr.name, self.attributes[attr.name]) for attr in self.attributes)
+                helper.make_attribute(attr, self.attributes[attr]) for attr in self.attributes)
 
-            return [onode] + self.tensors
+            return [onode]
 
     def add_precedence(self, pre, tname):
         self.precedence.append(pre)
         pre.successor.append(self)
         assert tname in self.input.values() and tname in pre.output.values()
 
+
     @staticmethod
-    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs):
+    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None):
         view = []
         var_map = {}
         for o_ in onnx_nodes:
@@ -236,12 +292,18 @@ class LinkedNode(object):
 
         additional_nodes = []
         count_nchw = 0
+        initializer_map = None
+        if initializers is not None:
+            initializer_map = {k.name:k for k in initializers}
         for n_ in view:
             for var_ in n_.origin.input:
                 target = var_map.get(var_)
                 if target is None:
                     assert var_ == '' or var_ in inputs
-                    target = LinkedNode(out_n=[var_])  # create an empty node as input
+                    if initializer_map is not None and var_ in initializer_map:
+                        target = LinkedNode(out_n=[var_], tensors_n=[initializer_map[var_]])  # create an empty node as input
+                    else:
+                        target = LinkedNode(out_n=[var_])
                     new_output = var_ + '_nhwc'
                     if var_ in nchw_inputs:
                         nnode = LinkedNode(
@@ -315,7 +377,7 @@ class Solution(object):
 
     @staticmethod
     def is_useless_transpose(perm):
-        return perm == list(six.moves.range(len(perm)))
+        return perm == list(range(len(perm)))
 
     @staticmethod
     def delete_node_nto1(node_list, begin, node, end):  # type: ([],LinkedNode, LinkedNode, LinkedNode)->[]
@@ -328,20 +390,21 @@ class Solution(object):
         elif not isinstance(begin, list):
             begin = [begin]
 
+        target_var_name = None
         if end.in_or_out:
             # if the end is output node, the output name will be kept to avoid the model output name updating.
             for nb_ in begin:
                 nb_.out_redirect(node.single_input, node.single_output)
         else:
+            target_var_name = node.get_input_by_idx(0)
             for nb_ in begin:
-                target_var_name = node.single_input
                 assert target_var_name in nb_.output.values()  # since the output info never be updated, except the final.
                 end.in_redirect(node.single_output, target_var_name)
 
         for nb_ in begin:
             nb_.successor = [end if v_ == node else v_ for v_ in nb_.successor]
-        end.precedence = [v_ for v_ in end.precedence if v_ != node] + node.precedence
 
+        end.precedence = [v_ for v_ in end.precedence if v_ != node] + [node.get_precedence_by_idx(0)]
         node_list.remove(node)
         return node_list
 
@@ -351,7 +414,6 @@ class Solution(object):
         delete the node which has 1-input and n-output
         """
         if end is None:
-            assert end is not None
             end = node.successor
         elif not isinstance(end, list):
             end = [end]
@@ -388,16 +450,26 @@ class Solution(object):
 
     def apply(self, node_list):
         node = self.begin_n  # type: LinkedNode
-        while node != self.end:
-            assert len(node.successor) == 1
-            end = node.successor[0]
-            if self.begin:
-                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
-            else:
-                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
-            node = self.end if self.end is None else end
+        if node.is_reserved:
+            return None, False
+        if len(node.successor) > 1:
+            node_list = self.delete_node_1ton(node_list, self.begin, node, self.end)
+        else:
+            node = self.begin_n
+            while node != self.end:
+                assert len(node.successor) == 1
+                end = node.successor[0]
+                if node.is_reserved:
+                    return None, False
+                node = self.end if self.end is None else end
 
-        return node_list
+            node = self.begin_n
+            while node != self.end:
+                end = node.successor[0]
+                node_list = self.delete_node_nto1(node_list, self.begin, node, end)
+                node = self.end if self.end is None else end
+
+        return node_list, True
 
 
 # Match two perms where the merge is identity, this is order sensitive.
@@ -412,6 +484,9 @@ def match_perm(perm0, perm1):
 
 class MergeSolution(Solution):
     def apply(self, node_list):
+        if self.begin_n.is_reserved or self.end_p.is_reserved:
+            return None, False
+
         perm0 = self.get_perm(self.begin_n.origin)
         perm1 = self.get_perm(self.end_p.origin)
         assert len(perm0) == len(perm1)
@@ -419,23 +494,21 @@ class MergeSolution(Solution):
         if self.is_useless_transpose(perm_f):
             node = self.begin  # type: LinkedNode
             while node != self.end and len(node.successor) >= 1:
-                # if node.broadcast:
-                #    node.reshape_input_for_broadcast(perm0)
                 node = node.successor[0]
 
             node_list = self.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor[0])
-            node_list = self.delete_node_1ton(node_list, self.end_p.precedence[0], self.end_p, self.end)
+            node_list = self.delete_node_1ton(node_list, self.end_p.get_precedence_by_idx(0), self.end_p, self.end)
         else:
             node_list = self.delete_node_1ton(node_list, self.begin_n, self.end_p, self.end)
             self.begin_n.origin = helper.make_node('Transpose', self.begin_n.origin.input, self.begin_n.origin.output,
                                                    self.begin_n.origin.name, perm=perm_f)
-        return node_list
+        return node_list, True
 
 
 class MoveForwardSolution(Solution):
     def apply(self, node_list):
-        self.begin_n.successor[0].in_redirect(self.begin_n.single_output, self.begin.single_output)
-        self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
+        self.begin_n.successor[0].in_redirect(self.begin_n.single_output, self.begin.get_output_by_idx(0))
+        self.begin_n.in_redirect(self.begin.get_output_by_idx(0), self.end_p.single_output)
         self.end.in_redirect(self.end_p.single_output, self.begin_n.single_output)
 
         self.begin_n.successor[0].precedence[0] = self.begin
@@ -448,13 +521,15 @@ class MoveForwardSolution(Solution):
                 self.end.precedence[i_] = self.begin_n
                 break
         self.begin_n.successor[0] = self.end
-        return node_list
+        return node_list, True
 
 
 class FanOutSolution(Solution):
     number = 0
 
     def apply(self, node_list):
+        if self.begin_n.is_reserved:
+            return None, False
         cur_perm = Solution.get_perm(self.begin_n.origin)
         # make a copy of self.end_p.successor
         successor_list = list(self.end_p.successor)
@@ -478,17 +553,19 @@ class FanOutSolution(Solution):
             FanOutSolution.number = FanOutSolution.number + 1
             node_list = Solution.add_siso_node(node_list, self.end_p, suc, list(self.end_p.output.values())[0], nnode)
 
-        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
-        return node_list
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end)
+        return node_list, True
 
 
 class TransposeFanOutSolution(Solution):
     def apply(self, node_list):
+        if self.begin_n.is_reserved:
+            return None, False
         successor_list = list(self.begin_n.successor)
         for suc_ in successor_list:
             node_list = Solution.delete_node_1ton(node_list, self.begin_n, suc_, suc_.successor[0])
         node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor)
-        return node_list
+        return node_list, True
 
 
 class FanInSolution(Solution):
@@ -501,217 +578,925 @@ class FanInSolution(Solution):
     def apply(self, node_list):
         # make a copy of self.begin.precedence
         precedence_list = list(self.begin.precedence)
+        for branch in precedence_list:
+            if branch.is_reserved:
+                return None, False
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
         for suc in successor_list:
+            if suc.origin is None:
+                output_name = list(self.begin.output.values())[0]
+                fan_in_node_output_name = 'fan_in_adjustment_out' + str(FanInSolution.number)
+                self.begin.out_redirect(output_name, fan_in_node_output_name)
+                FanInSolution.number = FanInSolution.number + 1
+                for suc_2 in successor_list:
+                    suc_2.in_redirect(output_name, fan_in_node_output_name)
+
+        for suc in successor_list:
+            if suc.origin is None:
+                transpose_output_name = [output_name]
+            else:
+                transpose_output_name = ['fan_in_adjustment_out' + str(FanInSolution.number)]
+
             if self.perm == []:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
-                        ['fan_out_adjustment_in' + str(FanOutSolution.number)],
-                        ['fan_out_adjustment_out' + str(FanOutSolution.number)],
-                        name='TransposeFanIn_succ_' + str(FanOutSolution.number)))
+                        ['fan_in_adjustment_in' + str(FanInSolution.number)],
+                        transpose_output_name,
+                        name='TransposeFanIn_succ_' + str(FanInSolution.number)))
             else:
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
-                        ['fan_out_adjustment_in' + str(FanOutSolution.number)],
-                        ['fan_out_adjustment_out' + str(FanOutSolution.number)],
+                        ['fan_in_adjustment_in' + str(FanInSolution.number)],
+                        transpose_output_name,
                         perm=self.perm,
-                        name='TransposeFanIn_succ_' + str(FanOutSolution.number)))
-            FanOutSolution.number = FanOutSolution.number + 1
+                        name='TransposeFanIn_succ_' + str(FanInSolution.number)))
+            FanInSolution.number = FanInSolution.number + 1
             node_list = Solution.add_siso_node(node_list, self.begin, suc, list(self.begin.output.values())[0], nnode)
 
         for branch in precedence_list:
-            node_list = Solution.delete_node_1ton(node_list, branch.precedence[0], branch, self.begin)
-        return node_list
+            node_list = Solution.delete_node_1ton(node_list, branch.get_precedence_by_idx(0), branch, self.begin)
+        return node_list, True
 
 
 class MergePadConvSolution(Solution):
+
     def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
 
     def apply(self, node_list):
-        pads = helper.get_attribute_value(self.begin_n.origin.attribute[1])
-        half_len_pads = len(pads) // 2
-        pads_new = pads[2:half_len_pads]
-        pads_new.extend(pads[half_len_pads + 2:])
-        attrs = {'pads': pads_new}
-        pads_new = np.asarray(pads_new)
-        auto_pad_value = helper.get_attribute_value(self.end_p.origin.attribute[0])
+        if self.begin_n.is_reserved:
+            return None, False
+        auto_pad_value = self.end_p.get_attribute('mode', 'constant')
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
-            return node_list
+            return None, False
 
-        for attr_idx in range(5):
-            if attr_idx == 0:
-                # for other cases, set auto_pad = 'NOTSET'
-                attrs.update({'auto_pad': 'NOTSET'})
-                continue
-            cur_attr = self.end_p.origin.attribute[attr_idx]
-            if cur_attr.name == "pads":
-                conv_pads = np.asarray(helper.get_attribute_value(cur_attr))
-                pads_new = list(pads_new + conv_pads)
-                attrs.update({cur_attr.name: pads_new})
+        if len(self.begin_n.origin.input) == 1:
+            pads = self.begin_n.get_attribute('pads')
+        else:
+            pad_tensor = self.begin_n.get_precedence_by_idx(1)
+            if pad_tensor is None:
+                pads = numpy_helper.to_array(self.begin_n.initializers[0]).tolist()
             else:
-                attrs.update({cur_attr.name: helper.get_attribute_value(cur_attr)})
+                pads = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0]).tolist()
+        half_len_pads = len(pads) // 2
+        pads_new_list = pads[2:half_len_pads]
+        pads_new_list.extend(pads[half_len_pads + 2:])
+        pads_new = np.asarray(pads_new_list, dtype=np.int64)
 
-        self.end_p.origin = helper.make_node('Conv', self.end_p.origin.input, self.end_p.origin.output,
-                                             self.end_p.origin.name + "_0", **attrs)
+        self.end_p.attributes['auto_pad'] = 'NOTSET'
+        pads = self.end_p.get_attribute('pads')
+        if pads:
+            conv_pads = np.asarray(pads, dtype=np.int64)
+            pads_new_list = list(pads_new + conv_pads)
+        self.end_p.attributes['pads'] = pads_new_list
 
-        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+        node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
 
-        return node_list
+        return None, False
+
+
+class NextToOutputSolution(Solution):
+    def apply(self, node_list):
+        if self.begin_n.is_reserved:
+            return None, False
+        for idx_, succ_ in enumerate(self.begin.successor):
+            if succ_ == self.begin_n:
+                self.begin.successor[idx_] = self.begin_n.successor[0]
+            else:
+                succ_.in_redirect(self.begin.single_output, self.begin_n.single_output)
+
+        find_begin_output = False
+        for k, v in self.begin.output.items():
+            if v == self.begin_n.single_input:
+                self.begin.output[k] = self.begin_n.single_output
+                find_begin_output = True
+                break
+        if not find_begin_output:
+            raise Exception("begin output is not found for NextToOutputSolution for tensor " + self.begin_n.single_output)
+
+        node_list.remove(self.begin_n)
+        return node_list, True
+
+
+class ConvBatchNormSolution(Solution):
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        if self.end_p.is_reserved:
+            return None, False
+        conv_ori_weight = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0])
+        conv_ori_bias = 0
+        if len(self.begin_n.precedence) > 2:
+            conv_ori_bias = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(2).tensors[0])
+        scale = numpy_helper.to_array(self.end_p.get_precedence_by_idx(1).tensors[0])
+        B = numpy_helper.to_array(self.end_p.get_precedence_by_idx(2).tensors[0])
+        mean = numpy_helper.to_array(self.end_p.get_precedence_by_idx(3).tensors[0])
+        var = numpy_helper.to_array(self.end_p.get_precedence_by_idx(4).tensors[0])
+        epsilon = self.end_p.get_attribute('epsilon', 1.0e-5)
+        adjusted_scale = scale / np.sqrt(var + epsilon)
+        if len(conv_ori_weight.shape) == 4:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None, None, None]
+        elif len(conv_ori_weight.shape) == 3:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None, None]
+        elif len(conv_ori_weight.shape) == 2:
+            conv_weight = conv_ori_weight * adjusted_scale[:, None]
+        else:
+            return None, False
+        conv_bias = (conv_ori_bias - mean) * adjusted_scale + B
+
+        conv_weight_name = self.begin_n.origin.name+'_W_new'
+        conv_weight_initilizer = numpy_helper.from_array(conv_weight, name=conv_weight_name)
+        conv_bias_name = self.begin_n.origin.name + '_B_new'
+        conv_bias_initilizer = numpy_helper.from_array(conv_bias, name=conv_bias_name)
+
+        self.begin_n.in_redirect(self.begin_n.origin.input[1], conv_weight_name)
+        if len(self.begin_n.input) > 2:
+            self.begin_n.in_redirect(self.begin_n.origin.input[2], conv_bias_name)
+        else:
+            self.begin_n.input[conv_bias_name] = conv_bias_name
+        self.begin_n.initializers = [conv_weight_initilizer, conv_bias_initilizer]
+
+        self.begin_n.successor = []
+        for end_ in self.end:
+            end_.in_redirect(self.end_p.origin.output[0], self.begin_n.origin.output[0])
+            self.begin_n.successor.append(end_)
+            end_.precedence[end_.precedence.index(self.end_p)] = self.begin_n
+
+        node_list.remove(self.end_p)
+
+        return node_list, True
 
 
 class RedundantOptimizer(object):
     @staticmethod
-    def find(node_list):
-        solution = None
-        for n_ in node_list:
-            if n_.is_identity and n_.in_single_path:
-                end = n_.successor[0]
-                end_pre = n_
+    def find(node):
+        if node.is_identity:
+            if node.in_single_path:
+                end = node.successor[0]
+                end_pre = node
                 while end is not None and end.is_identity and end.in_single_path:
                     end_pre = end
                     end = end.successor[0]
-                solution = Solution(n_.precedence[0], n_, end_pre, end)
-                return solution
+                return Solution(node.get_precedence_by_idx(0), node, end_pre, end)
+            elif node.in_single_path_to_output:
+                return NextToOutputSolution(node.get_precedence_by_idx(0), node, None, None)
+            elif len(node.successor) > 1:
+                in_or_out = any([successor_.in_or_out for successor_ in node.successor])
+                if not in_or_out:
+                    return Solution(node.get_precedence_by_idx(0), node, None, None)
 
-        return solution
+        return None
 
 
 class TransposeOptimizer(object):
     @staticmethod
-    def find(node_list):
+    def find(node):
         solution = None
-        for n_ in node_list:
-            if n_.is_transpose:
-                perm = Solution.get_perm(n_.origin)
-                if n_.in_single_path:  # n_.in_single_path_and_inner:
-                    if Solution.is_useless_transpose(perm):
-                        solution = Solution(n_.precedence[0], n_, n_, n_.successor[0])
-                        return solution
-                    else:
-                        succ = n_.successor[0]  # type: LinkedNode
-                        while succ.in_single_path:
-                            if succ.is_transpose: break
-                            if succ.element_wise or succ.broadcast:
-                                succ = succ.successor[0]
-                            else:
-                                break
-                        if succ.is_transpose:
-                            solution = MergeSolution(n_.precedence[0], n_, succ, succ.successor[0])
-                            return solution
-
-                    last_switchable = n_
-                    test_node = n_.successor[0]
-                    switch_transpose = False
-                    while test_node.is_transpose_switchable_single_path and not test_node.successor[0].in_or_out:
-                        switch_transpose = True
-                        last_switchable = test_node
-                        test_node = test_node.successor[0]
-                    if switch_transpose:
-                        solution = MoveForwardSolution(n_.precedence[0], n_, last_switchable,
-                                                       last_switchable.successor[0])
-                        return solution
-
-                    next_node = n_.successor[0]
-                    if next_node.is_transpose_switchable_simo:
-                        delta_node = -1
-                        cur_perm = Solution.get_perm(n_.origin)
-                        for branch in next_node.successor:
-                            while branch.is_transpose_switchable_single_path:
-                                branch = branch.successor[0]
-                            if branch.is_transpose:
-                                branch_perm = Solution.get_perm(branch.origin)
-                                if len(cur_perm) == len(branch_perm):
-                                    perm_f = [cur_perm[idx] for idx in branch_perm]
-
-                                    if Solution.is_useless_transpose(perm_f):
-                                        delta_node = delta_node - 1
-
-                            else:
-                                delta_node = delta_node + 1
-                        if delta_node <= 0:
-                            solution = FanOutSolution(n_.precedence[0], n_, next_node, None)
-                            return solution
-                else:  # simo Transpose op
-                    simo_transpose_case = True
-                    cur_perm = None
-                    for succ_ in n_.successor:
-                        if not succ_.is_transpose:
-                            simo_transpose_case = False
-                            break
-                        if not cur_perm:
-                            cur_perm = Solution.get_perm(succ_.origin)
-                        elif cur_perm != Solution.get_perm(succ_.origin):
-                            simo_transpose_case = False
-                            break
-                    if simo_transpose_case and match_perm(perm, cur_perm):
-                        solution = TransposeFanOutSolution(n_.precedence[0], n_, None, None)
-                        return solution
-            elif n_.is_transpose_switchable_mi:
-                branch_perm = []
-                number_branch = 0
-                good_branch = 0
-                for branch in n_.precedence:
-                    if branch.is_transpose and branch.in_single_path_and_inner:
-                        if number_branch == 0:
-                            branch_perm = Solution.get_perm(branch.origin)
-                            good_branch = good_branch + 1
-                        else:
-                            cur_perm = Solution.get_perm(branch.origin)
-                            if not branch_perm == cur_perm:
-                                break
-                            good_branch = good_branch + 1
-                    else:
-                        break
-                    number_branch = number_branch + 1
-                find_switch = good_branch == len(n_.precedence)
-
-                if find_switch:
-                    solution = FanInSolution(n_, n_.successor[0], None, None, branch_perm)
+        if node.is_transpose:
+            perm = Solution.get_perm(node.origin)
+            if node.in_single_path:  # node.in_single_path_and_inner:
+                if Solution.is_useless_transpose(perm):
+                    solution = Solution(node.get_precedence_by_idx(0), node, node, node.successor[0])
                     return solution
-            eligible_concat = n_.is_eligible_concat_and_inner
-            if eligible_concat[0]:
-                perm = Solution.get_perm(n_.precedence[0].origin)
-                solution = FanInSolution(n_, n_.successor[0], None, None, perm)
-                onnx_node = helper.make_node('Concat', n_.origin.input, n_.origin.output,
-                                             n_.origin.name, axis=eligible_concat[1])
-                n_.origin = onnx_node
+                else:
+                    succ = node.successor[0]  # type: LinkedNode
+                    while succ.in_single_path:
+                        if succ.is_transpose: break
+                        if succ.element_wise or succ.broadcast:
+                            succ = succ.successor[0]
+                        else:
+                            break
+                    if succ.is_transpose:
+                        solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor[0])
+                        return solution
+
+                last_switchable = node
+                test_node = node.successor[0]
+                switch_transpose = False
+                while test_node.is_transpose_switchable_single_path and not test_node.successor[0].in_or_out:
+                    switch_transpose = True
+                    last_switchable = test_node
+                    test_node = test_node.successor[0]
+                if switch_transpose:
+                    solution = MoveForwardSolution(node.get_precedence_by_idx(0), node, last_switchable,
+                                                   last_switchable.successor[0])
+                    return solution
+
+                next_node = node.successor[0]
+                if next_node.is_transpose_switchable_simo:
+                    delta_node = -1
+                    cur_perm = Solution.get_perm(node.origin)
+                    for branch in next_node.successor:
+                        while branch.is_transpose_switchable_single_path:
+                            branch = branch.successor[0]
+                        if branch.is_transpose:
+                            branch_perm = Solution.get_perm(branch.origin)
+                            if len(cur_perm) == len(branch_perm):
+                                perm_f = [cur_perm[idx] for idx in branch_perm]
+
+                                if Solution.is_useless_transpose(perm_f):
+                                    delta_node = delta_node - 1
+
+                        else:
+                            delta_node = delta_node + 1
+                    if delta_node <= 0:
+                        solution = FanOutSolution(node.get_precedence_by_idx(0), node, next_node, next_node)
+                        return solution
+            else:  # simo Transpose op
+                simo_transpose_case = True
+                for succ_ in node.successor:
+                    if not succ_.is_transpose:
+                        simo_transpose_case = False
+                        break
+                if simo_transpose_case:
+                    solution = FanOutSolution(node.get_precedence_by_idx(0), node, node, node.successor)
+                    return solution
+        elif node.is_transpose_switchable_mi:
+            branch_perm = []
+            number_branch = 0
+            good_branch = 0
+            for branch in node.precedence:
+                if branch.is_transpose and branch.in_single_path_and_inner:
+                    if number_branch == 0:
+                        branch_perm = Solution.get_perm(branch.origin)
+                        good_branch = good_branch + 1
+                    else:
+                        cur_perm = Solution.get_perm(branch.origin)
+                        if not branch_perm == cur_perm:
+                            break
+                        good_branch = good_branch + 1
+                else:
+                    break
+                number_branch = number_branch + 1
+            find_switch = good_branch == len(node.precedence)
+
+            if find_switch:
+                solution = FanInSolution(node, node.successor[0], None, None, branch_perm)
                 return solution
+        eligible_concat = node.is_eligible_concat_and_inner
+        if eligible_concat[0]:
+            perm = Solution.get_perm(node.get_precedence_by_idx(0).origin)
+            solution = FanInSolution(node, node.successor[0], None, None, perm)
+            onnx_node = helper.make_node('Concat', node.origin.input, node.origin.output,
+                                         node.origin.name, axis=eligible_concat[1])
+            node.origin = onnx_node
+            return solution
 
         return solution
 
 
 class MergePadConvOptimizer(object):
     @staticmethod
-    def find(node_list):
-        solution = None
-        for n_ in node_list:
-            if n_.origin.op_type == 'Pad' and n_.in_single_path_and_inner:
-                next = n_.successor[0]
-                if next.origin.op_type == 'Conv':
-                    solution = MergePadConvSolution(n_.precedence[0], n_, next, next.successor[0])
+    def find(node):
+        if node.origin.op_type == 'Pad':
+            next = node.successor[0]
+            if next.origin is not None and next.origin.op_type == 'Conv':
+                if node.in_single_path_and_inner:
+                    solution = MergePadConvSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
+                    return solution
+                elif node.in_miso_and_inner:
+                    number_pad_input_nodes = sum(pred.origin is not None for pred in node.precedence)
+                    if number_pad_input_nodes == 1:
+                        solution = MergePadConvSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
+                        return solution
+
+        return None
+
+
+class ConvBatchNormOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.origin.op_type == 'Conv' and len(node.successor) == 1 and node.successor[0] is not None:
+            if len(node.initializers) > 0:
+                return None
+            next = node.successor[0]
+            if next.origin is not None and next.origin.op_type == 'BatchNormalization':
+                if len(node.initializers) > 0:
+                    return None
+                if len(node.get_precedence_by_idx(1).tensors) == 0:
+                    return None
+                elif len(node.precedence) > 2 and len(node.get_precedence_by_idx(1).tensors) == 0:
+                    return None
+                else:
+                    for idx_ in range(1, 5):
+                        if len(next.precedence[idx_].tensors) == 0:
+                            return None
+
+                solution = ConvBatchNormSolution(node.get_precedence_by_idx(0), node, next, next.successor)
+                return solution
+
+        return None
+
+
+def _dynamic_value_process(first_shape, second_shape, value):
+    minus_one_idx = second_shape.index(value)
+    if first_shape[0: minus_one_idx] != second_shape[0: minus_one_idx]:
+        return False
+    end_length = len(second_shape) - minus_one_idx - 1
+    return first_shape[-end_length:] == second_shape[-end_length:]
+
+
+def _is_good_for_match_shape(first_shape, second_shape):
+    if len(first_shape) < len(second_shape):
+        return False
+    dynamic_value = [-1, None]
+    for value_ in second_shape:
+        if isinstance(value_, str):
+            dynamic_value = [value_]
+            break
+    for value_ in dynamic_value:
+        if value_ in second_shape:
+            return _dynamic_value_process(first_shape, second_shape, value_)
+    return first_shape == second_shape
+
+
+class MergeReshapeOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.origin.op_type == 'Reshape' and len(node.successor) == 1:
+            n_tensors = node.get_precedence_by_idx(1).tensors
+            if len(n_tensors) > 0:
+                reshape_value_0 = numpy_helper.to_array(n_tensors[0]).tolist()
+                next = node.successor[0]
+                if next.origin is not None and next.origin.op_type == 'Reshape':
+                    next_tensors = next.get_precedence_by_idx(1).tensors
+                    if len(next_tensors) > 0:
+                        reshape_value_1 = numpy_helper.to_array(next_tensors[0]).tolist()
+                        if _is_good_for_match_shape(reshape_value_0, reshape_value_1):
+                            solution = Solution(node.get_precedence_by_idx(0), node, next, next)
+                            return solution
+
+        return None
+
+
+class MergeCastOptimizer(object):
+    # Based on TensorProto DataType in onnx.proto3
+    to_priority_array = [3, 5, 6, 7, 1]
+
+    @staticmethod
+    def find(node):
+        if node.origin.op_type == 'Cast' and len(node.successor) == 1:
+            to_0 = node.get_attribute('to')
+            next = node.successor[0]
+            if next.origin is not None and next.origin.op_type == 'Cast':
+                to_1 = next.get_attribute('to')
+                if to_0 in MergeCastOptimizer.to_priority_array \
+                    and to_1 in MergeCastOptimizer.to_priority_array \
+                    and MergeCastOptimizer.to_priority_array.index(to_0) > MergeCastOptimizer.to_priority_array.index(to_1):
+                    solution = Solution(node.get_precedence_by_idx(0), node, next, next)
                     return solution
 
-        return solution
+        return None
 
 
-def _find_an_optimization(node_list):
-    optimizers = (RedundantOptimizer, TransposeOptimizer, MergePadConvOptimizer)
+class MergeSqueezeUnsqueezeOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.origin.op_type == 'Squeeze' and len(node.successor) == 1:
+            axes_0 = node.get_attribute('axes')
+            next = node.successor[0]
+            if next.origin is not None and next.origin.op_type == 'Unsqueeze' and len(next.successor) == 1:
+                axes_1 = next.get_attribute('axes')
+                if axes_0 == axes_1:
+                    solution = Solution(node.get_precedence_by_idx(0), node, next, next.successor[0])
+                    return solution
 
-    for optm in optimizers:
-        solution = optm.find(node_list)
-        if solution is not None:
-            return solution
+        return None
 
-    return None
+_transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
+_broadcast_types = {'Add', 'Mul', 'PRelu'}
+
+def _transpose_pass(node):
+    if node.origin is None:
+        return False
+
+    if node.element_wise:
+        return True
+
+    if node.origin.op_type in _transpose_pass_type_set:
+        return True
+
+    return False
+
+
+def _get_reverse_perm(perm):
+    target_perm = []
+    for idx in range(len(perm)):
+        target_perm.append(perm.index(idx))
+    return target_perm
+
+
+def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_idx):
+    for axis_ in range(len(cur_perm) - len(init_pred_value.shape)):
+        init_pred_value = np.expand_dims(init_pred_value, axis=axis_)
+    init_pred_value = np.transpose(init_pred_value, tuple(_get_reverse_perm(cur_perm)))
+    add_initilizer = numpy_helper.from_array(init_pred_value, name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+    PushTransposeSolution.transpose_number += 1
+    node.initializers = [add_initilizer]
+    prev = node.get_precedence_by_idx(init_idx)
+    prev.successor.remove(node)
+    node.precedence.remove(prev)
+    node.in_redirect(node.get_input_by_idx(init_idx), add_initilizer.name)
+    return node
+
+
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add', 'Mul'}
+
+
+def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
+    count_init = 0
+    init_pred = None
+    init_idx = None
+    count_pass_node = 0
+    add_transpose_idx_list = []
+    cur_perm = None
+    for idx_ in range(len(node.precedence)):
+        pred = node.get_precedence_by_idx(idx_)
+        if pred.origin is None:
+            count_init += 1
+            init_pred = pred
+            init_idx = idx_
+        elif pred.unique_name in node_transpose_pass_name:
+            count_pass_node += 1
+        else:
+            add_transpose_idx_list.append(idx_)
+
+        if pred.origin is not None and pred.unique_name in cur_perm_map:
+            cur_perm = cur_perm_map[pred.unique_name]
+
+    return count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm
+
+
+def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+    count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
+        = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
+    if count_init == 1 or count_pass_node == 2:
+        return True
+    else:
+        can_process = True
+        for add_transpose_idx_ in add_transpose_idx_list:
+            prev = node.get_precedence_by_idx(add_transpose_idx_)
+            if prev.origin.op_type == 'Identity':
+                while prev.origin is not None and prev.origin.op_type == 'Identity':
+                    prev = prev.get_precedence_by_idx(0)
+                if prev.origin is not None:
+                    can_process = False
+                    break
+            elif prev.origin.op_type not in _broadcast_flip_whitelist:
+                can_process = False
+                break
+        return can_process
+
+
+def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+    count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
+        = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
+
+    cur_perm_map[node.unique_name] = cur_perm
+
+    if count_init == 1:
+        init_pred_value = numpy_helper.to_array(init_pred.tensors[0])
+        _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_idx)
+    elif count_pass_node == 2:
+        pass
+    else:
+        for add_transpose_idx_ in add_transpose_idx_list:
+            prev = node.get_precedence_by_idx(add_transpose_idx_)
+            if prev.origin.op_type == 'Identity':
+                while prev.origin is not None and prev.origin.op_type == 'Identity':
+                    prev = prev.get_precedence_by_idx(0)
+                if prev.origin is None:
+                    init_pred_value = numpy_helper.to_array(prev.tensors[0])
+                    _update_broadcast_from_initializers(node, init_pred_value, cur_perm, add_transpose_idx_)
+            elif prev.origin.op_type in _broadcast_flip_whitelist:
+                nnode = LinkedNode(
+                    helper.make_node(
+                        'Transpose',
+                        ['push_transpose_in' + str(PushTransposeSolution.transpose_number)],
+                        ['push_transpose_out' + str(PushTransposeSolution.transpose_number)],
+                        perm=_get_reverse_perm(cur_perm),
+                        name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
+                PushTransposeSolution.transpose_number += 1
+                node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
+
+    return node_list, cur_perm_map
+
+
+def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map):
+    if len(node.origin.input) == 1:
+        pads_value = node.get_attribute('pads')
+    else:
+        pad_tensor = node.get_precedence_tensor_by_idx(1)
+        pads_value = numpy_helper.to_array(pad_tensor).tolist()
+
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    target_perm = _get_reverse_perm(cur_perm)
+    target_perm_shift = [perm_ + len(target_perm) for perm_ in target_perm]
+    reshape_perm = target_perm + target_perm_shift
+    pads_value = np.asarray([pads_value[reshape_perm[idx_]] for idx_ in range(len(reshape_perm))], dtype=np.int64)
+    add_initilizer = numpy_helper.from_array(pads_value, name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+
+    if len(node.origin.input) == 1:
+        node.attributes['pads'] = pads_value.tolist()
+    else:
+        PushTransposeSolution.transpose_number += 1
+        node.initializers = [add_initilizer]
+        pred_1 = node.get_precedence_by_idx(1)
+        if pred_1 is not None:
+            node.precedence.remove(pred_1)
+        node.in_redirect(node.get_input_by_idx(1), add_initilizer.name)
+
+    cur_perm_map[node.unique_name] = cur_perm
+    return cur_perm_map
+
+
+def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map):
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    squeeze_axes = node.get_attribute('axes')
+    squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
+    attrs = {'axes': squeeze_axes}
+    temp_perm = cur_perm.copy()
+    sub_list = [0] * len(cur_perm)
+    for axis in squeeze_axes:
+        temp_perm.remove(axis)
+        for axis_sub_ in range(axis+1, len(cur_perm)):
+            sub_list[axis_sub_] = sub_list[axis_sub_] + 1
+
+    for idx_ in range(len(temp_perm)):
+        temp_perm[idx_] = temp_perm[idx_] - sub_list[temp_perm[idx_]]
+    target_perm = temp_perm
+    new_node_name = node.origin.name + '_squeeze_' + str(PushTransposeSolution.transpose_number)
+    node.origin = helper.make_node('Squeeze', node.origin.input, node.origin.output, new_node_name, **attrs)
+    PushTransposeSolution.transpose_number += 1
+    cur_perm_map[node.unique_name] = target_perm
+    return cur_perm_map
+
+
+def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map):
+    unsqueeze_axes = node.get_attribute('axes')
+    assert len(unsqueeze_axes) == 1
+    attrs = {'axes': unsqueeze_axes}
+    new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
+    node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
+    PushTransposeSolution.transpose_number += 1
+    prev_perm = cur_perm_map[node.precedence[0].unique_name]
+    cur_axes = unsqueeze_axes[0]
+    if cur_axes < 0:
+        cur_axes += len(prev_perm)
+    prev_perm_adjust = [idx_ + 1 if idx_ >= cur_axes else idx_ for idx_ in prev_perm]
+    target_perm = prev_perm_adjust[0:cur_axes] + [cur_axes] + prev_perm_adjust[cur_axes:]
+    cur_perm_map[node.unique_name] = target_perm
+    return cur_perm_map
+
+
+def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map):
+    cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
+    add_initilizer = numpy_helper.from_array(np.asarray(cur_perm).astype(np.int64), name=node.origin.name + '_initializer_' + str(
+        PushTransposeSolution.transpose_number))
+    PushTransposeSolution.transpose_number += 1
+    node.initializers = [add_initilizer]
+    node.precedence.remove(node.get_precedence_by_idx(3))
+    node.in_redirect(node.get_input_by_idx(3), add_initilizer.name)
+    cur_perm_map[node.unique_name] = cur_perm
+    return cur_perm_map
+
+
+def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map):
+    type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze, 'Unsqueeze': _process_transpose_unsqueeze,
+                     'Slice': _process_transpose_slice}
+
+    if node.origin.op_type in _broadcast_types:
+        node_list, cur_perm_map = _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+    elif node.origin.op_type in type_func_map:
+        cur_perm_map = type_func_map[node.origin.op_type](node, node_list, node_transpose_pass_name, cur_perm_map)
+    else:
+        for idx_ in range(len(node.precedence)):
+            pred_name = node.get_precedence_by_idx(idx_).unique_name
+            if pred_name in cur_perm_map:
+                cur_perm_map[node.unique_name] = cur_perm_map[pred_name]
+                break
+    return node_list, cur_perm_map
+
+
+class PushTransposeSolution(Solution):
+
+    transpose_number = 0
+
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        if self.begin_n.is_reserved:
+            return None, False
+        cur_perm = Solution.get_perm(self.begin_n.origin)
+        cur_perm_map = {self.begin_n.unique_name: cur_perm}
+        candidate_queue = list()
+        visited = set()
+        for successor_ in self.begin_n.successor:
+            candidate_queue.append((successor_, self.begin_n))
+        node_transpose_no_pass = list()
+        node_transpose_pass = list()
+        node_transpose_pass_name = {self.begin_n.unique_name}
+        while len(candidate_queue) > 0:
+            (node, prev) = candidate_queue.pop(0)
+            if node.unique_name in visited:
+                continue
+            visited.add(node.unique_name)
+            if _transpose_pass(node):
+                node_transpose_pass_name.add(node.unique_name)
+                node_transpose_pass.append((node, prev))
+                for successor_ in node.successor:
+                    candidate_queue.append((successor_, node))
+            else:
+                node_transpose_no_pass.append((node, prev))
+
+        for node_pair_ in node_transpose_pass:
+            node = node_pair_[0]
+            if node.origin.op_type in _broadcast_types:
+                success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+                if not success:
+                    return None, False
+            elif node.origin.op_type == 'Unsqueeze':
+                unsqueeze_axes = node.get_attribute('axes')
+                if unsqueeze_axes and len(unsqueeze_axes) > 1:
+                    return None, False
+
+        for node_pair_ in node_transpose_pass:
+            (node, prev) = node_pair_
+            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
+
+        # add transpose
+        if len(self.begin_n.successor) == 1:
+            for node_pair_ in node_transpose_no_pass:
+                (node, prev) = node_pair_
+                if prev.unique_name == self.begin_n.unique_name:
+                    return None, False
+
+        for node_pair_ in node_transpose_no_pass:
+            node = node_pair_[0]
+            if node.origin is None:
+                prev = node_pair_[1]
+                successor_list = list(prev.successor)
+                for suc in successor_list:
+                    if suc.origin is None:
+                        output_name = list(prev.output.values())[0]
+                        push_transpose_in_node_output_name = 'push_transpose_out_' + str(PushTransposeSolution.transpose_number)
+                        prev.out_redirect(output_name, push_transpose_in_node_output_name)
+                        PushTransposeSolution.transpose_number += 1
+                        for suc_2 in successor_list:
+                            suc_2.in_redirect(output_name, push_transpose_in_node_output_name)
+                transpose_output_name = [output_name]
+            else:
+                transpose_output_name = ['push_transpose_out_' + str(PushTransposeSolution.transpose_number)]
+
+            for prev in node.precedence:
+                if prev.origin is not None and prev.unique_name in cur_perm_map:
+                    cur_perm = cur_perm_map[prev.unique_name]
+                    nnode = LinkedNode(
+                        helper.make_node(
+                            'Transpose',
+                            ['push_transpose_in_' + str(PushTransposeSolution.transpose_number)],
+                            transpose_output_name,
+                            perm=cur_perm,
+                            name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
+                    PushTransposeSolution.transpose_number += 1
+                    node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
+
+        node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
+        return node_list, True
+
+
+_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
+_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus', 'Softsign', 'Tanh']
+
+class PushTransposeOptimizer(object):
+    opt_number = 0
+    @staticmethod
+    def find(node):
+        first_node_type = _nchw_input_node_type + _activation_node_type
+        if node.origin.op_type in first_node_type and len(node.successor) == 1 and node.successor[0] is not None:
+            pred_nchw = False
+            if node.origin.op_type in _activation_node_type:
+                for pred in node.precedence:
+                    if pred.origin is not None and pred.origin.op_type in _nchw_input_node_type:
+                        pred_nchw = True
+                        break
+            if pred_nchw or node.origin.op_type in _nchw_input_node_type:
+                next = node.successor[0]
+                if next.origin is not None and next.origin.op_type == 'Transpose':
+                    solution = PushTransposeSolution(node, next, next.successor, None)
+                    return solution
+
+        return None
+
+
+class SwapOpSolution(Solution):
+    def apply(self, node_list):
+        if self.begin_n.is_reserved or self.end_p.is_reserved:
+            return None, False
+
+        self.begin.successor[0] = self.end_p
+        self.begin_n.successor[0] = self.end
+        self.end_p.successor[0] = self.begin_n
+
+        self.begin_n.precedence[0] = self.end_p
+        self.end_p.precedence[0] = self.begin
+        self.end.precedence[0] = self.begin_n
+
+        self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
+        self.end_p.in_redirect(self.begin_n.single_output, self.begin.single_output)
+        self.end.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+
+        return node_list, True
+
+
+_move_cast_support_types = {'Reshape', 'Squeeze', 'Unsqueeze', 'Slice'}
+
+
+class SwapOpOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.in_single_path_and_inner:
+            if node.origin.op_type == 'Cast':
+                to_value = node.get_attribute('to')
+                if to_value == 1 and node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif to_value in [6, 7] and node.precedence[0].in_single_path_and_inner \
+                        and node.precedence[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0].precedence[0], node.precedence[0], node, node.successor[0])
+                    return solution
+
+            if node.origin.op_type in _activation_node_type:
+                if node.successor[0].in_single_path_and_inner \
+                        and node.successor[0].origin.op_type in _move_cast_support_types:
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    return solution
+                elif node.successor[0].in_miso_and_inner and node.successor[0].origin.op_type in _move_cast_support_types:
+                    num_successor_inputs = len(node.successor[0].precedence)
+                    all_initializers = True
+                    for idx_ in range(1, num_successor_inputs):
+                        suc_pred = node.successor[0].get_precedence_by_idx(idx_)
+                        if suc_pred and suc_pred.origin is not None:
+                            all_initializers = False
+                            break
+                    if all_initializers:
+                        solution = SwapOpSolution(node.precedence[0], node, node.successor[0],
+                                                  node.successor[0].successor[0])
+                    return solution
+
+        return None
+
+
+class MergeCommonSequenceSolution(Solution):
+    def apply(self, node_list):
+        if self.end_p.is_reserved:
+            return None, False
+
+        for end_p_succ_ in self.end_p.successor:
+            end_p_succ_.in_redirect(self.end_p.single_output, self.begin_n.single_output)
+            for idx_ in range(len(end_p_succ_.precedence)):
+                if end_p_succ_.precedence[idx_].unique_name == self.end_p.unique_name:
+                    end_p_succ_.precedence[idx_] = self.begin_n
+                    self.begin_n.successor.append(end_p_succ_)
+
+        self.begin.successor.remove(self.end_p)
+        node_list.remove(self.end_p)
+        return node_list, True
+
+
+class MergeCommonSequenceOptimizer(object):
+    _no_merge_types = {'LSTM'}
+
+    @staticmethod
+    def find(node):
+        succ_len = len(node.successor)
+        if node.origin is not None and  succ_len > 1:
+            for idx_0 in range(succ_len):
+                succ_0 = node.successor[idx_0]
+                if succ_0.origin is None:
+                    continue
+                for idx_1 in range(succ_len):
+                    succ_1 = node.successor[idx_1]
+                    if idx_1 == idx_0 or succ_1.origin is None:
+                        continue
+                    if succ_0.origin.op_type != succ_1.origin.op_type:
+                        continue
+                    if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
+                        solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
+                        return solution
+
+        return None
+
+    @staticmethod
+    def is_same_node_merge(node_0, node_1, node):
+        if node_0.origin is None or node_1.origin is None:
+            return False
+        if node_0.origin.name == node_1.origin.name:
+            return False
+        no_merge_count = 0
+        for node_suc_ in node_0.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 0:
+                no_merge_count += 1
+
+        for node_suc_ in node_1.successor:
+            if node_suc_.origin is None:
+                return False
+            if node_suc_.op_type in MergeCommonSequenceOptimizer._no_merge_types and no_merge_count == 1:
+                no_merge_count += 1
+
+        if no_merge_count == 2:
+            return False
+
+        if node_0.origin.op_type != node_1.origin.op_type:
+            return False
+
+        if node_0.origin.op_type == 'Transpose':
+            return False
+
+        if node_0.origin.attribute != node_1.origin.attribute:
+            return False
+
+        if len(node_0.origin.input) != len(node_1.origin.input):
+            return False
+
+        for node_succ_ in [node_0, node_1]:
+            count = 0
+            for succ_ in node.successor:
+                if succ_ == node_succ_:
+                    count += 1
+            if count > 1:
+                return False
+
+        for idx_ in range(len(node_0.precedence)):
+            pred_0 = node_0.get_precedence_by_idx(idx_)
+            pred_1 = node_1.get_precedence_by_idx(idx_)
+            if pred_0 is None or pred_1 is None:
+                return False
+            if pred_0.unique_name == node.unique_name:
+                if node_0.input[node_0.origin.input[idx_]] != \
+                        node_1.input[node_1.origin.input[idx_]]:
+                    return False
+                continue
+            if pred_0.origin is not None or pred_1.origin is not None:
+                return False
+            val_0 = numpy_helper.to_array(pred_0.tensors[0])
+            val_1 = numpy_helper.to_array(pred_1.tensors[0])
+            if not np.array_equal(val_0, val_1):
+                return False
+
+        return True
 
 
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
+
+
+def _process_optimization(node_list, target_opset=None):
+    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
+                  MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
+                  MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
+    if target_opset is not None and target_opset >= 9:
+        optimizers.append(ConvBatchNormOptimizer)
+
+    need_optimize = True
+    while need_optimize:
+        solution_find = 0
+        for optm in optimizers:
+            blockout = set()
+            cur_optm_process = True
+            while cur_optm_process:
+                success = False
+                for node_ in node_list:
+                    if node_ in blockout:
+                        continue
+                    solution = optm.find(node_)
+                    if solution is not None:
+                        temp_list, success = _apply_optimization(solution, node_list)
+                        if success:
+                            break
+                        else:
+                            blockout.add(node_)
+
+                if success:
+                    solution_find += 1
+                    node_list = temp_list
+                else:
+                    cur_optm_process = False
+
+        if solution_find == 0:
+            need_optimize = False
+    return node_list
 
 
 def _build_onnx_model(node_list):
@@ -740,7 +1525,7 @@ def _topological_sort(node_list):
     name_to_node_map = dict()
 
     def _get_unmark_node(name_to_node_map):
-        for k, v in six.iteritems(name_to_node_map):
+        for k, v in name_to_node_map.items():
             if v.status == 'unmark':
                 return k
         return None
@@ -766,7 +1551,7 @@ def _topological_sort(node_list):
     return result_nodes
 
 
-def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
+def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
@@ -780,16 +1565,86 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None):
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs])
-    solution = _find_an_optimization(node_list)
-    while solution:
-        node_list = _apply_optimization(solution, node_list)
-        solution = _find_an_optimization(node_list)
+    initializers = []
+    graph = _generate_graph_from_nodelist(node_list, initializers, '', inputs, outputs)
+    global reserved_names_in_graph
+    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
+    node_list = _process_optimization(node_list, target_opset)
 
-    node_list = _topological_sort(node_list)
+    if target_opset is None or target_opset < 9:
+        node_list = _topological_sort(node_list)
     return _build_onnx_model(node_list)
 
 
+def _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs):
+    regenerated = []
+    initializers_copy = list(initializers)
+    for n_ in node_list:
+        nodes = n_.generate()
+        regenerated.extend(nodes)
+        if len(n_.initializers) > 0:
+            initializers_copy.extend(n_.initializers)
+    nodes = regenerated
+    graph = helper.make_graph(nodes, model_name, inputs,
+                              outputs, initializers_copy)
+    return graph
+
+
+def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
+                        model_value_info=None, model_name=None, target_opset=None):
+    """
+    Optimize onnx model by several approaches.
+    :param onnx_nodes: the onnx node list in onnx model.
+    :param nchw_inputs: the name list of the inputs needed to be transposed as NCHW
+    :param inputs: the model input
+    :param outputs: the model output
+    :param initializers: the model initializers
+    :param model_value_info: the model value_info
+    :param model_name the internal name of model
+    :return: the optimized onnx graph
+    """
+    if target_opset < 9:
+        raise Exception("target_opset = {}, Use optimize_onnx_graph for opset >= 9".format(target_opset))
+
+    # When calling ModelComponentContainer's add_initializer(...), nothing is added into the input list.
+    # However, In ONNX, for target opset < 9, initializers should also be model's (GraphProto) inputs.
+    # Thus, we create ValueInfoProto objects from initializers (type: TensorProto) directly and then add them into model's input list.
+    extra_inputs = []  # ValueInfoProto list of the initializers
+    for tensor in initializers:
+        # Sometimes (especially when creating optional input values such as RNN's initial hidden state), an initializer
+        # is also one of the original model's input, so it has been added into the container's input list. If this is
+        # the case, we need to skip one iteration to avoid duplicated inputs.
+        if tensor.name in [value_info.name for value_info in inputs]:
+            continue
+
+        # Initializers are always tensors so we can just call make_tensor_value_info(...)
+        value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
+        extra_inputs.append(value_info)
+
+    in_inputs = list(inputs) + extra_inputs
+    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+                                           nchw_inputs if nchw_inputs else [],
+                                           [] if in_inputs is None else [i_.name for i_ in in_inputs],
+                                           [] if outputs is None else [o_.name for o_ in outputs],
+                                           initializers)
+
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    global reserved_names_in_graph
+    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
+
+    node_list = _process_optimization(node_list, target_opset)
+
+    node_list = [n_ for n_ in node_list if n_.origin is not None]
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    # Add extra information related to the graph
+    graph.value_info.extend(model_value_info)
+
+    new_graph = const_folding_optimizer(graph)
+    return new_graph
+
+
 def optimize_onnx_model(origin_model, nchw_inputs=None):
+    # type: (onnx.ModelProto, list) -> onnx.ModelProto
     """
     the origin model will be updated after the optimization.
     :param origin_model:
@@ -801,32 +1656,15 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
 
     input_with_initializer = [in_ for in_ in graph.input]
     input_with_initializer += [in_ for in_ in graph.initializer]
-    all_nodes = optimize_onnx(nodelist,
-                              nchw_inputs=nchw_inputs,
-                              inputs=input_with_initializer,
-                              outputs=graph.output)
+    opt_graph = optimize_onnx_graph(nodelist,
+                                    nchw_inputs=nchw_inputs,
+                                    inputs=graph.input,
+                                    outputs=graph.output,
+                                    initializers=list(graph.initializer),
+                                    model_value_info=graph.value_info,
+                                    model_name=graph.name,
+                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import)
+                                    )
 
-    del graph.node[:]
-    nodes = [n_ for n_ in all_nodes if not isinstance(n_, tuple)]
-    graph.node.extend(nodes)
-
-    alter_tensors = {n_[1]: n_[0] for n_ in all_nodes if isinstance(n_, tuple)}
-
-    def update_tensor(x):
-        helper.make_tensor(x.name, x.data_type, (x.dims[0], 1, 1),
-                           onnx.numpy_helper.to_array(x).flatten())
-
-    new_initializer = [init_ if init_.name not in alter_tensors else update_tensor(init_)
-                       for init_ in graph.initializer]
-    del graph.initializer[:]
-    graph.initializer.extend(new_initializer)
-
-    def update_value_info(x):
-        helper.make_tensor_value_info(x.name, x.type.tensor_type.elem_type,
-                                      (x.type.tensor_type.shape.dim[0].dim_value, 1, 1))
-
-    new_input = [in_ if in_.name not in alter_tensors else update_value_info(in_)
-                 for in_ in graph.input]
-    del graph.input[:]
-    graph.input.extend(new_input)
+    origin_model.graph.CopyFrom(opt_graph)
     return origin_model

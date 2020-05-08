@@ -1,14 +1,14 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
+
 """
 Common functions to convert any learner based on trees.
 """
-import numpy as np
+
 import numbers
-import six
+import numpy as np
 from .data_types import Int64TensorType, FloatTensorType, StringTensorType, DictionaryType, SequenceType
 from .utils import check_input_and_output_numbers, check_input_and_output_types
 
@@ -33,7 +33,7 @@ def calculate_linear_classifier_output_shapes(operator):
     class_labels = operator.raw_operator.classes_
     if all(isinstance(i, np.ndarray) for i in class_labels):
         class_labels = np.concatenate(class_labels)
-    if all(isinstance(i, (six.string_types, six.text_type)) for i in class_labels):
+    if all(isinstance(i, str) for i in class_labels):
         operator.outputs[0].type = StringTensorType(shape=[N])
         if len(class_labels) > 2 or operator.type != 'SklearnLinearSVC':
             # For multi-class classifier, we produce a map for encoding the probabilities of all classes

@@ -1,13 +1,12 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
 
-import numbers, six
+import numbers
 import numpy as np
 import warnings
-from distutils.version import LooseVersion, StrictVersion
+from distutils.version import LooseVersion
 
 
 def sparkml_installed():
@@ -20,6 +19,7 @@ def sparkml_installed():
     except ImportError:
         return False
 
+
 def sklearn_installed():
     """
     Checks that *scikit-learn* is available.
@@ -30,6 +30,7 @@ def sklearn_installed():
     except ImportError:
         return False
 
+
 def skl2onnx_installed():
     """
     Checks that *skl2onnx* converter is available.
@@ -39,6 +40,7 @@ def skl2onnx_installed():
         return True
     except ImportError:
         return False
+
 
 def coreml_installed():
     """
@@ -141,6 +143,17 @@ def xgboost_installed():
     return True
 
 
+def h2o_installed():
+    """
+    Checks that *h2o* is available.
+    """
+    try:
+        import h2o
+    except ImportError:
+        return False
+    return True
+
+
 def get_producer():
     """
     Internal helper function to return the producer
@@ -174,10 +187,7 @@ def get_model_version():
 
 
 def is_numeric_type(item):
-    if six.PY2:
-        numeric_types = (int, float, long, complex)
-    else:
-        numeric_types = (int, float, complex)
+    numeric_types = (int, float, complex)
     types = numeric_types
 
     if isinstance(item, list):
@@ -188,20 +198,18 @@ def is_numeric_type(item):
 
 
 def is_string_type(item):
-    types = (six.string_types, six.text_type)
     if isinstance(item, list):
-        return all(isinstance(i, types) for i in item)
+        return all(isinstance(i, str) for i in item)
     if isinstance(item, np.ndarray):
         return np.issubdtype(item.dtype, np.str_)
-    return isinstance(item, types)
-    
+    return isinstance(item, str)
+
 
 def cast_list(type, items):
     return [type(item) for item in items]
 
 
 def convert_to_python_value(var):
-    import numbers
     if isinstance(var, numbers.Integral):
         return int(var)
     elif isinstance(var, numbers.Real):

@@ -1,11 +1,12 @@
-# -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
-# --------------------------------------------------------------------------
+###############################################################################
+
 """
 Common functions to convert any learner based on trees.
 """
+
 from .registration import register_converter
 
 
