@@ -96,7 +96,7 @@ def convert_float_to_float16(model):
                      'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                      'Normalizer',
                      'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
-                     'TreeEnsembleRegressor', 'ZipMap']
+                     'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize', 'Range']
     # create a queue for BFS
     queue = []
     value_info_list = []
