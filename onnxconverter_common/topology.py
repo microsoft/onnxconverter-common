@@ -11,7 +11,7 @@ from distutils.version import StrictVersion
 from onnx import helper
 from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
-from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
+from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, get_maximum_opset_supported
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
 from .interface import OperatorBase, ScopeBase
@@ -698,7 +698,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (
                 onnx.__version__, targeted_onnx))
 
-    opset_from_onnx_version = min(onnx_builtin_opset_version(), DEFAULT_OPSET_NUMBER)
+    opset_from_onnx_version = get_maximum_opset_supported()
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
