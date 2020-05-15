@@ -1438,6 +1438,9 @@ class MergeCommonSequenceOptimizer(object):
             if count > 1:
                 return False
 
+        if len(node_0.initializers) > 0 or len(node_1.initializers) > 0:
+            return False
+
         for idx_ in range(len(node_0.precedence)):
             pred_0 = node_0.get_precedence_by_idx(idx_)
             pred_1 = node_1.get_precedence_by_idx(idx_)
