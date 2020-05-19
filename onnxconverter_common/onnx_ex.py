@@ -56,11 +56,14 @@ def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_pr
         op_set.domain = op_domain
         op_set.version = op_version
         i += 1
-        if target_default_opset < op_version:
-            raise RuntimeError(('The specified opset %d is too low to convert this model, ' +
-                                'which requires at least opset %d.') % (target_default_opset, op_version))
-        elif target_default_opset > op_version:
-            getLogger('onnxmltools').warning('The maximum opset needed by this model is only %d.' % op_version)
+        if op_domain == '' or op_domain == 'ai.onnx':
+            if target_default_opset < op_version:
+                raise RuntimeError(('The specified opset %d is too low to convert this model, ' +
+                                    'which requires at least opset %d.') % (target_default_opset, op_version))
+            elif target_default_opset > op_version:
+                getLogger('onnxmltools').warning('The maximum opset needed by this model is only %d.' % op_version)
+            else:
+                pass
 
     # Add extra information
     if metadata_props:
@@ -68,8 +71,8 @@ def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_pr
     opv = _get_main_opset_version(onnx_model) or target_default_opset
     irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
     onnx_model.ir_version = irv
-    onnx_model.producer_name = utils.get_producer()
+    onnx_model.producer_name = kwargs.get('producer_name') if 'producer_name' in kwargs else utils.get_producer()
     onnx_model.producer_version = utils.get_producer_version()
-    onnx_model.domain = utils.get_domain()
+    onnx_model.domain = kwargs.get('domain') if 'domain' in kwargs else utils.get_domain()
     onnx_model.model_version = utils.get_model_version()
     return onnx_model
