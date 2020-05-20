@@ -23,7 +23,7 @@ jobs:
 
       Python37:
         python.version: '3.7'
-        ONNX_PATH: onnx==1.5.0
+        ONNX_PATH: onnx==1.7.0
 
     maxParallel: 3
 
