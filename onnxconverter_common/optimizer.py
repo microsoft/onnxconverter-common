@@ -1078,8 +1078,8 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
                 nnode = LinkedNode(
                     helper.make_node(
                         'Transpose',
-                        ['push_transpose_in' + str(PushTransposeSolution.transpose_number)],
-                        ['push_transpose_out' + str(PushTransposeSolution.transpose_number)],
+                        ['push_transpose_in_' + str(PushTransposeSolution.transpose_number)],
+                        ['push_transpose_out_' + str(PushTransposeSolution.transpose_number)],
                         perm=_get_reverse_perm(cur_perm),
                         name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
                 PushTransposeSolution.transpose_number += 1
@@ -1228,16 +1228,21 @@ class PushTransposeSolution(Solution):
                 if unsqueeze_axes and len(unsqueeze_axes) > 1:
                     return None, False
 
-        for node_pair_ in node_transpose_pass:
-            (node, prev) = node_pair_
-            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
-
         # add transpose
         if len(self.begin_n.successor) == 1:
             for node_pair_ in node_transpose_no_pass:
                 (node, prev) = node_pair_
                 if prev.unique_name == self.begin_n.unique_name:
                     return None, False
+
+        for node_pair_ in node_transpose_no_pass:
+            node = node_pair_[0]
+            if len(node.precedence) > 1:
+                return None, False
+
+        for node_pair_ in node_transpose_pass:
+            (node, prev) = node_pair_
+            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
 
         for node_pair_ in node_transpose_no_pass:
             node = node_pair_[0]
