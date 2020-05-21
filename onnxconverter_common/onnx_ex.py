@@ -8,7 +8,7 @@ from onnx import helper, defs as onnx_defs, onnx_pb as onnx_proto
 from . import utils
 from .metadata_props import add_metadata_props
 
-DEFAULT_OPSET_NUMBER = 11  # The maximum opset supported by the converter in the code branch.
+DEFAULT_OPSET_NUMBER = 12  # The maximum opset supported by the converter in the code branch.
 OPSET_TO_IR_VERSION = {
     1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3,
     7: 3, 8: 4, 9: 4, 10: 5, 11: 6, 12: 7

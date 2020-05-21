@@ -477,7 +477,7 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
                            op_version=op_version)
         container.add_node('Not', [compare_node], output_name, name=name)
     else:
-        container.add_node(onnx_op_string_rev, input_names, output_name,
+        container.add_node(onnx_op_string, input_names, output_name,
                            name=name + '_' + onnx_op_string_rev.lower(), op_version=op_version)
 
 
