@@ -56,5 +56,5 @@ def save_function(func, fname, opset, **kwargs):
     top_level = topo.declare_scope('__root__')
     top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
 
-    oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
-    onnx.save_model(oxml, 'fluency.onnx')
+    oxml = convert_topology(topo, 'test', "doc_string", target_opset=opset, enable_optimizer=False)
+    onnx.save_model(oxml, fname)
