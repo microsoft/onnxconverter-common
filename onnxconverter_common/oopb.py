@@ -3,7 +3,6 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
-import onnx
 import numpy as np
 from onnx import onnx_pb as onnx_proto
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
@@ -39,13 +38,12 @@ class OnnxOperatorBuilder:
     def as_default(self, basename):
         return _OperatorNameContext(self, basename)
 
-    def noop_unfold(self, model_file):
-        oxml = onnx.load_model(model_file)
-        ox_graph = oxml.graph
+    def noop_unfold(self, onnx_mdl):
+        ox_graph = onnx_mdl.graph
         self._container.nodes.extend(ox_graph.node)
         self._container.initializers.extend(ox_graph.initializer)
         self._container.value_info.extend(ox_graph.value_info)
-        return ox_graph.inputs, ox_graph.outputs
+        return ox_graph.input, ox_graph.output
 
     def _process_inputs(self, inputs, name):
         if not isinstance(inputs, (list, tuple)):

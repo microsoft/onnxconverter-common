@@ -14,9 +14,9 @@ from .data_types import DoubleTensorType
 class ONNXFunction:
     functions = []
 
-    def __init__(self, op_type, attributes):
+    def __init__(self, op_type, fields):
         self.op_type = op_type
-        self.attributes = attributes
+        self.fields = fields
 
 
 def onnx_function(*op, **kwargs):
@@ -36,12 +36,14 @@ def greedy_graph(oopb, inputs, outputs):
                   [div1, ('add_3', oopb.double, np.array([3.0, 4.0]))],
                   outputs=outputs)
 
-
-    # oopb.noop_unfold(attrs["encode_source"])
-    # oopb.noop_unfold(attrs["decode_first"])
-    # data_0 = inputs[0]
+    func_attr = ONNXFunction.functions[0].fields["attributes"]
+    en_inputs, en_outputs = oopb.noop_unfold(onnx.load_model(func_attr["encode_source"]))
+    df_inputs, df_outputs = oopb.noop_unfold(onnx.load_model(func_attr["decode_first"]))
+    data_0 = inputs[0]
     # seq_len = oopb.shape(data_0)
+    seq_len = oopb.add_node('Shape', data_0)
     # data_0_mask = oopb.constant(1.0, shape=seq_len)
+    data_0_mask = oopb.add_node('ConstantOfShape', seq_len)
     # data_0_index_range = oopb.range(seq_len)
     # max_len = oopb.mul(seq_len, 3)
 
@@ -100,10 +102,10 @@ def save_function(func, fname, opset, **kwargs):
     top_level = topo.declare_scope('__root__')
     top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
     for i_ in inputs:
-        top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
+        top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[2, 1]))
 
     for o_ in outputs:
-        top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
+        top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[2, 1]))
 
     oxml = convert_topology(topo, 'test', "doc_string", target_opset=opset, enable_optimizer=False)
     onnx.save_model(oxml, fname)
