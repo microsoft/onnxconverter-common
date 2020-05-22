@@ -41,28 +41,68 @@ def _get_python_function_arguments(f):
     return (arg_names, annotations)
 
 class Graph:
-    # We override the constructors to implement an overload that constructs
-    # an ONNX Graph from a Python function (@Graph).
-    def __new__(cls, ox, *args, **kwargs):
-        if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
-            return Graph._to_Graph(ox, *args, **kwargs)
-
-    def __init__(self, ox, *args, **kwargs):
-        if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
-            return
+    def __init__(self, name, model, inputs, outputs):
+        self._name = name
+        self._model = model
+        self._inputs = inputs
+        self._outputs = outputs
 
     @staticmethod
-    def _to_Graph(ox, f, op_name=None, outputs=None, name=None):
+    def trace(*args, **kwargs):
+        """
+        This is the decorator. Example:
+        @Graph.trace(outputs="logits")
+        def model(source_sequence):
+            ...
+        """
+        if len(args) > 0 and hasattr(args[0], '__call__'):  # first arg is function
+            return Graph._to_Graph(args[0])
+        else:
+            return lambda f: Graph._to_Graph(f, *args, **kwargs)
+
+    @staticmethod
+    def _to_Graph(f, op_name=None, outputs=None, name=None):
+        if outputs is None:
+            outputs = []
+
         f_name = f.__name__
         arg_names, _ = _get_python_function_arguments(f)
-        inputs = [ox.arg(arg_name) for arg_name in arg_names]
-        f_outputs = f(*inputs)
-        if outputs is not None:
-            if isinstance(f_outputs, Tensor):
-                f_outputs = ox.identity([f_outputs], outputs=[outputs])
-            else:
-                f_outputs = [ox.identity([f_output], outputs=[output_name]) for f_output, output_name in zip(f_outputs, outputs)]
-        return Graph(ox, name=f_name, inputs=inputs, outputs=f_outputs)
+
+        class _SimpleRawModelContainer(object):
+            def __init__(self, inputs, outputs):
+                self.input_names = inputs
+                self.output_names = outputs
+        raw_model = _SimpleRawModelContainer(arg_names, outputs)
+        topo = Topology(raw_model)
+        top_level = topo.declare_scope('__root__')
+
+        inputs = None
+        f_outputs = None
+        def on_conversion(scope, operator, container):
+            nonlocal inputs
+            nonlocal f_outputs
+            with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
+                inputs = [ox.arg(arg_name) for arg_name in arg_names]
+                f_outputs = f(*inputs)
+                if outputs:
+                    if isinstance(f_outputs, Tensor):
+                        f_outputs = ox.identity([f_outputs], outputs=[outputs])
+                    else:
+                        f_outputs = [ox.identity([f_output], outputs=[output_name]) for f_output, output_name in zip(f_outputs, outputs)]
+
+        GRAPH_OPERATOR_NAME = f_name
+        register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
+        top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
+        for i_ in raw_model.input_names:
+            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
+        for o_ in raw_model.output_names:
+            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
+
+        model = convert_topology(topo, f_name, "doc_string", target_opset=8)
+        return Graph(name=f_name, model=model, inputs=inputs, outputs=f_outputs)
+    
+    def save(self, path):
+        onnx.save_model(self._model, path)
 
     @staticmethod
     def load(path):
@@ -71,49 +111,49 @@ class Graph:
 class Tensor:
     def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
-        self._ox = ox
+        self.ox = ox
 
     def __add__(self, other):
-        return self._ox.add([self, other])
+        return self.ox.add([self, other])
 
     def __sub__(self, other):
-        return self._ox.sub([self, other])
+        return self.ox.sub([self, other])
 
     def __mul__(self, other):
-        return self._ox.mul([self, other])
+        return self.ox.mul([self, other])
 
     def __div__(self, other):
-        return self._ox.div([self, other])
+        return self.ox.div([self, other])
 
     def __pow__(self, other):
-        return self._ox.pow([self, other])
+        return self.ox.pow([self, other])
 
     def __matmul__(self, other):
-        return self._ox.matmul([self, other])
+        return self.ox.matmul([self, other])
 
     def __lt__(self, other):
-        return self._ox.less([self, other])
+        return self.ox.less([self, other])
 
     def __le__(self, other):
-        return self._ox.less_or_equal([self, other])
+        return self.ox.less_or_equal([self, other])
 
     #def __eq__(self, other):
-    #    return self._ox.matmul([self, other])
+    #    return self.ox.matmul([self, other])
 
     #def __ne__(self, other):
-    #    return self._ox.matmul([self, other])
+    #    return self.ox.matmul([self, other])
 
     def __gt__(self, other):
-        return self._ox.greater([self, other])
+        return self.ox.greater([self, other])
 
     def __ge__(self, other):
-        return self._ox.greater_or_equal([self, other])
+        return self.ox.greater_or_equal([self, other])
 
     def __neg__(self):
-        return self._ox.neg([self])
+        return self.ox.neg([self])
 
     #def __not__(self):
-    #    return self._ox.not([self])
+    #    return self.ox.not([self])
 
 
 class OnnxOperatorBuilderX(OnnxOperatorBuilder):
@@ -136,22 +176,11 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def constant(self, name, value, outputs=None):   # override!
         return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))  # not sure about the diff between name and outputs
 
-    def arg(self, name):   # NOT WORKING, use const
+    def arg(self, name):
         """
         Use this to create a function argument
         """
         return Tensor(name, self)
-        #t = helper.make_tensor('arg', self.double, (1,), [0.0])
-        #return self.constant(name, t)[0]
-    
-    def graph(self, *args, **kwargs):
-        """
-        This is the decorator
-        """
-        if len(args) > 0 and hasattr(args[0], '__call__'):  # first arg is function
-            return Graph(self, args[0])
-        else:
-            return lambda f: Graph(self, f, *args, **kwargs)
 
 
 def greedy_graph(oopb, inputs, outputs):
@@ -249,25 +278,32 @@ def save_function(func, fname, opset, **kwargs):
 #    return ox.abs(x + y)
 
 
-def on_conversion(scope, operator, container):
-    with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
+@Graph.trace(outputs="z")
+def f(x,y):
+    return x.ox.abs(x + y)
 
-        @ox.graph(outputs="z")
-        def f(x,y):
-            return ox.abs(x + y)
+f.save("c:/me/abssum.onnx")
 
-GRAPH_OPERATOR_NAME = '__test_graph__'
-register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
-raw_model = _SimpleRawModelContainer(["x", "y"], ["z"])
-topo = Topology(raw_model)
-top_level = topo.declare_scope('__root__')
-top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
-for i_ in raw_model.input_names:
-    top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
-for o_ in raw_model.output_names:
-    top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
+if False:
+    def on_conversion(scope, operator, container):
+        with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
 
-oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
-onnx.save_model(oxml, 'c:/me/abssum.onnx')
+            @ox.graph(outputs="z")
+            def f(x,y):
+                return ox.abs(x + y)
+
+    GRAPH_OPERATOR_NAME = '__test_graph__'
+    register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
+    raw_model = _SimpleRawModelContainer(["x", "y"], ["z"])
+    topo = Topology(raw_model)
+    top_level = topo.declare_scope('__root__')
+    top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
+    for i_ in raw_model.input_names:
+        top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
+    for o_ in raw_model.output_names:
+        top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
+
+    oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
+    onnx.save_model(oxml, 'c:/me/abssum.onnx')
 
 print("done")
