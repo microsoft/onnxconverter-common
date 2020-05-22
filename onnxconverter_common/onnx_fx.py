@@ -111,9 +111,9 @@ class Graph:
         register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
         top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
         for i_ in raw_model.input_names:
-            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]) if not input_types else input_types[i_])
+            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]) if not input_types  else input_types [arg_names.index(i_)])
         for o_ in raw_model.output_names:
-            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[i_])
+            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
 
         oxml = convert_topology(topo, f_name, "doc_string", target_opset=8)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
@@ -345,9 +345,9 @@ model = onnx.load(model_path)
 print("Loading as session:", model_path, flush=True)
 ort_sess = ort.InferenceSession(model_path)
 output_vals = ort_sess.run(None, {
-    'data_0'          : np.array([530, 4, 0]                , dtype=np.int32),
-    'data_0_mask'     : np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-    'data_0_posrange' : np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)
+    'a' : np.array([530, 4, 0]                , dtype=np.int32),
+    'b' : np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+    'c' : np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)
 })
 
 print(output_vals)
