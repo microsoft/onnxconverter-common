@@ -284,26 +284,4 @@ def f(x,y):
 
 f.save("c:/me/abssum.onnx")
 
-if False:
-    def on_conversion(scope, operator, container):
-        with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
-
-            @ox.graph(outputs="z")
-            def f(x,y):
-                return ox.abs(x + y)
-
-    GRAPH_OPERATOR_NAME = '__test_graph__'
-    register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
-    raw_model = _SimpleRawModelContainer(["x", "y"], ["z"])
-    topo = Topology(raw_model)
-    top_level = topo.declare_scope('__root__')
-    top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
-    for i_ in raw_model.input_names:
-        top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
-    for o_ in raw_model.output_names:
-        top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
-
-    oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
-    onnx.save_model(oxml, 'c:/me/abssum.onnx')
-
 print("done")
