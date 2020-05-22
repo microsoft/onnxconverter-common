@@ -680,7 +680,7 @@ class Topology:
         self._check_structure()
 
 
-def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None):
+def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None, enable_optimizer=True):
     '''
     This function is used to convert our Topology object defined in _parser.py into a ONNX model (type: ModelProto).
     :param topology: The Topology object we are going to convert
@@ -793,7 +793,10 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         extra_inputs.append(value_info)
 
     # enable the ONNX optimizations
-    nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    if enable_optimizer:
+        nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    else:
+        nodes = container.nodes
 
     # Create a graph from its main components
     if container.target_opset < 9:
