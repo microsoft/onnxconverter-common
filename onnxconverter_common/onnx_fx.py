@@ -179,13 +179,13 @@ class Graph:
     def save(self, path):
         if self._oxml.opset_import[0].version < 7:    # @WORKAROUND: lower versions will crash onnxruntime upon load
             self._oxml.opset_import[0].version = 7
-        print("Model:")
-        print("--- opset_import:", self._oxml.opset_import[0])
-        print("--- inputs:", self._oxml.graph.input)
-        print("--- outputs:", self._oxml.graph.output)
-        print("--- nodes:", self._oxml.graph.node)
+        #print("Model:")
+        #print("--- opset_import:", self._oxml.opset_import[0])
+        #print("--- inputs:", self._oxml.graph.input)
+        #print("--- outputs:", self._oxml.graph.output)
+        #print("--- nodes:", self._oxml.graph.node)
         #print(self._oxml)
-        onnx.checker.check_model(self._oxml)
+        #onnx.checker.check_model(self._oxml)
         onnx.save_model(self._oxml, path)
 
     @staticmethod
@@ -350,7 +350,7 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
                            outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
 
 
-# @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
+# works -- sometimes
 
 if False:
     @Graph.trace(
@@ -396,7 +396,7 @@ if False:
 
         # y = ox.loop(max_len, test_y0, loop_body,
         #               y0, y_len, encoder_context_0, data_0_mask, out_decoder_states)
-
+    #greedy_search.save("c:/me/greedy.onnx")
 
 @Graph.trace(
     input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
