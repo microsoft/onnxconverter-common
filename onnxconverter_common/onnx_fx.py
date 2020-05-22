@@ -4,6 +4,7 @@
 import onnx
 import onnxruntime as ort
 import numpy as np
+import io
 
 from onnx import helper
 from onnxconverter_common.registration import register_converter
@@ -63,6 +64,7 @@ class Graph:
         self._oxml = oxml
         self._inputs = inputs
         self._outputs = outputs
+        self._sess = None
 
     @staticmethod
     def trace(*args, **kwargs):
@@ -168,7 +170,14 @@ class Graph:
             return ox.apply_invoke_inline(self._oxml.graph, arg_map, output_map)  # @TODO: outputs missing
         else:
             # evaluate with real values
-            return None
+            kwargs = { name : val for name, val in arg_map.items() }
+            if self._sess == None:       # This requires an ORT session, which we create lazily and keep around for future calls.
+                with io.BytesIO() as f:  # InferenceSession cannot load graph objects; we must serialize and deserialize.
+                    onnx.save_model(self._oxml, f)
+                    f.seek(0)
+                    self._sess = ort.InferenceSession(f.read())
+            res = self._sess.run(None, kwargs)
+            return res  # @TODO: of more than one, turn into a dict, or something
     
     def save(self, path):
         if self._oxml.opset_import[0].version < 7:
@@ -318,10 +327,6 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
     output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-    #input_types =[ Int32TensorType(shape=[   None]),
-    #               FloatTensorType(shape=[   None, 1, 1]),
-    #               FloatTensorType(shape=[   None, 1, 1])],
-    #output_types=[ FloatTensorType(shape=[1, None, 1, 512]) ],
     outputs="z")
 def h(a, b, c):
     return encode_source(a,b,c)
@@ -330,8 +335,14 @@ model_path = "c:/me/enc.onnx"
 print("Saving to:", model_path, flush=True)
 h.save(model_path)
 
-print("Loading from:", model_path, flush=True)
-model = onnx.load(model_path)
+res = h(np.array([530, 4, 0]                , dtype=np.int32),
+        np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))
+
+print(res)
+
+#print("Loading from:", model_path, flush=True)
+#model = onnx.load(model_path)
 
 #print("Serializing...", flush=True)
 #model_str = str(model)
@@ -341,16 +352,6 @@ model = onnx.load(model_path)
 #with open(model_path + ".txt", "wb") as f:
 #    print(model_str, file=f)
 #print("Done", flush=True)
-
-print("Loading as session:", model_path, flush=True)
-ort_sess = ort.InferenceSession(model_path)
-output_vals = ort_sess.run(None, {
-    'a' : np.array([530, 4, 0]                , dtype=np.int32),
-    'b' : np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-    'c' : np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)
-})
-
-print(output_vals)
 
 print("done")
 
