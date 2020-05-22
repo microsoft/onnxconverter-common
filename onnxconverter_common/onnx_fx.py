@@ -171,7 +171,7 @@ class Graph:
     def save(self, path):
         if self._oxml.opset_import[0].version < 7:
             self._oxml.opset_import[0].version = 7  # @WORKAROUND: lower versions will crash onnxruntime upon load
-        print(self._oxml)
+        #print(self._oxml.graph.node)
         onnx.checker.check_model(self._oxml)
         onnx.save_model(self._oxml, path)
 
@@ -245,27 +245,33 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         return self._output_names_to_tensors(super().apply_op(apply_func, inputs, name=name, outputs=outputs, **attrs))
     
     def apply_invoke_inline(self, ox_graph, input_map, output_map):
-        # input_map: [name in graph] -> actual input Tensor
+        # input_map:  [name in graph] -> actual input Tensor
         # output_map: [name in graph] -> desired name for the result, or None
         f_name = "invoke_inline_" + ox_graph.name
         for graph_output in output_map.keys():  # @TODO: use proper comprehensions
             output_map[graph_output] = self._process_outputs(output_map[graph_output], name=f_name)[0]
         for graph_input in input_map.keys():
             input_map[graph_input] = self._process_inputs([input_map[graph_input].name], name=f_name)[0]
+        print(f_name, input_map, output_map)
         def map_tensors(args, arg_map):
             for i in range(len(args)):
-                print(args[i])
                 if args[i] in arg_map:
+                    print("Replacing:", args[i])
                     args[i] = arg_map[args[i]]
         for node in ox_graph.node:
             map_tensors(node.input,  input_map)
             map_tensors(node.output, output_map)
-            print(node.input)
-            print(node.output)
             self._container.nodes.append(node)
-        # @TODO: also map these
-        self._container.initializers.extend(ox_graph.initializer)
-        self._container.value_info.extend(ox_graph.value_info)
+        for initializer in ox_graph.initializer:
+            if initializer.name in output_map:  # technically, the whole function could be a lonely initializer
+                print("Replacing:", initializer.name, initializer.shape)
+                initializer.name = output_map[initializer.name]
+            #print(initializer.name)
+            self._container.initializers.append(initializer)
+        for value_info in ox_graph.value_info:
+            # @TODO: Not sure what must be mapped, and how
+            print(value_info)
+            self._container.value_info.append(value_info)
         return self._output_names_to_tensors(output_map.values())
 
     def constant(self, name, value, outputs=None):   # override!
@@ -277,15 +283,18 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         """
         return Tensor(name, self)
 
-@Graph.trace(outputs="s")
-def f(x,y):
-    return x + y
+# this works, and the exported graph is usable:
 
-@Graph.trace(outputs="z")
-def g(x,y):
-    return x.ox.abs(f(x, y))
+if True:
+    @Graph.trace(outputs="s")
+    def f(x,y):
+        return x + y
 
-g.save("c:/me/abssum.onnx")
+    @Graph.trace(outputs="z")
+    def g(x,y):
+        return x.ox.abs(f(x, y))
+
+    g.save("c:/me/abssum.onnx")
 
 
 path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
@@ -298,6 +307,15 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
                            outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+
+
+# @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
+
+@Graph.trace(outputs="z")
+def h(a, b, c):
+    return encode_source(a,b,c)
+
+h.save("c:/me/enc.onnx")
 
 print("done")
 
