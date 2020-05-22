@@ -98,9 +98,9 @@ class Graph:
         def on_conversion(scope, operator, container):
             nonlocal inputs
             nonlocal f_outputs
-            with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
+            with OnnxOperatorBuilderX(container, scope).as_default(f.__name__) as ox:
                 inputs = [ox.arg(arg_name) for arg_name in arg_names]
-                Graph.function_dict.update({f: ox})
+                Graph.function_dict.update({f.__name__: ox})
                 f_outputs = f(*inputs)
                 if outputs:
                     if isinstance(f_outputs, Tensor):
@@ -321,7 +321,7 @@ if True:
 
     g.save("abssum.onnx")
 
-
+# path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
 path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
 encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                            inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
@@ -349,8 +349,7 @@ print("done")
 
 @Graph.trace
 def greedy_graph(data_0):
-    oopb = Graph.my_oopb(greedy_graph)
-    encoder_context_0, *_ = encode_source()
+    oopb = Graph.my_oopb("greedy_graph")
     # seq_len = oopb.shape(data_0)
     seq_len = oopb.apply_op('Shape', data_0)
     # data_0_mask = oopb.constant(1.0, shape=seq_len)
