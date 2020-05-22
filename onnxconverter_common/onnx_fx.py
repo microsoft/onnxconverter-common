@@ -89,7 +89,7 @@ class Graph:
                 self.output_names = outputs
         raw_model = _SimpleRawModelContainer(arg_names, outputs)
         topo = Topology(raw_model)
-        top_level = topo.declare_scope('__root__')
+        top_level = topo.declare_scope(f_name)
 
         inputs = None
         f_outputs = None
@@ -114,22 +114,70 @@ class Graph:
             top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
 
         oxml = convert_topology(topo, f_name, "doc_string", target_opset=8)
-        return Graph(name=f_name, oxml=oxml, inputs=inputs, outputs=f_outputs)
+        return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
+
+    @staticmethod
+    def _map_function_arguments(params, params_set, *args, **kwargs):
+        '''
+        Helper to determine the argument map for use with various call operations.
+        Returns a dictionary from parameters to whatever arguments are passed.
+        Accepted are both positional and keyword arguments.
+        This mimics Python's argument interpretation, except that keyword arguments are not optional.
+        '''
+        # start with positional arguments
+        arg_map = dict(zip(params, args))
+
+        # now look up keyword arguments
+        if len(kwargs) != 0:
+            for name, arg in kwargs.items():  # keyword args are matched by name
+                if name not in params_set:
+                    raise TypeError("got an unexpected keyword argument '%s'" % name)
+                param = params_set[name]
+                if param in arg_map:
+                    raise SyntaxError("got multiple values for argument '%s'" % name)
+                arg_map[param] = arg  # add kw argument to dict
+        assert len(arg_map) == len(params)
+
+        return arg_map
+
+    def _argument_map(self, *args, **kwargs):
+        '''
+        Determines the {placeholder: variable} map for use with various call operations
+        Returns a dictionary from this function's placeholders to whatever arguments are passed.
+        Accepted are both positional and keyword arguments.
+        This mimics Python's argument interpretation, except that keyword arguments are not optional
+        (there is no concept of default value).
+        '''
+        params = self._inputs
+        if len(args) + len(kwargs) != len(params):
+            raise TypeError("Graph invocation expected {} arguments, got {}".format(len(params), len(args) + len(kwargs)))
+        params_set = { arg for arg in params }
+        return Graph._map_function_arguments(params, params_set, *args, **kwargs) 
+
+    def __call__(self, *args, **kwargs):
+        # parse argument list and map to the function's input
+        arg_map = self._argument_map(*args, **kwargs)
+        # determine whether this is eval() or clone()
+        is_symbolic = any(isinstance(arg, Tensor) for arg in arg_map.values())
+        if is_symbolic:
+            first_arg = next(iter(arg_map.values()))
+            ox = first_arg.ox
+            output_map = { output : None for output in self._outputs}
+            return ox.apply_invoke_inline(self._oxml.graph, arg_map, output_map)  # @TODO: outputs missing
+        else:
+            # evaluate with real values
+            return None
     
     def save(self, path):
+        if self._oxml.opset_import[0].version < 7:
+            self._oxml.opset_import[0].version = 7  # @WORKAROUND: lower versions will crash onnxruntime upon load
+        print(self._oxml)
+        onnx.checker.check_model(self._oxml)
         onnx.save_model(self._oxml, path)
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
         return Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
-
-    def noop_unfold(self, model_file):
-        oxml = onnx.load_model(model_file)
-        ox_graph = oxml.graph
-        self._container.nodes.extend(ox_graph.node)
-        self._container.initializers.extend(ox_graph.initializer)
-        self._container.value_info.extend(ox_graph.value_info)
-        return ox_graph.inputs, ox_graph.outputs
 
 class Tensor:
     def __init__(self, tensor_name: str, ox):
@@ -195,6 +243,30 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):  # override!
         inputs  = self._tensors_to_input_names(inputs)
         return self._output_names_to_tensors(super().apply_op(apply_func, inputs, name=name, outputs=outputs, **attrs))
+    
+    def apply_invoke_inline(self, ox_graph, input_map, output_map):
+        # input_map: [name in graph] -> actual input Tensor
+        # output_map: [name in graph] -> desired name for the result, or None
+        for graph_output in output_map.keys():  # @TODO: use proper comprehensions
+            if output_map[graph_output] is None:
+                output_map[graph_output] = f"OUTPUT_{graph_output}"  # @TODO: generate unique name here
+        for graph_input in input_map.keys():
+            input_map[graph_input] = input_map[graph_input].name
+        def map_tensors(args, arg_map):
+            for i in range(len(args)):
+                print(args[i])
+                if args[i] in arg_map:
+                    args[i] = arg_map[args[i]]
+        for node in ox_graph.node:
+            map_tensors(node.input,  input_map)
+            map_tensors(node.output, output_map)
+            print(node.input)
+            print(node.output)
+            self._container.nodes.append(node)
+        # @TODO: also map these
+        self._container.initializers.extend(ox_graph.initializer)
+        self._container.value_info.extend(ox_graph.value_info)
+        return self._output_names_to_tensors(output_map.values())
 
     def constant(self, name, value, outputs=None):   # override!
         return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))  # not sure about the diff between name and outputs
@@ -204,6 +276,16 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         Use this to create a function argument
         """
         return Tensor(name, self)
+
+@Graph.trace(outputs="s")
+def f(x,y):
+    return x + y
+
+@Graph.trace(outputs="z")
+def g(x,y):
+    return x.ox.abs(f(x, y))
+
+g.save("c:/me/abssum.onnx")
 
 
 path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
@@ -216,12 +298,6 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
                            outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
-
-@Graph.trace(outputs="z")
-def f(x,y):
-    return x.ox.abs(x + y)
-
-f.save("c:/me/abssum.onnx")
 
 print("done")
 
