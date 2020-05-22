@@ -307,53 +307,14 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         """
         return Tensor(name, self)
 
-# this works, and the exported graph is usable:
-
-
-if True:
-    @Graph.trace(outputs="s")
-    def f(x, y):
-        return x + y
-
-    @Graph.trace(outputs="z")
-    def g(x, y):
-        return x.ox.abs(f(x, y))
-
-    g.save("abssum.onnx")
-
-# path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
-path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
-encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
-                           inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
-decode_first = Graph.load(f"{path_stem}.decode_first.onnx",
-                          inputs=['data_1_posrange',
-                                  'encoder_context_0', 'data_0_mask'],
-                          outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
-decode_next = Graph.load(f"{path_stem}.decode_next.onnx",
-                         inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
-                                 'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
-                         outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
-
-
-# @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
-
-@Graph.trace(outputs="z")
-def h(a, b, c):
-    return encode_source(a, b, c)
-
-
-h.save("cenc.onnx")
-
-print("done")
-
 
 @Graph.trace
 def greedy_graph(data_0):
     oopb = Graph.my_oopb("greedy_graph")
     # seq_len = oopb.shape(data_0)
-    seq_len = oopb.apply_op('Shape', data_0)
+    seq_len = oopb.shape(data_0)
     # data_0_mask = oopb.constant(1.0, shape=seq_len)
-    data_0_mask = oopb.apply_op('ConstantOfShape', seq_len)
+    data_0_mask = oopb.constant_of_shape(seq_len)
     data_0_index_range = oopb.range(seq_len)
     max_len = seq_len * 3
 
@@ -365,7 +326,7 @@ def greedy_graph(data_0):
                                              encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
 
     # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-    y0 = oopb.argmax(oopb.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
+    y0 = oopb.argmax(oopb.slice(logp, starts=[0, 0], ends=[1, 1], axis=[0, 1]))
     test_y0 = oopb.equal(y0, [0])
     y_len = oopb.constant([1])
 
@@ -390,4 +351,38 @@ def greedy_graph(data_0):
     return y
 
 
-greedy_graph.save("fluency.onnx")
+if __name__ == "__main__":
+    
+    if True:
+        @Graph.trace(outputs="s")
+        def f(x, y):
+            return x + y
+
+        @Graph.trace(outputs="z")
+        def g(x, y):
+            return x.ox.abs(f(x, y))
+
+        g.save("func_g.onnx")
+
+    # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
+
+    @Graph.trace(outputs="z")
+    def h(a, b, c):
+        return encode_source(a, b, c)
+
+    h.save("func_h.onnx")
+
+    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
+    path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
+    encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                               inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
+    decode_first = Graph.load(f"{path_stem}.decode_first.onnx",
+                              inputs=['data_1_posrange',
+                                      'encoder_context_0', 'data_0_mask'],
+                              outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+    decode_next = Graph.load(f"{path_stem}.decode_next.onnx",
+                             inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
+                                     'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
+                             outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+
+    greedy_graph.save("fluency.onnx")
