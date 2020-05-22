@@ -5,8 +5,9 @@ import onnx
 import numpy as np
 from onnx import helper
 from onnxconverter_common.registration import register_converter
-from onnxconverter_common.topology import Topology, convert_topology
+from onnxconverter_common.topology import Topology, convert_topology, Scope
 from onnxconverter_common.oopb import OnnxOperatorBuilder
+from onnxconverter_common.container import ModelComponentContainer
 
 
 class ONNXFunction:
@@ -56,13 +57,13 @@ class Graph:
         self.name = name
         self.inputs = inputs
         self.outputs = outputs
+        # need to add the inputs and outputs to the variable scope
 
     @staticmethod
     def _to_Graph(oopbx, f, op_name=None, outputs=None, name=None):
         f_name = f.__name__
         arg_names, _ = _get_python_function_arguments(f)
-        #inputs = [oopbx.arg(arg_name) for arg_name in arg_names]
-        inputs = [oopbx.constant(arg_name, 0) for arg_name in arg_names]
+        inputs = [oopbx.arg(arg_name)[0] for arg_name in arg_names]
         f_outputs = f(*inputs)
         if outputs is not None:
             if isinstance(f_outputs, Tensor):
@@ -97,20 +98,18 @@ class OnnxOperatorBuilderFX(OnnxOperatorBuilder):
         else:
             return [self._tensors_to_input_names(input) for input in inputs]
 
-    def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):
-        inputs  = [self._tensors_to_input_names(input)  for input  in inputs]
-        #if outputs is not None:
-        #    outputs = [self._tensors_to_input_names(output) for output in outputs]
+    def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):  # override!
+        inputs  = self._tensors_to_input_names(inputs)
         return self._output_names_to_tensors(super().apply_op(apply_func, inputs, name=name, outputs=outputs, **attrs))
 
-    def constant(self, name, value, outputs=None):
+    def constant(self, name, value, outputs=None):   # override!
         return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))  # not sure about the diff between name and outputs
 
-    def arg(self, name):
+    def arg(self, name):   # NOT WORKING, use const
         """
         Use this to create a function argument
         """
-        return self._output_names_to_tensors(name)
+        return self.constant(name, 0)
     
     def graph(self, *args, **kwargs):
         """
@@ -185,6 +184,13 @@ def save_function(func, fname, opset, **kwargs):
     oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
     onnx.save_model(oxml, 'fluency.onnx')
 
+
+#container = ModelComponentContainer(target_opset=8)
+#scope = Scope('node_bn')
+#oopbx = OnnxOperatorBuilderFX(container, scope)
+#@oopbx.graph(outputs="z")
+#def f(x,y):
+#    return oopbx.abs(x + y)
 
 
 def on_conversion(scope, operator, container):
