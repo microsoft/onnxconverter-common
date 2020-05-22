@@ -101,7 +101,7 @@ class Graph:
         def on_conversion(scope, operator, container):
             nonlocal inputs
             nonlocal f_outputs
-            with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
+            with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:
                 inputs = [ox.arg(arg_name) for arg_name in arg_names]
                 f_outputs = f(*inputs)
                 if outputs:
@@ -118,7 +118,7 @@ class Graph:
         for o_ in raw_model.output_names:
             top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
 
-        oxml = convert_topology(topo, f_name, "doc_string", target_opset=8)
+        oxml = convert_topology(topo, f_name, "doc_string", target_opset=12, enable_optimizer=False)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
 
     @staticmethod
@@ -137,10 +137,9 @@ class Graph:
             for name, arg in kwargs.items():  # keyword args are matched by name
                 if name not in params_set:
                     raise TypeError("got an unexpected keyword argument '%s'" % name)
-                param = params_set[name]
-                if param in arg_map:
+                if name in arg_map:
                     raise SyntaxError("got multiple values for argument '%s'" % name)
-                arg_map[param] = arg  # add kw argument to dict
+                arg_map[name] = arg  # add kw argument to dict
         assert len(arg_map) == len(params)
 
         return arg_map
@@ -178,9 +177,14 @@ class Graph:
             return res  # @TODO: of more than one, turn into a dict, or something
     
     def save(self, path):
-        if self._oxml.opset_import[0].version < 7:
-            self._oxml.opset_import[0].version = 7  # @WORKAROUND: lower versions will crash onnxruntime upon load
-        #print(self._oxml.graph.node)
+        if self._oxml.opset_import[0].version < 7:    # @WORKAROUND: lower versions will crash onnxruntime upon load
+            self._oxml.opset_import[0].version = 7
+        print("Model:")
+        print("--- opset_import:", self._oxml.opset_import[0])
+        print("--- inputs:", self._oxml.graph.input)
+        print("--- outputs:", self._oxml.graph.output)
+        print("--- nodes:", self._oxml.graph.node)
+        #print(self._oxml)
         onnx.checker.check_model(self._oxml)
         onnx.save_model(self._oxml, path)
 
@@ -283,8 +287,14 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             self._container.value_info.append(value_info)
         return self._output_names_to_tensors(output_map.values())
 
-    def constant(self, name, value, outputs=None):   # override!
-        return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))  # not sure about the diff between name and outputs
+    def constant(self, name=None, value=None, outputs=None):   # override!
+        if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
+            name = self._generate_name("constant", name)
+        assert value is not None
+        if isinstance(value, np.ndarray):
+            l = value.flatten().tolist()
+            value = helper.make_tensor(name, self.float, value.shape, l)
+        return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))[0]  # strip an extra level of list()
 
     def arg(self, name):
         """
@@ -295,12 +305,26 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     # @TODO: make these proper ops
     def shape(self, inputs, name=None, outputs=None):
         return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
-                                onnx_ops._apply_unary_operation(scope, 'ConstantOfShape', input_name, output_name, container, operator_name=operator_name),
+                                onnx_ops._apply_unary_operation(scope, 'Shape', input_name, output_name, container, operator_name=operator_name),
+                             inputs, name, outputs)
+    
+    def constant_of_shape(self, name=None, value=None, shape=None):
+        assert value is not None and shape is not None
+        shape = self._tensors_to_input_names([shape])[0]
+        def apply_constant_of_shape(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
+            attrs['shape'] = shape
+            container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=12, **attrs)
+        return self.apply_op(apply_constant_of_shape, [], name, None)
+
+    def range(self, inputs, name=None, outputs=None):
+        return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
+                                onnx_ops._apply_unary_operation(scope, 'Range', input_name, output_name, container, operator_name=operator_name),
                              inputs, name, outputs)
 
 # this works, and the exported graph is usable:
 
-if False:
+if True:
     @Graph.trace(outputs="s")
     def f(x,y):
         return x + y
@@ -310,6 +334,8 @@ if False:
         return x.ox.abs(f(x, y))
 
     g.save("c:/me/abssum.onnx")
+
+    print(g([2.0], [-5.0]))
 
 
 path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
@@ -326,50 +352,50 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
 
 # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
 
-@Graph.trace(
-    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
-                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
-                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-    outputs="Y")
-def greedy_search(X):
-    ox = X.ox
-    data_0 = X
-    seq_len = ox.shape(data_0)
-    data_0_mask = ox.constant(1.0, shape=seq_len)
-    data_0_index_range = ox.range(seq_len)
-    max_len = seq_len * 3
+if False:
+    @Graph.trace(
+        input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+        output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+        outputs="Y")
+    def greedy_search(X):
+        ox = X.ox
+        data_0 = X
+        seq_len = ox.shape(data_0)
+        data_0_mask = ox.constant_of_shape(value=1.0, shape=seq_len)
+        data_0_index_range = ox.range(seq_len)
+        max_len = seq_len * ox.constant(value=3)
 
-    encoder_context_0, *_ = ox.encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                             data_0_posrange=data_0_index_range)
+        encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                            data_0_posrange=data_0_index_range)
 
-    posrange = ox.constant(np.array([[[0]]], dtype=np.float))
-    logp, *out_decoder_states = ox.decode_first(data_1_posrange=posrange,
+        y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float))
+        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+        
+        y_len = ox.constant(value=np.array([[[1]]], dtype=np.float))
+        return logp
 
-    # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-    # y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
-    # test_y0 = ox.equal(y0, [0])
-    # y_len = ox.constant([1])
+        # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
+        #y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))     # fails on slice()
+        #test_y0 = ox.equal(y0, [0])                                     # equal() not implemented
 
-    # def loop_body(y0, y_len, encoder_context_0, data_0_mask, out_decoder_states):
-    #     data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
-    #     logp, *out_decoder_states = ox.noop_unfold(attrs["decode_next"],
-    #                                                  prev_word=[
-    #                                                      y0], data_1_posrange=data_1_posrange,
-    #                                                  encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
-    #                                                  decoder_state_0=out_decoder_states[
-    #         0], decoder_state_1=out_decoder_states[1],
-    #         decoder_state_2=out_decoder_states[
-    #         2], decoder_state_3=out_decoder_states[3],
-    #         decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-    #     y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
-    #     test_y0 = ox.equal(y0, [0])
-    #     y_len = ox.add(y_len, [1])
+        # @Graph.trace
+        # def loop_body(y0, y_len, encoder_context_0, data_0_mask, out_decoder_states):
+        #     data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
+        #     logp, *out_decoder_states = decode_next(
+        #         prev_word=[y0], data_1_posrange=data_1_posrange,
+        #         encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+        #         decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
+        #         decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
+        #         decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+        #     y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
+        #     test_y0 = ox.equal(y0, [0])
+        #     y_len = y_len + ox.constant(value=1)
 
-    # y = ox.loop(max_len, test_y0, loop_body,
-    #               y0, y_len, encoder_context_0, data_0_mask, out_decoder_states)
-    # ox.identity(y, output=ox.outputs)
+        # y = ox.loop(max_len, test_y0, loop_body,
+        #               y0, y_len, encoder_context_0, data_0_mask, out_decoder_states)
 
 
 @Graph.trace(

@@ -1394,9 +1394,9 @@ class MergeCommonSequenceOptimizer(object):
                         continue
                     if succ_0.origin.op_type != succ_1.origin.op_type:
                         continue
-                    #if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
-                    #    solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
-                    #    return solution
+                    if MergeCommonSequenceOptimizer.is_same_node_merge(succ_0, succ_1, node):
+                        solution = MergeCommonSequenceSolution(node, succ_0, succ_1, None)
+                        return solution
 
         return None
 
