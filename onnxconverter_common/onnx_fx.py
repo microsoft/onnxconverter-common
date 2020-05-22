@@ -2,13 +2,15 @@
 # The codegen script to build oopb opset functions
 
 import onnx
+import onnxruntime as ort
 import numpy as np
+
 from onnx import helper
 from onnxconverter_common.registration import register_converter
 from onnxconverter_common.topology import Topology, convert_topology, Scope
 from onnxconverter_common.oopb import OnnxOperatorBuilder
 from onnxconverter_common.container import ModelComponentContainer
-from onnxconverter_common.data_types import DoubleTensorType, Int64TensorType
+from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType
 
 class ONNXFunction:
     functions = []
@@ -76,7 +78,7 @@ class Graph:
             return lambda f: Graph._to_Graph(f, *args, **kwargs)
 
     @staticmethod
-    def _to_Graph(f, op_name=None, outputs=None, name=None):
+    def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
         if outputs is None:
             outputs = []
 
@@ -109,9 +111,9 @@ class Graph:
         register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
         top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
         for i_ in raw_model.input_names:
-            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]))
+            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]) if not input_types else input_types[i_])
         for o_ in raw_model.output_names:
-            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
+            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[i_])
 
         oxml = convert_topology(topo, f_name, "doc_string", target_opset=8)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
@@ -285,7 +287,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
 
 # this works, and the exported graph is usable:
 
-if True:
+if False:
     @Graph.trace(outputs="s")
     def f(x,y):
         return x + y
@@ -311,11 +313,44 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
 
 # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
 
-@Graph.trace(outputs="z")
+@Graph.trace(
+    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+    #input_types =[ Int32TensorType(shape=[   None]),
+    #               FloatTensorType(shape=[   None, 1, 1]),
+    #               FloatTensorType(shape=[   None, 1, 1])],
+    #output_types=[ FloatTensorType(shape=[1, None, 1, 512]) ],
+    outputs="z")
 def h(a, b, c):
     return encode_source(a,b,c)
 
-h.save("c:/me/enc.onnx")
+model_path = "c:/me/enc.onnx"
+print("Saving to:", model_path, flush=True)
+h.save(model_path)
+
+print("Loading from:", model_path, flush=True)
+model = onnx.load(model_path)
+
+#print("Serializing...", flush=True)
+#model_str = str(model)
+#print("Deleting raw_data...", flush=True)
+#model_str = '\n'.join(line for line in model_str.split('\n') if "raw_data" not in line)
+#print("Printing to:", model_path, flush=True)
+#with open(model_path + ".txt", "wb") as f:
+#    print(model_str, file=f)
+#print("Done", flush=True)
+
+print("Loading as session:", model_path, flush=True)
+ort_sess = ort.InferenceSession(model_path)
+output_vals = ort_sess.run(None, {
+    'data_0'          : np.array([530, 4, 0]                , dtype=np.int32),
+    'data_0_mask'     : np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+    'data_0_posrange' : np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)
+})
+
+print(output_vals)
 
 print("done")
 
