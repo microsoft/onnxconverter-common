@@ -247,11 +247,11 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def apply_invoke_inline(self, ox_graph, input_map, output_map):
         # input_map: [name in graph] -> actual input Tensor
         # output_map: [name in graph] -> desired name for the result, or None
+        f_name = "invoke_inline_" + ox_graph.name
         for graph_output in output_map.keys():  # @TODO: use proper comprehensions
-            if output_map[graph_output] is None:
-                output_map[graph_output] = f"OUTPUT_{graph_output}"  # @TODO: generate unique name here
+            output_map[graph_output] = self._process_outputs(output_map[graph_output], name=f_name)[0]
         for graph_input in input_map.keys():
-            input_map[graph_input] = input_map[graph_input].name
+            input_map[graph_input] = self._process_inputs([input_map[graph_input].name], name=f_name)[0]
         def map_tensors(args, arg_map):
             for i in range(len(args)):
                 print(args[i])
