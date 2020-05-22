@@ -12,6 +12,7 @@ from onnxconverter_common.topology import Topology, convert_topology, Scope
 from onnxconverter_common.oopb import OnnxOperatorBuilder
 from onnxconverter_common.container import ModelComponentContainer
 from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType
+from onnxconverter_common import onnx_ops
 
 class ONNXFunction:
     functions = []
@@ -291,6 +292,12 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         """
         return Tensor(name, self)
 
+    # @TODO: make these proper ops
+    def shape(self, inputs, name=None, outputs=None):
+        return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
+                                onnx_ops._apply_unary_operation(scope, 'ConstantOfShape', input_name, output_name, container, operator_name=operator_name),
+                             inputs, name, outputs)
+
 # this works, and the exported graph is usable:
 
 if False:
@@ -319,38 +326,35 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
 
 # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
 
-#@Graph.trace(
-#    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
-#                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
-#                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-#    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-#    outputs="Y")
-#def greedy_search(X):
-    # oopb.noop_unfold(attrs["encode_source"])
-    # oopb.noop_unfold(attrs["decode_first"])
-    # data_0 = inputs[0]
-    # seq_len = oopb.shape(data_0)
-    # data_0_mask = oopb.constant(1.0, shape=seq_len)
-    # data_0_index_range = oopb.range(seq_len)
-    # max_len = oopb.mul(seq_len, 3)
+@Graph.trace(
+    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+    outputs="Y")
+def greedy_search(X):
+    ox = X.ox
+    data_0 = X
+    seq_len = ox.shape(data_0)
+    data_0_mask = ox.constant(1.0, shape=seq_len)
+    data_0_index_range = ox.range(seq_len)
+    max_len = seq_len * 3
 
-    # encoder_context_0, *_ = oopb.noop_unfold(attrs["encode_source"],
-    #                                          data_0=data_0, data_0_mask=data_0_mask,
-    #                                          data_0_posrange=data_0_index_range)
+    encoder_context_0, *_ = ox.encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                             data_0_posrange=data_0_index_range)
 
-    # posrange = oopb.constant(np.arary([[[0]]], dtype=np.float))
-    # logp, *out_decoder_states = oopb.noop_unfold(attrs["decode_first"],
-    #                                              data_1_posrange=posrange,
-    #                                              encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+    posrange = ox.constant(np.array([[[0]]], dtype=np.float))
+    logp, *out_decoder_states = ox.decode_first(data_1_posrange=posrange,
+                                                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
 
     # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-    # y0 = oopb.argmax(oopb.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
-    # test_y0 = oopb.equal(y0, [0])
-    # y_len = oopb.constant([1])
+    # y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
+    # test_y0 = ox.equal(y0, [0])
+    # y_len = ox.constant([1])
 
     # def loop_body(y0, y_len, encoder_context_0, data_0_mask, out_decoder_states):
-    #     data_1_posrange = oopb.unsqueeze(y_len, axes=[0, 1, 2])
-    #     logp, *out_decoder_states = oopb.noop_unfold(attrs["decode_next"],
+    #     data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
+    #     logp, *out_decoder_states = ox.noop_unfold(attrs["decode_next"],
     #                                                  prev_word=[
     #                                                      y0], data_1_posrange=data_1_posrange,
     #                                                  encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
@@ -359,13 +363,13 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
     #         decoder_state_2=out_decoder_states[
     #         2], decoder_state_3=out_decoder_states[3],
     #         decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-    #     y0 = oopb.argmax(oopb.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
-    #     test_y0 = oopb.equal(y0, [0])
-    #     y_len = oopb.add(y_len, [1])
+    #     y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
+    #     test_y0 = ox.equal(y0, [0])
+    #     y_len = ox.add(y_len, [1])
 
-    # y = oopb.loop(max_len, test_y0, loop_body,
+    # y = ox.loop(max_len, test_y0, loop_body,
     #               y0, y_len, encoder_context_0, data_0_mask, out_decoder_states)
-    # oopb.identity(y, output=oopb.outputs)
+    # ox.identity(y, output=ox.outputs)
 
 
 @Graph.trace(
@@ -487,11 +491,3 @@ def save_function(func, fname, opset, **kwargs):
     onnx.save_model(oxml, fname)
     import onnxruntime as ort
     ort.InferenceSession(fname)
-
-
-#container = ModelComponentContainer(target_opset=8)
-#scope = Scope('node_bn')
-#ox = OnnxOperatorBuilderX(container, scope)
-#@ox.graph(outputs="z")
-#def f(x,y):
-#    return ox.abs(x + y)
