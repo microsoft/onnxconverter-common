@@ -43,49 +43,80 @@ def _get_python_function_arguments(f):
 class Graph:
     # We override the constructors to implement an overload that constructs
     # an ONNX Graph from a Python function (@Graph).
-    def __new__(cls, oopbx, *args, **kwargs):
+    def __new__(cls, ox, *args, **kwargs):
         if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
-            return Graph._to_Graph(oopbx, *args, **kwargs)
+            return Graph._to_Graph(ox, *args, **kwargs)
 
-    def __init__(self, oopbx, *args, **kwargs):
+    def __init__(self, ox, *args, **kwargs):
         if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
             return
-        self._init(oopbx, *args, **kwargs)
-
-    def _init(oopbx, name, inputs, outputs):
-        self.oopbx = oopbx
-        self.name = name
-        self.inputs = inputs
-        self.outputs = outputs
-        # need to add the inputs and outputs to the variable scope
 
     @staticmethod
-    def _to_Graph(oopbx, f, op_name=None, outputs=None, name=None):
+    def _to_Graph(ox, f, op_name=None, outputs=None, name=None):
         f_name = f.__name__
         arg_names, _ = _get_python_function_arguments(f)
-        inputs = [oopbx.arg(arg_name) for arg_name in arg_names]
+        inputs = [ox.arg(arg_name) for arg_name in arg_names]
         f_outputs = f(*inputs)
         if outputs is not None:
             if isinstance(f_outputs, Tensor):
-                f_outputs = oopbx.identity([f_outputs], outputs=[outputs])
+                f_outputs = ox.identity([f_outputs], outputs=[outputs])
             else:
-                f_outputs = [oopbx.identity([f_output], outputs=[output_name]) for f_output, output_name in zip(f_outputs, outputs)]
-        return Graph(oopbx, name=f_name, inputs=inputs, outputs=f_outputs)
+                f_outputs = [ox.identity([f_output], outputs=[output_name]) for f_output, output_name in zip(f_outputs, outputs)]
+        return Graph(ox, name=f_name, inputs=inputs, outputs=f_outputs)
 
     @staticmethod
     def load(path):
         pass
 
 class Tensor:
-    def __init__(self, tensor_name: str, oopbx):
+    def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
-        self.oopbx = oopbx
+        self._ox = ox
 
     def __add__(self, other):
-        return self.oopbx.add([self, other])
+        return self._ox.add([self, other])
+
+    def __sub__(self, other):
+        return self._ox.sub([self, other])
+
+    def __mul__(self, other):
+        return self._ox.mul([self, other])
+
+    def __div__(self, other):
+        return self._ox.div([self, other])
+
+    def __pow__(self, other):
+        return self._ox.pow([self, other])
+
+    def __matmul__(self, other):
+        return self._ox.matmul([self, other])
+
+    def __lt__(self, other):
+        return self._ox.less([self, other])
+
+    def __le__(self, other):
+        return self._ox.less_or_equal([self, other])
+
+    #def __eq__(self, other):
+    #    return self._ox.matmul([self, other])
+
+    #def __ne__(self, other):
+    #    return self._ox.matmul([self, other])
+
+    def __gt__(self, other):
+        return self._ox.greater([self, other])
+
+    def __ge__(self, other):
+        return self._ox.greater_or_equal([self, other])
+
+    def __neg__(self):
+        return self._ox.neg([self])
+
+    #def __not__(self):
+    #    return self._ox.not([self])
 
 
-class OnnxOperatorBuilderFX(OnnxOperatorBuilder):
+class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def _output_names_to_tensors(self, outputs):
         if isinstance(outputs, str):
             return Tensor(outputs, self)
@@ -212,18 +243,18 @@ def save_function(func, fname, opset, **kwargs):
 
 #container = ModelComponentContainer(target_opset=8)
 #scope = Scope('node_bn')
-#oopbx = OnnxOperatorBuilderFX(container, scope)
-#@oopbx.graph(outputs="z")
+#ox = OnnxOperatorBuilderX(container, scope)
+#@ox.graph(outputs="z")
 #def f(x,y):
-#    return oopbx.abs(x + y)
+#    return ox.abs(x + y)
 
 
 def on_conversion(scope, operator, container):
-    with OnnxOperatorBuilderFX(container, scope).as_default('node_bn') as oopbx:
+    with OnnxOperatorBuilderX(container, scope).as_default('node_bn') as ox:
 
-        @oopbx.graph(outputs="z")
+        @ox.graph(outputs="z")
         def f(x,y):
-            return oopbx.abs(x + y)
+            return ox.abs(x + y)
 
 GRAPH_OPERATOR_NAME = '__test_graph__'
 register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
