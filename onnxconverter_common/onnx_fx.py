@@ -24,6 +24,103 @@ def onnx_function(*op, **kwargs):
 
     return onnx_func
 
+def _get_python_function_arguments(f):
+    '''
+    Helper to get the parameter names and annotations of a Python function.
+    '''
+    # Note that we only return non-optional arguments (we assume that any optional args are not specified).
+    # This allows to, e.g., accept max(a, b, *more, name='') as a binary function
+    from inspect import getfullargspec
+    param_specs = getfullargspec(f)
+    annotations = param_specs.annotations
+    arg_names = param_specs.args
+    defaults = param_specs.defaults # "if this tuple has n elements, they correspond to the last n elements listed in args"
+    if defaults:
+        arg_names = arg_names[:-len(defaults)] # we allow Function(functions with default arguments), but those args will always have default values since CNTK Functions do not support this
+    return (arg_names, annotations)
+
+class Graph:
+    # We override the constructors to implement an overload that constructs
+    # an ONNX Graph from a Python function (@Graph).
+    def __new__(cls, oopbx, *args, **kwargs):
+        if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
+            return Graph._to_Graph(oopbx, *args, **kwargs)
+
+    def __init__(self, oopbx, *args, **kwargs):
+        if len(args) > 0 and hasattr(args[0], '__call__') and not isinstance(args[0], Graph): # overload
+            return
+        self._init(oopbx, *args, **kwargs)
+
+    def _init(oopbx, name, inputs, outputs):
+        self.oopbx = oopbx
+        self.name = name
+        self.inputs = inputs
+        self.outputs = outputs
+
+    @staticmethod
+    def _to_Graph(oopbx, f, op_name=None, outputs=None, name=None):
+        f_name = f.__name__
+        arg_names, _ = _get_python_function_arguments(f)
+        #inputs = [oopbx.arg(arg_name) for arg_name in arg_names]
+        inputs = [oopbx.constant(arg_name, 0) for arg_name in arg_names]
+        f_outputs = f(*inputs)
+        if outputs is not None:
+            if isinstance(f_outputs, Tensor):
+                f_outputs = oopbx.identity([f_outputs], outputs=[outputs])
+            else:
+                f_outputs = [oopbx.identity([f_output], outputs=[output_name]) for f_output, output_name in zip(f_outputs, outputs)]
+        return Graph(oopbx, name=f_name, inputs=inputs, outputs=f_outputs)
+
+    @staticmethod
+    def load(path):
+        pass
+
+class Tensor:
+    def __init__(self, tensor_name: str, oopbx):
+        self.name = tensor_name
+        self.oopbx = oopbx
+
+    def __add__(self, other):
+        return self.oopbx.add([self, other])
+
+
+class OnnxOperatorBuilderFX(OnnxOperatorBuilder):
+    def _output_names_to_tensors(self, outputs):
+        if isinstance(outputs, str):
+            return Tensor(outputs, self)
+        else:
+            return [self._output_names_to_tensors(output) for output in outputs]
+
+    def _tensors_to_input_names(self, inputs):
+        if isinstance(inputs, Tensor):
+            return inputs.name
+        else:
+            return [self._tensors_to_input_names(input) for input in inputs]
+
+    def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):
+        inputs  = [self._tensors_to_input_names(input)  for input  in inputs]
+        #if outputs is not None:
+        #    outputs = [self._tensors_to_input_names(output) for output in outputs]
+        return self._output_names_to_tensors(super().apply_op(apply_func, inputs, name=name, outputs=outputs, **attrs))
+
+    def constant(self, name, value, outputs=None):
+        return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))  # not sure about the diff between name and outputs
+
+    def arg(self, name):
+        """
+        Use this to create a function argument
+        """
+        return self._output_names_to_tensors(name)
+    
+    def graph(self, *args, **kwargs):
+        """
+        This is the decorator
+        """
+        if len(args) > 0 and hasattr(args[0], '__call__'):  # first arg is function
+            return Graph(self, args[0])
+        else:
+            return lambda f: Graph(self, f, *args, **kwargs)
+
 
 def greedy_graph(oopb, inputs, outputs, opset, **attrs):
     data_0 = inputs[0]
@@ -87,3 +184,24 @@ def save_function(func, fname, opset, **kwargs):
 
     oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
     onnx.save_model(oxml, 'fluency.onnx')
+
+
+
+def on_conversion(scope, operator, container):
+    with OnnxOperatorBuilderFX(container, scope).as_default('node_bn') as oopbx:
+
+        @oopbx.graph(outputs="z")
+        def f(x,y):
+            return oopbx.abs(x + y)
+
+GRAPH_OPERATOR_NAME = '__test_graph__'
+register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
+raw_model = _SimpleRawModelContainer(["x", "y"], ["z"])
+topo = Topology(raw_model)
+top_level = topo.declare_scope('__root__')
+top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
+
+oxml = convert_topology(topo, 'test', "doc_string", target_opset=8)
+onnx.save_model(oxml, 'c:/me/abssum.onnx')
+
+print("done")
