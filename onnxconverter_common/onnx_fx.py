@@ -41,9 +41,24 @@ def _get_python_function_arguments(f):
     return (arg_names, annotations)
 
 class Graph:
-    def __init__(self, name, model, inputs, outputs):
+    def __init__(self, name, oxml, inputs, outputs):
+        ox_graph = oxml.graph
+        if name is None:
+            name = ox_graph.name
+        initializer_set = { initializer.name for initializer in ox_graph.initializer }
+        model_inputs = [input.name for input in ox_graph.input if input.name not in initializer_set]
+        model_outputs = [output.name for output in ox_graph.output]
+        if inputs is None:
+            inputs = model_inputs
+        else:
+            assert { input for input in inputs } == { input for input in model_inputs }, f"User-specified set of inputs ({', '.join(inputs)}) to {name} does not match actual set ({', '.join(model_inputs)})"
+        if outputs is None:
+            outputs = model_outputs
+        else:
+            assert { output for output in outputs } == { output for output in model_outputs }, f"User-specified set of outputs ({', '.join(outputs)}) to {name} does not match actual set ({', '.join(model_outputs)})"
+        print(f"Graph: {name}({', '.join(inputs)}) -> {', '.join(outputs)}")
         self._name = name
-        self._model = model
+        self._oxml = oxml
         self._inputs = inputs
         self._outputs = outputs
 
@@ -98,15 +113,23 @@ class Graph:
         for o_ in raw_model.output_names:
             top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]))
 
-        model = convert_topology(topo, f_name, "doc_string", target_opset=8)
-        return Graph(name=f_name, model=model, inputs=inputs, outputs=f_outputs)
+        oxml = convert_topology(topo, f_name, "doc_string", target_opset=8)
+        return Graph(name=f_name, oxml=oxml, inputs=inputs, outputs=f_outputs)
     
     def save(self, path):
-        onnx.save_model(self._model, path)
+        onnx.save_model(self._oxml, path)
 
     @staticmethod
-    def load(path):
-        pass
+    def load(path, name=None, inputs=None, outputs=None):
+        return Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
+
+    def noop_unfold(self, model_file):
+        oxml = onnx.load_model(model_file)
+        ox_graph = oxml.graph
+        self._container.nodes.extend(ox_graph.node)
+        self._container.initializers.extend(ox_graph.initializer)
+        self._container.value_info.extend(ox_graph.value_info)
+        return ox_graph.inputs, ox_graph.outputs
 
 class Tensor:
     def __init__(self, tensor_name: str, ox):
@@ -181,6 +204,26 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         Use this to create a function argument
         """
         return Tensor(name, self)
+
+
+path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
+encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                           inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
+decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
+                           inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
+                           outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
+                           inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
+                                   'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
+                           outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+
+@Graph.trace(outputs="z")
+def f(x,y):
+    return x.ox.abs(x + y)
+
+f.save("c:/me/abssum.onnx")
+
+print("done")
 
 
 def greedy_graph(oopb, inputs, outputs):
@@ -276,12 +319,3 @@ def save_function(func, fname, opset, **kwargs):
 #@ox.graph(outputs="z")
 #def f(x,y):
 #    return ox.abs(x + y)
-
-
-@Graph.trace(outputs="z")
-def f(x,y):
-    return x.ox.abs(x + y)
-
-f.save("c:/me/abssum.onnx")
-
-print("done")
