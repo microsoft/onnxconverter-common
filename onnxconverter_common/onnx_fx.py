@@ -411,7 +411,7 @@ if True:
         input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-        output_types=[ Int64TensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+        output_types=[ Int64TensorType(shape=[1, 'SOURCE_LENGTH', 1, 1]) ],
         outputs="Y")
     def greedy_search(X, data_0_index_range):
         ox = X.ox
@@ -439,9 +439,8 @@ if True:
 
         Y = [y_t]
         for t in range(1):
-            #data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
             logp, *out_decoder_states = decode_next(
-                prev_word=y_t, data_1_posrange=y_len, #data_1_posrange,
+                prev_word=y_t, data_1_posrange=y_len,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
                 decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
                 decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
@@ -452,7 +451,7 @@ if True:
 
             Y.append(y_t)
 
-        Y = ox.concat(Y, axis=0)
+        Y = ox.concat(Y, axis=1)
 
         return Y
 
@@ -474,10 +473,11 @@ if True:
 
     greedy_search.save("c:/me/greedy.onnx")
 
-    print(greedy_search(
+    Y = greedy_search(
         np.array([530, 4, 0]                , dtype=np.int32),
         #np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)))
+        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))[0]
+    print(Y.shape, Y)
 
 @Graph.trace(
     input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
