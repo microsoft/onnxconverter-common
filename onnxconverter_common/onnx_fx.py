@@ -422,7 +422,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         sub_graph.input.extend(new_inputs)
         sub_graph.node.extend([
             onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
-                value=self._value_to_tensor(np.array([False]).astype(np.bool), name='ts_xx')),
+                value=self._value_to_tensor(np.array([True]).astype(np.bool), name='ts_xx')),
             onnx.helper.make_node('Cast', ['range_body_add0'], ['loop_out'], 'cast_nd',
                 to=self.float)
         ])
@@ -452,8 +452,8 @@ if True:
 text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 @Graph.trace(outputs='y',
-    input_types = [Int64TensorType(shape=['1'])],
-    output_types = [FloatTensorType(shape=['1'])])
+    input_types = [Int64TensorType(shape=['N'])],
+    output_types = [FloatTensorType(shape=['N'])])
 def onnx_range(len):
     ox = len.ox
     s_len = ox.squeeze(len, axes=[0])
@@ -462,7 +462,7 @@ def onnx_range(len):
     def range_body(i):
         return i + i.ox.constant(value=1.0)
 
-    one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
+    one_c = ox.constant(value=np.array([0.0]).astype(dtype=np.float32))
     _, y = ox.loop(s_len, None, range_body, one_c)
     return y
 
