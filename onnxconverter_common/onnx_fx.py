@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # The codegen script to build oopb opset functions
 
+import os
 import onnx
 import onnxruntime as ort
 import numpy as np
@@ -191,19 +192,20 @@ class Graph:
         #print("--- inputs:", self._oxml.graph.input)
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
+        onnx.save_model(self._oxml, path)
+        if True:
+            print("Saving as text: ", path + ".txt")
+            with open(path + ".txt", "wt") as f:
+                print(self._oxml, file=f)
+            print("Done saving as text")
+
         onnx.checker.check_model(self._oxml)
         try:
             import onnxruntime as _ort
             _ort.InferenceSession(self._oxml.SerializeToString())
         except Exception as e:
             print(e)
-
-        onnx.save_model(self._oxml, path)
-        if False:
-            print("Saving as text: ", path + ".txt")
-            with open(path + ".txt", "wt") as f:
-                print(self._oxml, file=f)
-            print("Done saving as text")
+        print("{} save!".format(path))
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
@@ -328,8 +330,8 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         return self._output_names_to_tensors(output_map.values())
     
     def _value_to_tensor(self, value, name):
-        if isinstance(value, (int, float)):
-            value = np.array(value)
+        if isinstance(value, (int, float, bool)):
+            value = np.array(value).astype()
         if isinstance(value, np.ndarray):
             l = value.flatten().tolist()
             value = helper.make_tensor(name, self.float, value.shape, l)
@@ -397,11 +399,14 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def loop(self, count, cond, body, inputs, name=None):
         inputs = self._tensors_to_input_names(inputs)
         count = None if count is None else self._tensors_to_input_names(count)
-        cond = None if cond is None else self._tensors_to_input_names(cond)
+        if cond is not None:
+            cond = self._tensors_to_input_names(cond)
+        else:
+            cond = self._tensors_to_input_names(self.constant(value=True, name="cf"))
         # need update the sub-graph since the loop will add more inputs
         sub_graph = copy.deepcopy(body._oxml.graph)
-        new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[]),
-            onnx.helper.make_tensor_value_info('c', self.bool, shape=[])] + list(sub_graph.input)
+        new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[1]),
+            onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])] + list(sub_graph.input)
         del sub_graph.input[:]
         sub_graph.input.extend(new_inputs)
         sub_graph.node.extend([
@@ -433,6 +438,7 @@ if True:
 
     print(g([2.0], [-5.0]))
 
+text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 @Graph.trace(outputs='y',
     input_types = [Int64TensorType(shape=['1'])])
