@@ -194,7 +194,7 @@ class Graph:
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -449,30 +449,41 @@ if True:
 
     print(g([2.0], [-5.0]))
 
-text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
-
-@Graph.trace(outputs='y',
-    input_types = [Int64TensorType(shape=['1'])],
-    output_types = [FloatTensorType(shape=['1'])])
-def onnx_range(len):
-    ox = len.ox
-    s_len = ox.squeeze(len, axes=[0])
-    @Graph.trace(
-        input_types =[FloatTensorType(shape=[1])])
-    def range_body(i):
-        return i + i.ox.constant(value=1.0)
-
-    one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
-    _, y = ox.loop(s_len, None, range_body, one_c)
-    return y
-
-onnx_range.save('range.onnx')
-print(onnx_range(np.array([10], dtype=np.int64)))
-exit(0)
+#text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 
+if False:
+    @Graph.trace(outputs='y',
+        input_types = [Int64TensorType(shape=['1'])],
+        output_types = [FloatTensorType(shape=['1'])])
+    def onnx_range(len):
+        ox = len.ox
+        s_len = ox.squeeze(len, axes=[0])
+        @Graph.trace(
+            input_types =[FloatTensorType(shape=[1])])
+        def range_body(i):
+            return i + i.ox.constant(value=1.0)
 
-if True:
+        one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
+        _, y = ox.loop(s_len, None, range_body, one_c)
+        return y
+
+    onnx_range.save('range.onnx')
+    print(onnx_range(np.array([10], dtype=np.int64)))
+    exit(0)
+
+
+if True:  # old version that does only one step
+    path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                            inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
+    decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
+                            inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
+                            outputs=['first_logits', 'first_decoder_state_0', 'first_decoder_state_1', 'first_decoder_state_2', 'first_decoder_state_3', 'first_decoder_state_4', 'first_decoder_state_5'])
+    decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
+                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
+                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
+                            outputs=['next_logits', 'next_decoder_state_0', 'next_decoder_state_1', 'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4', 'next_decoder_state_5'])
     @Graph.trace(
         input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
