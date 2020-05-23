@@ -5,6 +5,7 @@ import onnx
 import onnxruntime as ort
 import numpy as np
 import io
+import copy
 
 from onnx import helper
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
@@ -280,6 +281,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         existing_initializer_names = { item.name : item for item in self._container.initializers }
         existing_value_infos       = { item.name : item for item in self._container.value_info }
         for node in ox_graph.node:
+            node = copy.deepcopy(node)            # since we patch, we must clone it first
             map_tensors(node.input,  input_map)   # patch the input references to the function arguments
             map_tensors(node.output, output_map)  # rename the outputs to unique ones
             map_tensors(node.input,  output_map)  # outputs may be inputs to other nodes in this graph
@@ -297,6 +299,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
                 continue
             if initializer.name in output_map:  # technically, the whole function could be a lonely initializer
                 #print("Replacing:", initializer.name, initializer.shape)
+                initializer = copy.deepcopy(initializer)
                 initializer.name = output_map[initializer.name]
             #print(initializer.name)
             self._container.initializers.append(initializer)
@@ -479,10 +482,7 @@ if True:
     )[0]
     print(Y.shape, Y)
 
-# @BUGBUG: Invoke patches the node names, but it seems it is doing that in-place. We need to clone them first.
 # @BUGBUG: This last one kills the model checker. The two above work.
-encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
-                           inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
 @Graph.trace(
     input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
@@ -502,19 +502,7 @@ res = h(np.array([530, 4, 0]                , dtype=np.int32),
 
 print(res)
 
-#print("Loading from:", model_path, flush=True)
-#model = onnx.load(model_path)
-
-#print("Serializing...", flush=True)
-#model_str = str(model)
-#print("Deleting raw_data...", flush=True)
-#model_str = '\n'.join(line for line in model_str.split('\n') if "raw_data" not in line)
-#print("Printing to:", model_path, flush=True)
-#with open(model_path + ".txt", "wb") as f:
-#    print(model_str, file=f)
-#print("Done", flush=True)
-
-print("done")
+print("Done.")
 
 
 def greedy_graph(oopb, inputs, outputs):
