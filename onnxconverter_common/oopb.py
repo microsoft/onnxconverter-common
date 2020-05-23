@@ -123,7 +123,7 @@ class OnnxOperatorBuilder:
         return ox_outputs[0] if outputs is None else ox_outputs
 
     def constant(self, name, value, outputs=None):
-        name = self._generate_name('constant', name)
+        name = self._generate_name('c', name)
         ox_outputs = self._process_outputs(outputs, name)
         onnx_ops.apply_constant(self._scope, ox_outputs, self._container,
                                 operator_name=self._scope.get_unique_operator_name(name), value=value)
@@ -151,13 +151,14 @@ class OnnxOperatorBuilder:
         return ox_outputs[0] if outputs is None else ox_outputs
 
     def loop(self, trip_count, cond, body, inputs, name=None):
+        name = self._generate_name('loop', name)
         trip_count = '' if trip_count is None else trip_count
         cond_name = '' if cond is None else cond
         ox_inputs = self._process_inputs(inputs, name)
         ox_inputs = [trip_count, cond_name] + ox_inputs
-        ox_output = [ox_i_ + ['_o'] for ox_i_ in ox_inputs[2:]]
+        ox_output = [ox_i_ + '_o' for ox_i_ in ox_inputs[2:]]
         self._container.add_node(
-            'Loop', ox_inputs, ox_output, op_version=1, name=name, body=body.SerializeToString())
+            'Loop', ox_inputs, ox_output, op_version=1, name=name, body=body)
         return ox_output
 
     # !!!!CODE-AUTOGEN!!!! #

@@ -5,13 +5,14 @@ import onnx
 import onnxruntime as ort
 import numpy as np
 import io
+import copy
 
 from onnx import helper
 from onnxconverter_common.registration import register_converter
 from onnxconverter_common.topology import Topology, convert_topology, Scope
 from onnxconverter_common.oopb import OnnxOperatorBuilder
 from onnxconverter_common.container import ModelComponentContainer
-from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType
+from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType, Int64Type
 from onnxconverter_common import onnx_ops
 
 
@@ -190,7 +191,13 @@ class Graph:
         #print("--- inputs:", self._oxml.graph.input)
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
-        #onnx.checker.check_model(self._oxml)
+        onnx.checker.check_model(self._oxml)
+        try:
+            import onnxruntime as _ort
+            _ort.InferenceSession(self._oxml.SerializeToString())
+        except Exception as e:
+            print(e)
+
         onnx.save_model(self._oxml, path)
         if False:
             print("Saving as text: ", path + ".txt")
@@ -387,6 +394,30 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
         return self.apply_op(apply_equal, inputs, name, outputs)
 
+    def loop(self, count, cond, body, inputs, name=None):
+        inputs = self._tensors_to_input_names(inputs)
+        count = None if count is None else self._tensors_to_input_names(count)
+        cond = None if cond is None else self._tensors_to_input_names(cond)
+        # need update the sub-graph since the loop will add more inputs
+        sub_graph = copy.deepcopy(body._oxml.graph)
+        new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[]),
+            onnx.helper.make_tensor_value_info('c', self.bool, shape=[])] + list(sub_graph.input)
+        del sub_graph.input[:]
+        sub_graph.input.extend(new_inputs)
+        sub_graph.node.extend([
+            onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
+                value=self._value_to_tensor(np.array([False]).astype(np.bool), name='ts_xx')),
+            onnx.helper.make_node('Cast', ['range_body_add0'], ['loop_out'], 'cast_nd',
+                to=self.int64)
+        ])
+        sub_graph.output.extend([
+            onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
+            onnx.helper.make_tensor_value_info('loop_out', self.int64, shape=[]),
+            onnx.helper.make_tensor_value_info('range_body_add0', self.float, shape=[]),
+        ])
+        return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs, name=name))
+
+
 # this works, and the exported graph is usable:
 
 if True:
@@ -403,22 +434,40 @@ if True:
     print(g([2.0], [-5.0]))
 
 
-# path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
-path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
-encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
-                           inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
-decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
-                           inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
-                           outputs=['first_logits', 'first_decoder_state_0', 'first_decoder_state_1', 'first_decoder_state_2', 'first_decoder_state_3', 'first_decoder_state_4', 'first_decoder_state_5'])
-decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
-                           inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
-                                   'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
-                           outputs=['next_logits', 'next_decoder_state_0', 'next_decoder_state_1', 'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4', 'next_decoder_state_5'])
+@Graph.trace(outputs='y',
+    input_types = [Int64TensorType(shape=['1'])])
+def onnx_range(len):
+    ox = len.ox
+    s_len = ox.squeeze(len, axes=[0])
+    @Graph.trace(
+        input_types =[FloatTensorType(shape=[1])])
+    def range_body(i):
+        return i + i.ox.constant(value=1)
+
+    one_c = ox.constant(value=1)
+    y = ox.loop(s_len, None, range_body, one_c)
+    return y
+
+onnx_range.save('range.onnx')
+exit(0)
+
+if False:
+
+    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
+    path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
+    encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                            inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
+    decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
+                            inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
+                            outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+    decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
+                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
+                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
+                            outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
 
 
 # works -- sometimes
 
-if False:
     @Graph.trace(
         input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                     FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
