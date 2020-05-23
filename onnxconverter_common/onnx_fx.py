@@ -335,7 +335,14 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     
     def _value_to_tensor(self, value, name):
         if isinstance(value, (int, float, bool)):
-            value = np.array(value).astype()
+            ty = np.int64
+            if isinstance(value, float):
+                ty = np.float32
+            elif isinstance(value, bool):
+                ty = np.bool
+            else:
+                pass
+            value = np.array(value).astype(ty)
         if isinstance(value, np.ndarray):
             l = value.flatten().tolist()
             value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
@@ -406,7 +413,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         if cond is not None:
             cond = self._tensors_to_input_names(cond)
         else:
-            cond = self._tensors_to_input_names(self.constant(value=True, name="cf"))
+            cond = self._tensors_to_input_names(self.constant(value=np.array([True]), name="cf"))
         # need update the sub-graph since the loop will add more inputs
         sub_graph = copy.deepcopy(body._oxml.graph)
         new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[1]),
@@ -417,11 +424,11 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
                 value=self._value_to_tensor(np.array([False]).astype(np.bool), name='ts_xx')),
             onnx.helper.make_node('Cast', ['range_body_add0'], ['loop_out'], 'cast_nd',
-                to=self.int64)
+                to=self.float)
         ])
         sub_graph.output.extend([
             onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
-            onnx.helper.make_tensor_value_info('loop_out', self.int64, shape=[]),
+            onnx.helper.make_tensor_value_info('loop_out', self.float, shape=[]),
             onnx.helper.make_tensor_value_info('range_body_add0', self.float, shape=[]),
         ])
         return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs, name=name))
@@ -445,21 +452,25 @@ if True:
 text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 @Graph.trace(outputs='y',
-    input_types = [Int64TensorType(shape=['1'])])
+    input_types = [Int64TensorType(shape=['1'])],
+    output_types = [FloatTensorType(shape=['1'])])
 def onnx_range(len):
     ox = len.ox
     s_len = ox.squeeze(len, axes=[0])
     @Graph.trace(
         input_types =[FloatTensorType(shape=[1])])
     def range_body(i):
-        return i + i.ox.constant(value=1)
+        return i + i.ox.constant(value=1.0)
 
-    one_c = ox.constant(value=1)
-    y = ox.loop(s_len, None, range_body, one_c)
+    one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
+    _, y = ox.loop(s_len, None, range_body, one_c)
     return y
 
 onnx_range.save('range.onnx')
+print(onnx_range(np.array([10], dtype=np.int64)))
 exit(0)
+
+
 
 if True:
     @Graph.trace(
