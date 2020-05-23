@@ -378,7 +378,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
 
 # this works, and the exported graph is usable:
 
-if False:
+if True:
     @Graph.trace(outputs="s")
     def f(x,y):
         return x + y
@@ -475,10 +475,14 @@ if True:
 
     Y = greedy_search(
         np.array([530, 4, 0]                , dtype=np.int32),
-        #np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))[0]
+        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)  # this will be the result of the range() call; for now, we pass as an input
+    )[0]
     print(Y.shape, Y)
 
+# @BUGBUG: Invoke patches the node names, but it seems it is doing that in-place. We need to clone them first.
+# @BUGBUG: This last one kills the model checker. The two above work.
+encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                           inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
 @Graph.trace(
     input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
