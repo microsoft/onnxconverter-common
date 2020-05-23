@@ -190,9 +190,13 @@ class Graph:
         #print("--- inputs:", self._oxml.graph.input)
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
-        #print(self._oxml)
         #onnx.checker.check_model(self._oxml)
         onnx.save_model(self._oxml, path)
+        if False:
+            print("Saving as text: ", path + ".txt")
+            with open(path + ".txt", "wt") as f:
+                print(self._oxml, file=f)
+            print("Done saving as text")
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
@@ -282,31 +286,53 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         def map_tensors(args, arg_map):
             for i in range(len(args)):
                 if args[i] in arg_map:
-                    print("Replacing:", args[i])
+                    print("Remapping", args[i], "to", arg_map[args[i]])
                     args[i] = arg_map[args[i]]
+        existing_node_names        = { item.name : item for item in self._container.nodes }
+        existing_initializer_names = { item.name : item for item in self._container.initializers }
+        existing_value_infos       = { item.name : item for item in self._container.value_info }
         for node in ox_graph.node:
             map_tensors(node.input,  input_map)
             map_tensors(node.output, output_map)
+            if node.name in existing_node_names:
+                str_node  = str(node)
+                str_other = str(existing_node_names[node.name])
+                if str_node != str_other:  # must be the samem, otherwise we have inconsistent dups, e.g. in input models
+                    print("Duplicate node name with inconsistent nodes:\n", node, "vs:\n", existing_node_names[node.name])
+                    assert str_node == str_other
+                continue
             self._container.nodes.append(node)
         for initializer in ox_graph.initializer:
+            if initializer.name in existing_initializer_names:  # @TODO: check if they are the same
+                print("Duplicate initializer name skipped:", initializer.name)
+                continue
             if initializer.name in output_map:  # technically, the whole function could be a lonely initializer
-                print("Replacing:", initializer.name, initializer.shape)
+                #print("Replacing:", initializer.name, initializer.shape)
                 initializer.name = output_map[initializer.name]
             # print(initializer.name)
             self._container.initializers.append(initializer)
         for value_info in ox_graph.value_info:
+            if value_info.name in existing_value_infos:  # @TODO: check if they are the same
+                print("Duplicate value_info name skipped:", value_info.name)
+                continue
             # @TODO: Not sure what must be mapped, and how
             print(value_info)
             self._container.value_info.append(value_info)
         return self._output_names_to_tensors(output_map.values())
+    
+    def _value_to_tensor(self, value, name):
+        if isinstance(value, (int, float)):
+            value = np.array(value)
+        if isinstance(value, np.ndarray):
+            l = value.flatten().tolist()
+            value = helper.make_tensor(name, self.float, value.shape, l)
+        return value
 
     def constant(self, name=None, value=None, outputs=None):   # override!
         if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
             name = self._generate_name("constant", name)
         assert value is not None
-        if isinstance(value, np.ndarray):
-            l = value.flatten().tolist()
-            value = helper.make_tensor(name, self.float, value.shape, l)
+        value = self._value_to_tensor(value, name)
         return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))[0]  # strip an extra level of list()
 
     def arg(self, name):
@@ -321,19 +347,45 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
                                 onnx_ops._apply_unary_operation(scope, 'Shape', input_name, output_name, container, operator_name=operator_name),
                              inputs, name, outputs)
     
-    def constant_of_shape(self, name=None, value=None, shape=None):
-        assert value is not None and shape is not None
-        shape = self._tensors_to_input_names([shape])[0]
+    def constant_of_shape(self, inputs, name=None, value=None):
+        if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
+            name = self._generate_name("constant_of_shape", name)
+        assert value is not None
+        value = self._value_to_tensor(value, name)
         def apply_constant_of_shape(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
             name = onnx_ops._create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
-            attrs['shape'] = shape
+            attrs['shape'] = value
             container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=9, **attrs)
-        return self.apply_op(apply_constant_of_shape, [], name, None)
+        return self.apply_op(apply_constant_of_shape, inputs, name, None)
 
     def range(self, inputs, name=None, outputs=None):
         return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
                                 onnx_ops._apply_unary_operation(scope, 'Range', input_name, output_name, container, operator_name=operator_name),
                              inputs, name, outputs)
+
+    def slice(self, inputs, starts, ends, name=None, outputs=None, axes=None, steps=None):
+        def apply_slice(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'Slice', operator_name)
+            attrs['starts'] = starts
+            attrs['ends'] = ends
+            if axes:
+                attrs['axes'] = axes
+            if steps:
+                attrs['steps'] = steps
+            container.add_node('Slice', input_names, output_names, name=name, op_version=9, **attrs)
+        return self.apply_op(apply_slice, [], name, None)
+
+    def equal(self, inputs, name=None, outputs=None):
+        def apply_equal(scope, input_names, output_name, container, operator_name=None):
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'Greater', operator_name)
+            if container.target_opset < 7:
+                op_version = 1
+            elif container.target_opset < 9:
+                op_version = 7
+            else:
+                op_version = 9
+            container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
+        return self.apply_op(apply_equal, inputs, name, outputs)
 
 # this works, and the exported graph is usable:
 
@@ -357,59 +409,87 @@ encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                            inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
 decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
                            inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
-                           outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+                           outputs=['first_logits', 'first_decoder_state_0', 'first_decoder_state_1', 'first_decoder_state_2', 'first_decoder_state_3', 'first_decoder_state_4', 'first_decoder_state_5'])
 decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
-                           outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+                           outputs=['next_logits', 'next_decoder_state_0', 'next_decoder_state_1', 'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4', 'next_decoder_state_5'])
 
 
 # works -- sometimes
 
-@Graph.trace(
-    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
-                FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
-                FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-    outputs="Y")
-def greedy_search(X):
-    ox = X.ox
-    data_0 = X
-    seq_len = ox.shape(data_0)
-    data_0_mask = ox.constant_of_shape(value=1.0, shape=seq_len)
-    data_0_index_range = ox.range(seq_len)
-    max_len = seq_len * ox.constant(value=3)
+if False:
+    @Graph.trace(
+        input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+        output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+        outputs="Y")
+    def greedy_search(X, data_0_index_range):
+        ox = X.ox
+        data_0 = X
+        seq_len = ox.shape(data_0)
+        data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
+        #data_0_index_range = ox.range(seq_len)
+        max_len = seq_len * ox.constant(value=3)
 
-    encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                        data_0_posrange=data_0_index_range)
+        encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                            data_0_posrange=data_0_index_range)
 
-    y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float))
-    logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
-                                            encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
-    
-    y_len = ox.constant(value=np.array([[[1]]], dtype=np.float))
-    return logp
+        y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float))
+        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
+                                                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+        
+        zero_c = ox.constant(value=0)
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        #y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))     # fails on slice()
-        #test_y0 = ox.equal(y0, [0])                                     # equal() not implemented
+        y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]))
+        test_y_t = ox.equal([y_t, zero_c])
+        y_len = ox.constant(value=np.array([[[1]]], dtype=np.float))
+
+        # BEGIN LOOP
+
+        Y = [y_t]
+        for t in range(2):
+            data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
+            logp, *out_decoder_states = decode_next(
+                prev_word=y_t, data_1_posrange=data_1_posrange,
+                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+                decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
+                decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
+                decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+            y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]))
+            test_y_t = ox.equal([y_t, zero_c])
+            y_len = y_len + ox.constant(value=1)
+
+            Y.append(y_t)
+
+        Y = ox.concat(Y, axis=0)
+
+        return Y
 
         # @Graph.trace
-        # def loop_body(y0, y_len, encoder_context_0, data_0_mask, out_decoder_states):
+        # def loop_body(y_t, y_len, encoder_context_0, data_0_mask, out_decoder_states):
         #     data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
         #     logp, *out_decoder_states = decode_next(
-        #         prev_word=[y0], data_1_posrange=data_1_posrange,
+        #         prev_word=y_t, data_1_posrange=data_1_posrange,
         #         encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
         #         decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
         #         decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
         #         decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-        #     y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))
-        #     test_y0 = ox.equal(y0, [0])
+        #     y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]))
+        #     test_y_t = ox.equal(y_t, [0])
         #     y_len = y_len + ox.constant(value=1)
 
-        # y = ox.loop(max_len, test_y0, loop_body,
-        #               y0, y_len, encoder_context_0, data_0_mask, out_decoder_states)
-    #greedy_search.save("c:/me/greedy.onnx")
+        # y = ox.loop(max_len, test_y_t, loop_body,
+        #               y_t, y_len, encoder_context_0, data_0_mask, out_decoder_states)
+
+    greedy_search.save("c:/me/greedy.onnx")
+
+    print(greedy_search(
+        np.array([530, 4, 0]                , dtype=np.int32),
+        #np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)))
 
 @Graph.trace(
     input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
