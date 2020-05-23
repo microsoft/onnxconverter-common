@@ -133,13 +133,13 @@ class OnnxOperatorBuilder:
         return self.add_node("Range", inputs, name=name, op_version=8, **attrs)
 
     def shape(self, inputs, name=None, outputs=None):
-        return self.add_node("Shape", inputs, name=name, op_version=8)
+        return self.add_node("Shape", inputs, name=name, op_version=1)
 
     def constant_of_shape(self, inputs, name=None, outputs=None):
-        return self.add_node("ConstantOfShape", inputs, name=name, op_version=8)
+        return self.add_node("ConstantOfShape", inputs, name=name, op_version=9)
 
     def equal(self, inputs, name=None, outputs=None):
-        return self.add_node("Equal", inputs, name=name, op_version=8)
+        return self.add_node("Equal", inputs, name=name, op_version=7)
 
     def slice(self, inputs, name=None, outputs=None, starts=None, ends=None, axes=None, steps=None):
         name = self._generate_name('slice', name)

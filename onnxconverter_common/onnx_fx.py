@@ -122,7 +122,7 @@ class Graph:
         for o_ in raw_model.output_names:
             top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
 
-        oxml = convert_topology(topo, f_name, "doc_string", target_opset=8, enable_optimizer=False)
+        oxml = convert_topology(topo, f_name, "doc_string", target_opset=9, enable_optimizer=False)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
 
     @staticmethod
@@ -327,7 +327,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         def apply_constant_of_shape(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
             name = onnx_ops._create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
             attrs['shape'] = shape
-            container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=12, **attrs)
+            container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=9, **attrs)
         return self.apply_op(apply_constant_of_shape, [], name, None)
 
     def range(self, inputs, name=None, outputs=None):
@@ -366,30 +366,29 @@ decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
 
 # works -- sometimes
 
-if False:
-    @Graph.trace(
-        input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
-                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
-                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-        output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-        outputs="Y")
-    def greedy_search(X):
-        ox = X.ox
-        data_0 = X
-        seq_len = ox.shape(data_0)
-        data_0_mask = ox.constant_of_shape(value=1.0, shape=seq_len)
-        data_0_index_range = ox.range(seq_len)
-        max_len = seq_len * ox.constant(value=3)
+@Graph.trace(
+    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+    outputs="Y")
+def greedy_search(X):
+    ox = X.ox
+    data_0 = X
+    seq_len = ox.shape(data_0)
+    data_0_mask = ox.constant_of_shape(value=1.0, shape=seq_len)
+    data_0_index_range = ox.range(seq_len)
+    max_len = seq_len * ox.constant(value=3)
 
-        encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                            data_0_posrange=data_0_index_range)
+    encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                        data_0_posrange=data_0_index_range)
 
-        y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float))
-        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
-                                                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
-        
-        y_len = ox.constant(value=np.array([[[1]]], dtype=np.float))
-        return logp
+    y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float))
+    logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
+                                            encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+    
+    y_len = ox.constant(value=np.array([[[1]]], dtype=np.float))
+    return logp
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         #y0 = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axis=[0, 1]))     # fails on slice()
@@ -421,7 +420,7 @@ if False:
 def h(a, b, c):
     return encode_source(a,b,c)
 
-model_path = "c:/me/enc.onnx"
+model_path = "enc.onnx"
 print("Saving to:", model_path, flush=True)
 h.save(model_path)
 
