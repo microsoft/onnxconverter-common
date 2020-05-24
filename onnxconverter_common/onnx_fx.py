@@ -574,12 +574,12 @@ if True:  # old version that does only one step
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
         output_types=[ Int64TensorType(shape=[1, 'SOURCE_LENGTH', 1, 1]) ],
         outputs="Y")
-    def greedy_search(X, data_0_index_range):
+    def greedy_search(X):
         ox = X.ox
         data_0 = X
         seq_len = ox.shape(data_0)
         data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
-        #data_0_index_range = ox.range(seq_len)
+        data_0_index_range = onnx_range(seq_len)
         max_len = seq_len * np.array([[[3]]], dtype=np.int64)
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -639,10 +639,7 @@ if True:  # old version that does only one step
     # greedy_search.save("c:/me/greedy.onnx")
     greedy_search.save("greedy.onnx")
 
-    Y = greedy_search(
-        np.array([530, 4, 0]                , dtype=np.int32),
-        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)  # this will be the result of the range() call; for now, we pass as an input
-    )[0]
+    Y = greedy_search(np.array([530, 4, 0], dtype=np.int32))[0]
     print(Y.shape, Y)
 
     # @BUGBUG: This last one kills the model checker. The two above work.
