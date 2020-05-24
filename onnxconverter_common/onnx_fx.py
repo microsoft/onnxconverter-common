@@ -36,6 +36,14 @@ def _get_python_function_arguments(f):
     return (arg_names, annotations)
 
 
+def _to_list(element_or_list):
+    if element_or_list is None:
+        return []
+
+    return element_or_list if isinstance(
+        element_or_list, (list, tuple)) else [element_or_list]
+
+
 class Graph:
 
     function_dict = {}
@@ -86,8 +94,9 @@ class Graph:
 
     @staticmethod
     def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
-        if outputs is None:
-            outputs = []
+        input_types = _to_list(input_types)
+        output_types = _to_list(output_types)
+        outputs = _to_list(outputs)
 
         f_name = f.__name__
         arg_names, _ = _get_python_function_arguments(f)
@@ -112,7 +121,7 @@ class Graph:
                 f_outputs = f(*inputs)
                 if outputs:
                     if isinstance(f_outputs, Tensor):
-                        f_outputs = ox.identity([f_outputs], outputs=[outputs])
+                        f_outputs = ox.identity([f_outputs], outputs=outputs)
                     else:
                         f_outputs = [ox.identity([f_output], outputs=[
                                                  output_name]) for f_output, output_name in zip(f_outputs, outputs)]
@@ -121,9 +130,9 @@ class Graph:
         register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
         top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
         for i_ in raw_model.input_names:
-            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]) if not input_types  else input_types [arg_names.index(i_)])
+            top_level.get_local_variable_or_declare_one(i_, FloatTensorType(shape=[1]) if not input_types  else input_types [arg_names.index(i_)])
         for o_ in raw_model.output_names:
-            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
+            top_level.get_local_variable_or_declare_one(o_, FloatTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
 
         oxml = convert_topology(topo, f_name, "doc_string", target_opset=9, enable_optimizer=False)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
@@ -423,13 +432,14 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         sub_graph.node.extend([
             onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
                 value=self._value_to_tensor(np.array([True]).astype(np.bool), name='ts_xx')),
-            onnx.helper.make_node('Cast', ['range_body_add0'], ['loop_out'], 'cast_nd',
+            #TODO: why do we need this??? ORT limitation?
+            onnx.helper.make_node('Cast', [sub_graph.output[0].name], ['loop_out'], 'cast_nd',
                 to=self.float)
         ])
         sub_graph.output.extend([
-            onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
             onnx.helper.make_tensor_value_info('loop_out', self.float, shape=[]),
-            onnx.helper.make_tensor_value_info('range_body_add0', self.float, shape=[]),
+            onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
+            onnx.helper.make_tensor_value_info(sub_graph.output[0].name, self.float, shape=[]),
         ])
         return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs, name=name))
 
@@ -449,7 +459,9 @@ if True:
 
     print(g([2.0], [-5.0]))
 
-text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
+import sys
+if len(sys.argv) > 1:
+    text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 @Graph.trace(outputs='y',
     input_types = [Int64TensorType(shape=['N'])],
@@ -457,13 +469,13 @@ text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in p
 def onnx_range(len):
     ox = len.ox
     s_len = ox.squeeze(len, axes=[0])
-    @Graph.trace(
+    @Graph.trace(outputs='o',
         input_types =[FloatTensorType(shape=[1])])
     def range_body(i):
         return i + i.ox.constant(value=1.0)
 
-    one_c = ox.constant(value=np.array([0.0]).astype(dtype=np.float32))
-    _, y = ox.loop(s_len, None, range_body, one_c)
+    one_c = ox.constant(value=np.array([-1.0]).astype(dtype=np.float32))
+    _, _, y = ox.loop(s_len, None, range_body, one_c)
     return y
 
 onnx_range.save('range.onnx')

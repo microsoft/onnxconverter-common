@@ -7,7 +7,7 @@ import numpy as np
 from onnx import onnx_pb as onnx_proto
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 from . import onnx_ops
-from .data_types import Int64TensorType
+from .data_types import Int64TensorType, BooleanTensorType
 
 
 class _OperatorNameContext:
@@ -158,8 +158,12 @@ class OnnxOperatorBuilder:
         ox_inputs = self._process_inputs(inputs, name)
         ox_inputs = [trip_count, cond_name] + ox_inputs
         ox_output = [ox_i_ + '_o' for ox_i_ in ox_inputs[2:]]
-        o1 = self._scope.get_local_variable_or_declare_one('ox_c', type=Int64TensorType)
-        ox_output = [o1.onnx_name] + ox_output
+        o1 = self._scope.get_local_variable_or_declare_one('ox_b', type=Int64TensorType())
+        o2 = self._scope.get_local_variable_or_declare_one('ox_c', type=Int64TensorType())
+
+        ox_output = [o1.onnx_name, o2.onnx_name] + ox_output
+
+
         self._container.add_node(
             'Loop', ox_inputs, ox_output, op_version=1, name=name, body=body)
         return ox_output
