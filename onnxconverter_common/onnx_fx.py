@@ -133,9 +133,12 @@ class Graph:
                 if outputs:
                     if isinstance(f_outputs, Tensor):
                         f_outputs = ox.identity([f_outputs], outputs=outputs)
+                        n_outputs = 1
                     else:
-                        f_outputs = [ox.identity([f_output], outputs=[
-                                                 output_name]) for f_output, output_name in zip(f_outputs, outputs)]
+                        f_outputs = [ox.identity([f_output], outputs=[output_name])
+                                                 for f_output, output_name in zip(f_outputs, outputs)]
+                        n_outputs = len(f_outputs)
+                assert n_outputs == len(outputs), f"Function {f_name}() returned {n_outputs} but {len(outputs)} were declared"
 
         GRAPH_OPERATOR_NAME = f_name
         register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
@@ -214,12 +217,13 @@ class Graph:
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if False:
+        if True:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
             print("Done saving as text")
 
+        # check the model
         #onnx.checker.check_model(self._oxml)
         try:
             import onnxruntime as _ort
@@ -501,7 +505,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         return output
 
     # @TODO?: Should we follow the conventions in the spec? loop(self, count, cond, inputs, body)
-    def loop(self, count, cond, body, inputs, name=None):
+    def loop(self, count, cond, body, inputs, outputs=None, name=None):
         inputs = self._tensors_to_input_names(inputs)
         count = None if count is None else self._tensors_to_input_names(count)
         if cond is not None:
@@ -510,12 +514,12 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             cond = self._tensors_to_input_names(self.constant(value=np.array([True]), name="cf"))
         # need update the sub-graph since the loop will add more inputs
         sub_graph = body._oxml.graph
-        original_inputs = copy.deepcopy(sub_graph.input)
-        new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[1]),
-                      onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])
-                    ] + list(original_inputs)
-        del sub_graph.input[:]
-        sub_graph.input.extend(new_inputs)
+        #original_inputs = copy.deepcopy(sub_graph.input)
+        #new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[1]),
+        #              onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])
+        #            ] + list(original_inputs)
+        #del sub_graph.input[:]
+        #sub_graph.input.extend(new_inputs)
         # sg_output_names = [nm_.name for nm_ in sub_graph.output]
         # sub_graph.node.extend([
         #     onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
@@ -533,8 +537,10 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         #     scan_outputs.append(
         #         onnx.helper.make_tensor_value_info('so_' + ot_.name, ot_.type.tensor_type.elem_type, shape))
 
-        return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs,
-            [ot_.name for ot_ in sub_graph.output[1:]], name=name))
+        return self._output_names_to_tensors(super().loop(count, cond, sub_graph,
+                                                          inputs=inputs,
+                                                          outputs=outputs,  # @TODO: unique output names
+                                                          name=name))
 
 
 # this works, and the exported graph is usable:
@@ -558,26 +564,46 @@ if len(sys.argv) > 1:
     text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 if True:
-    @Graph.trace(outputs='y',
-        input_types = [_Ty.I(shape=['N'])],
-        output_types = [_Ty.F(shape=[None])])
+    @Graph.trace(outputs='range_res',
+                 input_types  = [_Ty.I(shape=[])],
+                 output_types = [_Ty.I(shape=['N'])])
     def onnx_range(len):
         ox = len.ox
-        s_len = ox.squeeze(len, axes=[0])
-        is_true = ox.constant(value=True)
-        @Graph.trace(outputs=['c_o', 'i_o', 'evar_o'],
-            input_types = [_Ty.F(shape=[1])],
-            output_types = [_Ty.b, _Ty.f, _Ty.b])
-        def range_body(i):
-            return (is_true, 
-                        i + i.ox.constant(value=1.0), ox.identity(is_true))
+        #s_len = ox.squeeze(len, axes=[0])
+        is_true = ox.constant(value=True)  # dummy condition, always True
+        dummy_state_val = ox.constant(value=True)
+        @Graph.trace(outputs=['c_o', 's_o', 'i_o'],
+                     input_types  = [_Ty.i, _Ty.b, _Ty.b],
+                     output_types = [_Ty.b, _Ty.b, _Ty.i])
+        def range_body(iteration_num, condition, dummy_state):
+            """
+            Loop body follows the requirements of ONNX Loop:
 
-        one_c = ox.constant(value=-1.0)
-        y, _ = ox.loop(s_len, None, range_body, one_c)
-        return y
+            "The graph run each iteration.
+            It has 2+N inputs: (iteration_num, condition, loop carried dependencies...).
+            It has 1+N+K outputs: (condition, loop carried dependencies..., scan_outputs...).
+            Each scan_output is created by concatenating the value of the specified output value at the end of each iteration of the loop.
+            It is an error if the dimensions or data type of these scan_outputs change across loop iterations."
+
+            Inputs:
+                iteration_num
+                condition (dummy)
+                dummy_state: loop-carried dependencies  --@BUGBUG: ORT requires at least one
+
+            Outputs:
+                c_o: dummy condition, always True
+                s_o_: dummy loop-carried dependencies
+                i_o: K scan outputs
+            """
+            return is_true, dummy_state_val, iteration_num
+
+        #one_c = ox.constant(value=-1.0)
+        # "Final N loop carried dependency values then K scan_outputs"
+        _, range_out = ox.loop(len, is_true, range_body, inputs=[dummy_state_val], outputs=['ds_o', 'range_out'])  # passing is_true for dummy_state
+        return range_out
 
     onnx_range.save('range.onnx')
-    print(onnx_range(np.array([16], dtype=np.int64)))
+    print(onnx_range(np.array(16, dtype=np.int64)))
 
 
 if True:  # old version that does only one step
