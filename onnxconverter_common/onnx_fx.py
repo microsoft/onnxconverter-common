@@ -122,9 +122,9 @@ class Graph:
         register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
         top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
         for i_ in raw_model.input_names:
-            top_level.get_local_variable_or_declare_one(i_, DoubleTensorType(shape=[1]) if not input_types  else input_types [arg_names.index(i_)])
+            top_level.get_local_variable_or_declare_one(i_, FloatTensorType(shape=[1]) if not input_types  else input_types [arg_names.index(i_)])
         for o_ in raw_model.output_names:
-            top_level.get_local_variable_or_declare_one(o_, DoubleTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
+            top_level.get_local_variable_or_declare_one(o_, FloatTensorType(shape=[1]) if not output_types else output_types[outputs.index(o_)])
 
         oxml = convert_topology(topo, f_name, "doc_string", target_opset=9, enable_optimizer=False)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
@@ -218,42 +218,50 @@ class Tensor:
     def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
         self.ox = ox
+    
+    def _to_binary_tensor_args(self, other):  # convert self, other to [self, other], but if either is a number, convert that to a constant
+        x, y = self, other
+        if (isinstance(y, (int, float, bool, np.ndarray))):
+            y = self.ox.constant(value=y)
+        elif (isinstance(x, (int, float, bool, np.ndarray))):
+            x = self.ox.constant(value=x)
+        return [x, y]
 
     def __add__(self, other):
-        return self.ox.add([self, other])
+        return self.ox.add(self._to_binary_tensor_args(other))
 
     def __sub__(self, other):
-        return self.ox.sub([self, other])
+        return self.ox.sub(self._to_binary_tensor_args(other))
 
     def __mul__(self, other):
-        return self.ox.mul([self, other])
+        return self.ox.mul(self._to_binary_tensor_args(other))
 
     def __div__(self, other):
-        return self.ox.div([self, other])
+        return self.ox.div(self._to_binary_tensor_args(other))
 
     def __pow__(self, other):
-        return self.ox.pow([self, other])
+        return self.ox.pow(self._to_binary_tensor_args(other))
 
     def __matmul__(self, other):
-        return self.ox.matmul([self, other])
+        return self.ox.matmul(self._to_binary_tensor_args(other))
 
     def __lt__(self, other):
-        return self.ox.less([self, other])
+        return self.ox.less(self._to_binary_tensor_args(other))
 
     def __le__(self, other):
-        return self.ox.less_or_equal([self, other])
+        return self.ox.less_or_equal(self._to_binary_tensor_args(other))
 
-    # def __eq__(self, other):
-    #    return self.ox.matmul([self, other])
+    def __eq__(self, other):
+       return self.ox.equal(self._to_binary_tensor_args(other))
 
     # def __ne__(self, other):
-    #    return self.ox.matmul([self, other])
+    #    return self.ox.matmul(self._to_binary_tensor_args(other))
 
     def __gt__(self, other):
-        return self.ox.greater([self, other])
+        return self.ox.greater(self._to_binary_tensor_args(other))
 
     def __ge__(self, other):
-        return self.ox.greater_or_equal([self, other])
+        return self.ox.greater_or_equal(self._to_binary_tensor_args(other))
 
     def __neg__(self):
         return self.ox.neg([self])
@@ -292,6 +300,8 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             output_map[graph_output] = self._process_outputs(
                 output_map[graph_output], name=f_name)[0]
         outputs = list(output_map.values())  # remember these; these are the outputs of this invocation
+        if len(outputs) == 1:
+            outputs = outputs[0]  # single output
         for graph_input in input_map.keys():
             input_map[graph_input] = self._process_inputs(
                 [input_map[graph_input].name], name=f_name)[0]
@@ -465,7 +475,7 @@ if True:
 
     @Graph.trace(outputs="z")
     def g(x,y):
-        return x.ox.abs(f(x, y))
+        return x.ox.abs(f(x, y) + 1.0)
 
     g.save("c:/me/abssum.onnx")
 
@@ -519,20 +529,18 @@ if True:  # old version that does only one step
         seq_len = ox.shape(data_0)
         data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
         #data_0_index_range = ox.range(seq_len)
-        max_len = seq_len * ox.constant(value=np.array([[[3]]], dtype=np.int64))
+        max_len = seq_len * np.array([[[3]]], dtype=np.int64)
 
-        encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                            data_0_posrange=data_0_index_range)
+        encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                        data_0_posrange=data_0_index_range)
 
         y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float32))
         logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
         
-        zero_c = ox.constant(value=np.array([0], dtype=np.int64))
-
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
-        test_y_t = ox.equal([y_t, zero_c])
+        test_y_t = (y_t == 0)
         y_len = ox.constant(value=np.array([[[1]]], dtype=np.float32))
 
         # BEGIN LOOP
@@ -546,8 +554,8 @@ if True:  # old version that does only one step
                 decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
                 decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
             y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
-            test_y_t = ox.equal([y_t, zero_c])
-            y_len = y_len + ox.constant(value=np.array([[[1]]], dtype=np.float32))
+            test_y_t = (y_t == 0)
+            y_len = y_len + 1.0
 
             Y.append(y_t)
 
