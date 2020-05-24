@@ -397,7 +397,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             self._container.value_info.append(value_info)
         return self._output_names_to_tensors(outputs)
     
-    def _value_to_tensor(self, value, name):
+    def _value_to_tensor(self, value, name, atleast_1d=False):
         if isinstance(value, (int, float, bool)):
             ty = np.int64
             if isinstance(value, float):
@@ -407,6 +407,8 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             else:
                 pass
             value = np.array(value).astype(ty)
+            if atleast_1d:
+                value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
         if isinstance(value, np.ndarray):
             l = value.flatten().tolist()
             value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
@@ -435,7 +437,9 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
             name = self._generate_name("constant_of_shape", name)
         assert value is not None
-        value = self._value_to_tensor(value, name)
+        if not isinstance(value, (int, float, bool)):
+            raise ValueError("constant_of_shape requires 'value' to be a scalar")
+        value = self._value_to_tensor(value, name, atleast_1d=True)
         def apply_constant_of_shape(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
             name = onnx_ops._create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
             attrs['value'] = value
@@ -559,7 +563,7 @@ if True:  # old version that does only one step
         ox = X.ox
         data_0 = X
         seq_len = data_0.shape()
-        data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
+        data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
         #data_0_index_range = ox.range(seq_len)
         max_len = seq_len * 3
 
