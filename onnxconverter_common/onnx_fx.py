@@ -12,8 +12,20 @@ from onnxconverter_common.registration import register_converter
 from onnxconverter_common.topology import Topology, convert_topology, Scope
 from onnxconverter_common.oopb import OnnxOperatorBuilder
 from onnxconverter_common.container import ModelComponentContainer
-from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType, Int64Type
+from onnxconverter_common.data_types import DoubleTensorType, FloatTensorType, Int64TensorType, Int32TensorType, Int64Type, BooleanTensorType
 from onnxconverter_common import onnx_ops
+
+
+class _Ty:
+    D = DoubleTensorType
+    F = FloatTensorType
+    I = Int64TensorType
+    B = BooleanTensorType
+
+    d = DoubleTensorType(shape=[])
+    f = FloatTensorType(shape=[])
+    i = Int64TensorType(shape=[])
+    b = BooleanTensorType(shape=[])
 
 
 def _get_python_function_arguments(f):
@@ -32,6 +44,14 @@ def _get_python_function_arguments(f):
         # we allow Function(functions with default arguments), but those args will always have default values since CNTK Functions do not support this
         arg_names = arg_names[:-len(defaults)]
     return (arg_names, annotations)
+
+
+def _to_list(element_or_list):
+    if element_or_list is None:
+        return []
+
+    return element_or_list if isinstance(
+        element_or_list, (list, tuple)) else [element_or_list]
 
 
 class Graph:
@@ -84,9 +104,10 @@ class Graph:
 
     @staticmethod
     def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
-        if outputs is None:  # we need the names to convert, but we don't know the number of outputs...
-            assert False, "Output name(s) must be specified"
-            outputs = []
+        assert outputs is not None, "outputs has to be specified."
+        input_types = _to_list(input_types)
+        output_types = _to_list(output_types)
+        outputs = _to_list(outputs)
 
         f_name = f.__name__
         arg_names, _ = _get_python_function_arguments(f)
@@ -111,7 +132,7 @@ class Graph:
                 f_outputs = f(*inputs)
                 if outputs:
                     if isinstance(f_outputs, Tensor):
-                        f_outputs = ox.identity([f_outputs], outputs=[outputs])
+                        f_outputs = ox.identity([f_outputs], outputs=outputs)
                     else:
                         f_outputs = [ox.identity([f_output], outputs=[
                                                  output_name]) for f_output, output_name in zip(f_outputs, outputs)]
@@ -475,6 +496,11 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
         return self.apply_op(apply_equal, inputs, name, outputs)
 
+    def apply_tensor(self, func, inputs, output):
+        func(self, inputs, outputs=[output])
+        return output
+
+    # @TODO?: Should we follow the conventions in the spec? loop(self, count, cond, inputs, body)
     def loop(self, count, cond, body, inputs, name=None):
         inputs = self._tensors_to_input_names(inputs)
         count = None if count is None else self._tensors_to_input_names(count)
@@ -483,23 +509,32 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         else:
             cond = self._tensors_to_input_names(self.constant(value=np.array([True]), name="cf"))
         # need update the sub-graph since the loop will add more inputs
-        sub_graph = copy.deepcopy(body._oxml.graph)
+        sub_graph = body._oxml.graph
+        original_inputs = copy.deepcopy(sub_graph.input)
         new_inputs = [onnx.helper.make_tensor_value_info('M', self.int64, shape=[1]),
-            onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])] + list(sub_graph.input)
+                      onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])
+                    ] + list(original_inputs)
         del sub_graph.input[:]
         sub_graph.input.extend(new_inputs)
-        sub_graph.node.extend([
-            onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
-                value=self._value_to_tensor(np.array([False]).astype(np.bool), name='ts_xx')),
-            onnx.helper.make_node('Cast', ['range_body_add0'], ['loop_out'], 'cast_nd',
-                to=self.float)
-        ])
-        sub_graph.output.extend([
-            onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
-            onnx.helper.make_tensor_value_info('loop_out', self.float, shape=[]),
-            onnx.helper.make_tensor_value_info('range_body_add0', self.float, shape=[]),
-        ])
-        return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs, name=name))
+        # sg_output_names = [nm_.name for nm_ in sub_graph.output]
+        # sub_graph.node.extend([
+        #     onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
+        #         value=self._value_to_tensor(np.array([True]).astype(np.bool), name='ts_xx')),
+        #     #TODO: why do we need this??? ORT limitation?
+        #     onnx.helper.make_node('Cast', [sg_output_names[0]], ['loop_out'], 'cast_nd',
+        #         to=self.float)
+        # ])
+        # del sub_graph.output[:]
+        # scan_outputs = []
+        # for ot_ in sub_graph.output[1:]:
+        #     shape = [dim_.dim_value for dim_ in ot_.type.tensor_type.shape.dim] if \
+        #         hasattr(ot_, 'type') and hasattr(ot_.type.tensor_type.shape, 'dim') else []
+        #     shape = [None] + shape if not shape else []
+        #     scan_outputs.append(
+        #         onnx.helper.make_tensor_value_info('so_' + ot_.name, ot_.type.tensor_type.elem_type, shape))
+
+        return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs,
+            [ot_.name for ot_ in sub_graph.output[1:]], name=name))
 
 
 # this works, and the exported graph is usable:
@@ -513,37 +548,41 @@ if True:
     def g(x,y):
         return x.ox.abs(f(x, y) + 1.0)
 
-    g.save("c:/me/abssum.onnx")
+    # g.save("c:/me/abssum.onnx")
+    g.save("abssum.onnx")
 
     print(g([2.0], [-5.0]))
 
-text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
+import sys
+if len(sys.argv) > 1:
+    text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
-
-if False:
+if True:
     @Graph.trace(outputs='y',
-        input_types  = [Int64TensorType(shape=[1])],
-        output_types = [FloatTensorType(shape=['1'])])
+        input_types = [_Ty.I(shape=['N'])],
+        output_types = [_Ty.F(shape=[None])])
     def onnx_range(len):
         ox = len.ox
         s_len = ox.squeeze(len, axes=[0])
-        @Graph.trace(outputs='r',
-            input_types  = [FloatTensorType(shape=[1])],
-            output_types = [FloatTensorType(shape=[1])])
+        is_true = ox.constant(value=True)
+        @Graph.trace(outputs=['c_o', 'i_o', 'evar_o'],
+            input_types = [_Ty.F(shape=[1])],
+            output_types = [_Ty.b, _Ty.f, _Ty.b])
         def range_body(i):
-            return i + i.ox.constant(value=1.0)
+            return (is_true, 
+                        i + i.ox.constant(value=1.0), ox.identity(is_true))
 
-        one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
-        _, y = ox.loop(s_len, None, range_body, one_c)
+        one_c = ox.constant(value=-1.0)
+        y, _ = ox.loop(s_len, None, range_body, one_c)
         return y
 
     onnx_range.save('range.onnx')
-    print(onnx_range(np.array([10], dtype=np.int64)))
-    exit(0)
+    print(onnx_range(np.array([16], dtype=np.int64)))
 
 
 if True:  # old version that does only one step
-    path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
     encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                             inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
     decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
@@ -559,7 +598,7 @@ if True:  # old version that does only one step
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
         output_types=[ Int64TensorType(shape=[1, 'SOURCE_LENGTH', 1, 1]) ],
         outputs="Y")
-    def greedy_search(X, data_0_index_range):
+    def greedy_search(X):
         ox = X.ox
         data_0 = X
         seq_len = data_0.shape()
@@ -579,84 +618,77 @@ if True:  # old version that does only one step
         test_y_t = (y_t == 0)
         y_len = ox.constant(value=1.0)
 
-        # BEGIN LOOP
+        #Y = [y_t]
+        #for t in range(2):
+        #    logp, *out_decoder_states = decode_next(
+        #        prev_word=y_t, data_1_posrange=y_len,
+        #        encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+        #        decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
+        #        decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
+        #        decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+        #    y_t = logp[0,0].argmax(axis=-1)
+        #    test_y_t = (y_t == 0)
+        #    y_len = y_len + 1.0
+        #
+        #    Y.append(y_t)
+        #
+        #Y = ox.concat(Y, axis=1)
 
-        Y = [y_t]
-        for t in range(2):
+        @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5'],
+            output_types = [_Ty.b, _Ty.f, _Ty.i]+ [_Ty.f] * 6,
+            input_types=[_Ty.f, _Ty.i] + [_Ty.f] * 6)
+        def loop_body(y_t, y_len, out_decoder_states_0, out_decoder_states_1,
+                    out_decoder_states_2, out_decoder_states_3, out_decoder_states_4, out_decoder_states_5):
+            """
+            Loop body follows the requirements of ONNX Loop:
+
+            "The graph run each iteration.
+            It has 2+N inputs: (iteration_num, condition, loop carried dependencies...).
+            It has 1+N+K outputs: (condition, loop carried dependencies..., scan_outputs...).
+            Each scan_output is created by concatenating the value of the specified output value at the end of each iteration of the loop.
+            It is an error if the dimensions or data type of these scan_outputs change across loop iterations."
+
+            Inputs:
+                Current:
+                y_t
+                y_len
+                test_y_t
+                *out_decoder_states
+
+                According to doc:
+                iteration_num
+                condition
+                N loop-carried dependencies
+
+            Outputs:
+                test_y_t: condition
+                y_t. y_len, *out_decoder_states: N loop-carried dependencies
+                ?: K outputs
+            """
+            ox = y_t.ox
+            data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
             logp, *out_decoder_states = decode_next(
-                prev_word=y_t, data_1_posrange=y_len,
+                prev_word=y_t, data_1_posrange=data_1_posrange,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
-                decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
-                decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
-                decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+                decoder_state_0=out_decoder_states_0, decoder_state_1=out_decoder_states_1,
+                decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
+                decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
             y_t = logp[0,0].argmax(axis=-1)
             test_y_t = (y_t == 0)
             y_len = y_len + 1.0
+            return [test_y_t, y_t, y_len] + out_decoder_states
 
-            Y.append(y_t)
+        y, *_ = ox.loop(max_len, test_y_t, loop_body,
+                        [y_t, y_len, test_y_t] + out_decoder_states)
+        return y
 
-        Y = ox.concat(Y, axis=1)
+    # greedy_search.save("c:/me/greedy.onnx")
+    greedy_search.save("greedy.onnx")
 
-        return Y
-
-        # @Graph.trace
-        # def loop_body(y_t, y_len, encoder_context_0, data_0_mask, out_decoder_states):
-        #     data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
-        #     logp, *out_decoder_states = decode_next(
-        #         prev_word=y_t, data_1_posrange=data_1_posrange,
-        #         encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
-        #         decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
-        #         decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
-        #         decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-        #     y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]))
-        #     test_y_t = ox.equal(y_t, [0])
-        #     y_len = y_len + ox.constant(value=1)
-
-        # y = ox.loop(max_len, test_y_t, loop_body,
-        #               y_t, y_len, encoder_context_0, data_0_mask, out_decoder_states)
-
-    greedy_search.save("c:/me/greedy.onnx")
-
-    Y = greedy_search(
-        np.array([530, 4, 0]                , dtype=np.int32),
-        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32)  # this will be the result of the range() call; for now, we pass as an input
-    )[0]
+    Y = greedy_search(np.array([530, 4, 0], dtype=np.int32))[0]
     print(Y.shape, Y)
 
-# @BUGBUG: This last one kills the model checker. The two above work.
-@Graph.trace(
-    input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
-                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
-                   FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
-    output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
-    outputs="z")
-def h(a, b, c):
-    return encode_source(a,b,c)
-
-model_path = "enc.onnx"
-print("Saving to:", model_path, flush=True)
-h.save(model_path)
-
-res = h(np.array([530, 4, 0]                , dtype=np.int32),
-        np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-        np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))
-
-print(res)
-
-
-if __name__ == "__main__":
-    
-    if True:
-        @Graph.trace(outputs="s")
-        def f(x, y):
-            return x + y
-
-        @Graph.trace(outputs="z")
-        def g(x, y):
-            return x.ox.abs(f(x, y))
-
-        g.save("func_g.onnx")
-
+    # @BUGBUG: This last one kills the model checker. The two above work.
     @Graph.trace(
         input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                     FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
@@ -664,21 +696,14 @@ if __name__ == "__main__":
         output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
         outputs="z")
     def h(a, b, c):
-        return encode_source(a, b, c)
+        return encode_source(a,b,c)
 
-    h.save("func_h.onnx")
+    model_path = "enc.onnx"
+    print("Saving to:", model_path, flush=True)
+    h.save(model_path)
 
-    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-proto"
-    path_stem = "/mnt/k/Data/share_with_frank/fluency_onnx_model/model.npz.best-ce-mean-words-debug-sin"
-    encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
-                               inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
-    decode_first = Graph.load(f"{path_stem}.decode_first.onnx",
-                              inputs=['data_1_posrange',
-                                      'encoder_context_0', 'data_0_mask'],
-                              outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
-    decode_next = Graph.load(f"{path_stem}.decode_next.onnx",
-                             inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
-                                     'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
-                             outputs=['logits', 'out_decoder_state_0', 'out_decoder_state_1', 'out_decoder_state_2', 'out_decoder_state_3', 'out_decoder_state_4', 'out_decoder_state_5'])
+    res = h(np.array([530, 4, 0]                , dtype=np.int32),
+            np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+            np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))
 
-    greedy_graph.save("fluency.onnx")
+    print(res)
