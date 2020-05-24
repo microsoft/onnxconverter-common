@@ -212,7 +212,7 @@ class Graph:
         return Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
 
 
-class Tensor:
+class Tensor(object):
     def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
         self.ox = ox
@@ -282,6 +282,24 @@ class Tensor:
             ss.append(s if s is not None else 1)
             ds.append(axis)
         return self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
+    
+    _all_ops = [op_name[6:] for op_name in dir(onnx_ops) if op_name.startswith("apply_")] +  \
+               ['shape', 'constant_of_shape', 'range', 'slice', 'equal']  # these are temporarily declared here
+
+    def __getattribute__(self, attr):
+        """
+        A little hack that allows to call unary operators in a chaining fashion,
+        e.g. x.shape() instead of ox.shape(x).
+        """
+        if attr in Tensor._all_ops:
+            f = self.ox.__getattribute__(attr)
+            def call_it(*args, **kwargs):
+                assert len(args) == 0, "In chaining expressions, only keyword args are allowed"
+                assert "inputs" not in kwargs, "Chaining expressions do not currently support additional inputs"
+                return f(self, *args, **kwargs)
+            return call_it
+        else:
+            return object.__getattribute__(self, attr)
 
 
 class OnnxOperatorBuilderX(OnnxOperatorBuilder):
@@ -540,7 +558,7 @@ if True:  # old version that does only one step
     def greedy_search(X, data_0_index_range):
         ox = X.ox
         data_0 = X
-        seq_len = ox.shape(data_0)
+        seq_len = data_0.shape()
         data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
         #data_0_index_range = ox.range(seq_len)
         max_len = seq_len * np.array([[[3]]], dtype=np.int64)
@@ -553,7 +571,7 @@ if True:  # old version that does only one step
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
         
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        y_t = ox.argmax(logp[0,0], axis=-1)
+        y_t = logp[0,0].argmax(axis=-1)
         test_y_t = (y_t == 0)
         y_len = ox.constant(value=np.array([[[1]]], dtype=np.float32))
 
@@ -567,7 +585,7 @@ if True:  # old version that does only one step
                 decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
                 decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
                 decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-            y_t = ox.argmax(logp[0,0], axis=-1)
+            y_t = logp[0,0].argmax(axis=-1)
             test_y_t = (y_t == 0)
             y_len = y_len + 1.0
 
