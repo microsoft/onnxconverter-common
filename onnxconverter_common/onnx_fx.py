@@ -561,7 +561,7 @@ if True:  # old version that does only one step
         seq_len = data_0.shape()
         data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
         #data_0_index_range = ox.range(seq_len)
-        max_len = seq_len * np.array([[[3]]], dtype=np.int64)
+        max_len = seq_len * 3
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
                                         data_0_posrange=data_0_index_range)
