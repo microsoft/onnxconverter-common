@@ -214,7 +214,7 @@ class Graph:
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -614,8 +614,8 @@ if True:  # old version that does only one step
 
         # return Y
 
-        @Graph.trace(outputs='y_t',
-            output_types = [_Ty.f],
+        @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5'],
+            output_types = [_Ty.b, _Ty.f, _Ty.i]+ [_Ty.f] * 6,
             input_types=[_Ty.f, _Ty.i] + [_Ty.f] * 6)
         def loop_body(y_t, y_len, out_decoder_states_0, out_decoder_states_1,
                     out_decoder_states_2, out_decoder_states_3, out_decoder_states_4, out_decoder_states_5):
@@ -630,7 +630,7 @@ if True:  # old version that does only one step
             y_t = ox.argmax(logp[0,0], axis=-1)
             test_y_t = (y_t == 0)
             y_len = y_len + 1.0
-            return[test_y_t, y_t, y_len] + out_decoder_states
+            return [test_y_t, y_t, y_len] + out_decoder_states
 
         y, *_ = ox.loop(max_len, test_y_t, loop_body,
                       [y_t, y_len, test_y_t] + out_decoder_states)
