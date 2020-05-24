@@ -503,7 +503,8 @@ if True:
     def g(x,y):
         return x.ox.abs(f(x, y) + 1.0)
 
-    g.save("c:/me/abssum.onnx")
+    # g.save("c:/me/abssum.onnx")
+    g.save("abssum.onnx")
 
     print(g([2.0], [-5.0]))
 
@@ -511,22 +512,19 @@ import sys
 if len(sys.argv) > 1:
     text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
-@Graph.trace(outputs='y',
-    input_types = [Int64TensorType(shape=['N'])],
-    output_types = [FloatTensorType(shape=['N'])])
-def onnx_range(len):
-    ox = len.ox
-    s_len = ox.squeeze(len, axes=[0])
-    @Graph.trace(outputs='o',
-        input_types =[FloatTensorType(shape=[1])])
-    def range_body(i):
-        return i + i.ox.constant(value=1.0)
+if True:
+    @Graph.trace(outputs='y',
+        input_types = [Int64TensorType(shape=['N'])],
+        output_types = [FloatTensorType(shape=['N'])])
+    def onnx_range(len):
+        ox = len.ox
+        s_len = ox.squeeze(len, axes=[0])
+        @Graph.trace(outputs='o',
+            input_types =[FloatTensorType(shape=[1])])
+        def range_body(i):
+            return i + i.ox.constant(value=1.0)
 
-    one_c = ox.constant(value=np.array([-1.0]).astype(dtype=np.float32))
-    _, y = ox.loop(s_len, None, range_body, one_c)
-    return y
-
-        one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
+        one_c = ox.constant(value=np.array([-1.0]).astype(dtype=np.float32))
         _, y = ox.loop(s_len, None, range_body, one_c)
         return y
 
@@ -608,7 +606,8 @@ if True:  # old version that does only one step
         # y = ox.loop(max_len, test_y_t, loop_body,
         #               y_t, y_len, encoder_context_0, data_0_mask, out_decoder_states)
 
-    greedy_search.save("c:/me/greedy.onnx")
+    # greedy_search.save("c:/me/greedy.onnx")
+    greedy_search.save("greedy.onnx")
 
     Y = greedy_search(
         np.array([530, 4, 0]                , dtype=np.int32),
