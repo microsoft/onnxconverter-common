@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 # The codegen script to build oopb opset functions
 
-import os
+import os, sys, io, copy
 import onnx
 import onnxruntime as ort
 import numpy as np
-import io
-import copy
 
 from onnx import helper
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
@@ -94,6 +92,7 @@ class Graph:
 
     @staticmethod
     def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
+        assert outputs is not None, "outputs has to be specified."
         input_types = _to_list(input_types)
         output_types = _to_list(output_types)
         outputs = _to_list(outputs)
@@ -203,19 +202,19 @@ class Graph:
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
             print("Done saving as text")
 
-        onnx.checker.check_model(self._oxml)
+        #onnx.checker.check_model(self._oxml)
         try:
             import onnxruntime as _ort
             _ort.InferenceSession(self._oxml.SerializeToString())
         except Exception as e:
             print(e)
-        print("{} save!".format(path))
+        print("{} saved!".format(path))
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
@@ -226,48 +225,72 @@ class Tensor:
     def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
         self.ox = ox
+    
+    def _to_binary_tensor_args(self, other):  # convert self, other to [self, other], but if either is a number, convert that to a constant
+        x, y = self, other
+        if (isinstance(y, (int, float, bool, np.ndarray))):
+            y = self.ox.constant(value=y)
+        elif (isinstance(x, (int, float, bool, np.ndarray))):
+            x = self.ox.constant(value=x)
+        return [x, y]
 
     def __add__(self, other):
-        return self.ox.add([self, other])
+        return self.ox.add(self._to_binary_tensor_args(other))
 
     def __sub__(self, other):
-        return self.ox.sub([self, other])
+        return self.ox.sub(self._to_binary_tensor_args(other))
 
     def __mul__(self, other):
-        return self.ox.mul([self, other])
+        return self.ox.mul(self._to_binary_tensor_args(other))
 
     def __div__(self, other):
-        return self.ox.div([self, other])
+        return self.ox.div(self._to_binary_tensor_args(other))
 
     def __pow__(self, other):
-        return self.ox.pow([self, other])
+        return self.ox.pow(self._to_binary_tensor_args(other))
 
     def __matmul__(self, other):
-        return self.ox.matmul([self, other])
+        return self.ox.matmul(self._to_binary_tensor_args(other))
 
     def __lt__(self, other):
-        return self.ox.less([self, other])
+        return self.ox.less(self._to_binary_tensor_args(other))
 
     def __le__(self, other):
-        return self.ox.less_or_equal([self, other])
+        return self.ox.less_or_equal(self._to_binary_tensor_args(other))
 
-    # def __eq__(self, other):
-    #    return self.ox.matmul([self, other])
+    def __eq__(self, other):
+       return self.ox.equal(self._to_binary_tensor_args(other))
 
     # def __ne__(self, other):
-    #    return self.ox.matmul([self, other])
+    #    return self.ox.matmul(self._to_binary_tensor_args(other))
 
     def __gt__(self, other):
-        return self.ox.greater([self, other])
+        return self.ox.greater(self._to_binary_tensor_args(other))
 
     def __ge__(self, other):
-        return self.ox.greater_or_equal([self, other])
+        return self.ox.greater_or_equal(self._to_binary_tensor_args(other))
 
     def __neg__(self):
         return self.ox.neg([self])
 
     # def __not__(self):
     #    return self.ox.not([self])
+
+    def __getitem__(self, indices):
+        # normalize indices to tuples of slices
+        indices = tuple(index if isinstance(index, slice) else slice(index, index+1, 1) for index in indices)
+        bs, es, ss, ds = [], [], [], []
+        for axis, index in enumerate(indices):
+            if not isinstance(index, slice):
+                raise ValueError("Index expected")
+            if index.start is None and index.stop is None:  # [:] can be skipped
+                continue
+            b, e, s = index.start, index.stop, index.step
+            bs.append(b if b is not None else 0)
+            es.append(e if e is not None else 2**31-1)  # @TODO: Is this MAX_INT according to spec?
+            ss.append(s if s is not None else 1)
+            ds.append(axis)
+        return self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
 
 
 class OnnxOperatorBuilderX(OnnxOperatorBuilder):
@@ -291,30 +314,53 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             return self._output_names_to_tensors(super().apply_op(apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs))
 
     def apply_invoke_inline(self, ox_graph, input_map, output_map):
+        input_map  = dict(input_map)
+        output_map = dict(output_map)
         # input_map:  [name in graph] -> actual input Tensor
         # output_map: [name in graph] -> desired name for the result, or None
         f_name = "invoke_inline_" + ox_graph.name
         for graph_output in output_map.keys():  # @TODO: use proper comprehensions
             output_map[graph_output] = self._process_outputs(
                 output_map[graph_output], name=f_name)[0]
+        outputs = list(output_map.values())  # remember these; these are the outputs of this invocation
+        if len(outputs) == 1:
+            outputs = outputs[0]  # single output
         for graph_input in input_map.keys():
             input_map[graph_input] = self._process_inputs(
                 [input_map[graph_input].name], name=f_name)[0]
         print(f_name, input_map, output_map)
+
+        existing_node_names        = { item.name : item for item in self._container.nodes }
+        existing_initializer_names = { item.name : item for item in self._container.initializers }
+        existing_value_infos       = { item.name : item for item in self._container.value_info }
+
+        # collect all outputs from the graph we are expanding, so that we can map them to unique names
+        # @TODO: This will also map some code that may be shared later on. Leave that to the optimizer.
+        node_map = dict()
+        for node in ox_graph.node:
+            if not node.input:  # leaves do not need to be mapped; they can just get uniq'ed
+                continue
+            for output in node.output:
+                if output in output_map:  # this is an actual output that already has been mapped
+                    continue
+                uniq_name = onnx_ops._create_name_or_use_existing_one(self._scope, self._generate_name(output, None), None)
+                output_map[output] = uniq_name
+            uniq_node_name = onnx_ops._create_name_or_use_existing_one(self._scope, self._generate_name(node.name, None), None)
+            node_map[output] = uniq_node_name
 
         def map_tensors(args, arg_map):
             for i in range(len(args)):
                 if args[i] in arg_map:
                     print("Remapping", args[i], "to", arg_map[args[i]])
                     args[i] = arg_map[args[i]]
-        existing_node_names        = { item.name : item for item in self._container.nodes }
-        existing_initializer_names = { item.name : item for item in self._container.initializers }
-        existing_value_infos       = { item.name : item for item in self._container.value_info }
+
         for node in ox_graph.node:
             node = copy.deepcopy(node)            # since we patch, we must clone it first
             map_tensors(node.input,  input_map)   # patch the input references to the function arguments
             map_tensors(node.output, output_map)  # rename the outputs to unique ones
             map_tensors(node.input,  output_map)  # outputs may be inputs to other nodes in this graph
+            if node.name in node_map:
+                node.name = node_map[node.name]
             if node.name in existing_node_names:
                 str_node  = str(node)
                 str_other = str(existing_node_names[node.name])
@@ -340,7 +386,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             # @TODO: Not sure what must be mapped, and how
             print(value_info)
             self._container.value_info.append(value_info)
-        return self._output_names_to_tensors(output_map.values())
+        return self._output_names_to_tensors(outputs)
     
     def _value_to_tensor(self, value, name):
         if isinstance(value, (int, float, bool)):
@@ -399,8 +445,8 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             attrs['ends'] = ends
             if axes:
                 attrs['axes'] = axes
-            if steps:
-                attrs['steps'] = steps
+            if steps and any(step != 1 for step in steps):
+                attrs['steps'] = steps  # @BUGBUG: This does not seem to get recognized
             container.add_node('Slice', input_names, output_names, name=name, op_version=9, **attrs)
         return self.apply_op(apply_slice, inputs, name, None)
 
@@ -455,9 +501,9 @@ if True:
 
     @Graph.trace(outputs="z")
     def g(x,y):
-        return x.ox.abs(f(x, y))
+        return x.ox.abs(f(x, y) + 1.0)
 
-    g.save("abssum.onnx")
+    g.save("c:/me/abssum.onnx")
 
     print(g([2.0], [-5.0]))
 
@@ -480,13 +526,26 @@ def onnx_range(len):
     _, y = ox.loop(s_len, None, range_body, one_c)
     return y
 
-onnx_range.save('range.onnx')
-print(onnx_range(np.array([10], dtype=np.int64)))
-exit(0)
+        one_c = ox.constant(value=np.array([1.0]).astype(dtype=np.float32))
+        _, y = ox.loop(s_len, None, range_body, one_c)
+        return y
+
+    onnx_range.save('range.onnx')
+    print(onnx_range(np.array([10], dtype=np.int64)))
+    exit(0)
 
 
-
-if True:
+if True:  # old version that does only one step
+    path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
+                            inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
+    decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
+                            inputs=['data_1_posrange', 'encoder_context_0', 'data_0_mask'],
+                            outputs=['first_logits', 'first_decoder_state_0', 'first_decoder_state_1', 'first_decoder_state_2', 'first_decoder_state_3', 'first_decoder_state_4', 'first_decoder_state_5'])
+    decode_next   = Graph.load(f"{path_stem}.decode_next.onnx",
+                            inputs=['prev_word', 'data_1_posrange', 'encoder_context_0', 'data_0_mask',
+                                    'decoder_state_0', 'decoder_state_1', 'decoder_state_2', 'decoder_state_3', 'decoder_state_4', 'decoder_state_5'],
+                            outputs=['next_logits', 'next_decoder_state_0', 'next_decoder_state_1', 'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4', 'next_decoder_state_5'])
     @Graph.trace(
         input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
                        FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
@@ -499,35 +558,33 @@ if True:
         seq_len = ox.shape(data_0)
         data_0_mask = ox.constant_of_shape(seq_len, value=np.array([1], dtype=np.float32))
         #data_0_index_range = ox.range(seq_len)
-        max_len = seq_len * ox.constant(value=np.array([[[3]]], dtype=np.int64))
+        max_len = seq_len * np.array([[[3]]], dtype=np.int64)
 
-        encoder_context_0, *_ = encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                            data_0_posrange=data_0_index_range)
+        encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                        data_0_posrange=data_0_index_range)
 
         y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float32))
         logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
         
-        zero_c = ox.constant(value=np.array([0], dtype=np.int64))
-
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
-        test_y_t = ox.equal([y_t, zero_c])
+        y_t = ox.argmax(logp[0,0], axis=-1)
+        test_y_t = (y_t == 0)
         y_len = ox.constant(value=np.array([[[1]]], dtype=np.float32))
 
         # BEGIN LOOP
 
         Y = [y_t]
-        for t in range(1):
+        for t in range(2):
             logp, *out_decoder_states = decode_next(
                 prev_word=y_t, data_1_posrange=y_len,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
                 decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
                 decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
                 decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-            y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
-            test_y_t = ox.equal([y_t, zero_c])
-            y_len = y_len + ox.constant(value=np.array([[[1]]], dtype=np.float32))
+            y_t = ox.argmax(logp[0,0], axis=-1)
+            test_y_t = (y_t == 0)
+            y_len = y_len + 1.0
 
             Y.append(y_t)
 
@@ -593,9 +650,12 @@ if __name__ == "__main__":
 
         g.save("func_g.onnx")
 
-    # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
-
-    @Graph.trace(outputs="z")
+    @Graph.trace(
+        input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+        output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+        outputs="z")
     def h(a, b, c):
         return encode_source(a, b, c)
 
