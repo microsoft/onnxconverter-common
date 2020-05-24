@@ -429,17 +429,19 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             onnx.helper.make_tensor_value_info('c', self.bool, shape=[1])] + list(sub_graph.input)
         del sub_graph.input[:]
         sub_graph.input.extend(new_inputs)
+        sg_output_names = [nm_.name for nm_ in sub_graph.output]
         sub_graph.node.extend([
             onnx.helper.make_node('Constant', [], ['cond_o'], 'con_nd',
                 value=self._value_to_tensor(np.array([True]).astype(np.bool), name='ts_xx')),
             #TODO: why do we need this??? ORT limitation?
-            onnx.helper.make_node('Cast', [sub_graph.output[0].name], ['loop_out'], 'cast_nd',
+            onnx.helper.make_node('Cast', [sg_output_names[0]], ['loop_out'], 'cast_nd',
                 to=self.float)
         ])
+        del sub_graph.output[:]
         sub_graph.output.extend([
-            onnx.helper.make_tensor_value_info('loop_out', self.float, shape=[]),
             onnx.helper.make_tensor_value_info('cond_o', self.bool, shape=[]),
-            onnx.helper.make_tensor_value_info(sub_graph.output[0].name, self.float, shape=[]),
+            onnx.helper.make_tensor_value_info('loop_out', self.float, shape=[]),
+            onnx.helper.make_tensor_value_info(sg_output_names[0], self.float, shape=[]),
         ])
         return self._output_names_to_tensors(super().loop(count, cond, sub_graph, inputs, name=name))
 
@@ -475,7 +477,7 @@ def onnx_range(len):
         return i + i.ox.constant(value=1.0)
 
     one_c = ox.constant(value=np.array([-1.0]).astype(dtype=np.float32))
-    _, _, y = ox.loop(s_len, None, range_body, one_c)
+    _, y = ox.loop(s_len, None, range_body, one_c)
     return y
 
 onnx_range.save('range.onnx')
