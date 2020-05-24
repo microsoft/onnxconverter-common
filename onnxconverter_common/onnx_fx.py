@@ -294,8 +294,15 @@ class Tensor(object):
 
     def __getitem__(self, indices):
         # normalize indices to tuples of slices
-        indices = tuple(index if isinstance(index, slice) else slice(index, index+1, 1) for index in indices)
+        # Formats encountered:
+        #  - a single int
+        #  - a tuple of (int or slice)
+        if not isinstance(indices, (tuple, list)):  # single item: make it a tuple
+            indices = (indices,)
+        squeeze = [axis for axis, index in enumerate(indices) if isinstance(index, int)]  # which axes had a single index?
+        indices = tuple(index if isinstance(index, slice) else slice(index, index+1 if index != -1 else None, 1) for index in indices)  # make all tuple items of type Slice
         bs, es, ss, ds = [], [], [], []
+        INT_MAX = 2**63-1  # @TODO: Is this MAX_INT according to the ONNX spec?
         for axis, index in enumerate(indices):
             if not isinstance(index, slice):
                 raise ValueError("Index expected")
@@ -303,10 +310,13 @@ class Tensor(object):
                 continue
             b, e, s = index.start, index.stop, index.step
             bs.append(b if b is not None else 0)
-            es.append(e if e is not None else 2**31-1)  # @TODO: Is this MAX_INT according to spec?
+            es.append(e if e is not None else INT_MAX)
             ss.append(s if s is not None else 1)
             ds.append(axis)
-        return self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
+        res = self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
+        if squeeze:  # single index means we must drop the axis
+            res = self.ox.squeeze([res], axes=squeeze)
+        return res
 
     _all_ops = [op_name[6:] for op_name in dir(onnx_ops) if op_name.startswith("apply_")] +  \
                ['shape', 'constant_of_shape', 'range', 'slice', 'equal']  # these are temporarily declared here
@@ -627,7 +637,7 @@ if True:  # old version that does only one step
     def greedy_search(X):
         ox = X.ox
         data_0 = X
-        seq_len = data_0.shape()
+        seq_len = data_0.shape()[-1]
         data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
         #data_0_index_range = seq_len.range()
         data_0_index_range = onnx_range(seq_len).cast(to=1)  # 1=float32
