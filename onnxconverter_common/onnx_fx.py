@@ -217,7 +217,7 @@ class Graph:
         #print("--- outputs:", self._oxml.graph.output)
         #print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -602,8 +602,8 @@ if True:
         _, range_out = ox.loop(len, is_true, range_body, inputs=[dummy_state_val], outputs=['ds_o', 'range_out'])  # passing is_true for dummy_state
         return range_out
 
-    onnx_range.save('range.onnx')
-    print(onnx_range(np.array(16, dtype=np.int64)))
+    #onnx_range.save('range.onnx')
+    #print(onnx_range(np.array(16, dtype=np.int64)))
 
 
 if True:  # old version that does only one step
@@ -629,7 +629,8 @@ if True:  # old version that does only one step
         data_0 = X
         seq_len = data_0.shape()
         data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
-        data_0_index_range = seq_len.range()
+        #data_0_index_range = seq_len.range()
+        data_0_index_range = onnx_range(seq_len).cast(to=1)  # 1=float32
         max_len = seq_len * 3
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -660,11 +661,14 @@ if True:  # old version that does only one step
         #
         #Y = ox.concat(Y, axis=1)
 
-        @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5'],
-                     output_types=[_Ty.b, _Ty.f, _Ty.i]+ [_Ty.f] * 6,
-                     input_types=[_Ty.f, _Ty.i] + [_Ty.f] * 6)
-        def loop_body(y_t, y_len, out_decoder_states_0, out_decoder_states_1,
-                    out_decoder_states_2, out_decoder_states_3, out_decoder_states_4, out_decoder_states_5):
+        @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
+                     output_types=[       _Ty.b, _Ty.i, _Ty.f] + [_Ty.f] * 6 + [_Ty.i],
+                     input_types =[_Ty.i, _Ty.b, _Ty.i, _Ty.f] + [_Ty.f] * 6)
+        def loop_body(iteration_count, condition,  # these are not actually used inside
+                      y_t, y_len,
+                      out_decoder_states_0, out_decoder_states_1,
+                      out_decoder_states_2, out_decoder_states_3,
+                      out_decoder_states_4, out_decoder_states_5):
             """
             Loop body follows the requirements of ONNX Loop:
 
@@ -675,21 +679,14 @@ if True:  # old version that does only one step
             It is an error if the dimensions or data type of these scan_outputs change across loop iterations."
 
             Inputs:
-                Current:
-                y_t
-                y_len
-                test_y_t
-                *out_decoder_states
-
-                According to doc:
-                iteration_num
-                condition
-                N loop-carried dependencies
+                iteration_num (not used by our function)
+                test_y_t: condition (not used as an input)
+                y_t, y_len, *out_decoder_states: N loop-carried dependencies
 
             Outputs:
                 test_y_t: condition
-                y_t, y_len, *out_decoder_states: N loop-carried dependencies
-                ?: K outputs
+                y_t, y_len, *out_decoder_states: N loop-carried dependencies (same as in the Inputs section)
+                y_t: 1 outputs
             """
             ox = y_t.ox
             data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])  # @TODO: use the loop iteration here, iter_count + 1
@@ -702,10 +699,13 @@ if True:  # old version that does only one step
             y_t = logp[0,0].argmax(axis=-1)
             test_y_t = (y_t == 0)
             y_len = y_len + 1.0
-            return [test_y_t, y_t, y_len] + out_decoder_states
+            return [test_y_t, y_t, y_len] + out_decoder_states + [y_t]
 
-        y, *_ = ox.loop(max_len, test_y_t, loop_body,
-                        [y_t, y_len, test_y_t] + out_decoder_states)
+        # "Final N loop carried dependency values then K scan_outputs"
+        ret_vals = ox.loop(max_len, test_y_t, loop_body,
+                           inputs=[y_t, y_len] + out_decoder_states,
+                           outputs=['gy_t_o', 'gy_len_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
+        y = ret_vals[-1]  # scan_output
         return y
 
     # greedy_search.save("c:/me/greedy.onnx")
