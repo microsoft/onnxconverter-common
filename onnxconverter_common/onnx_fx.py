@@ -86,7 +86,8 @@ class Graph:
 
     @staticmethod
     def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
-        if outputs is None:
+        if outputs is None:  # we need the names to convert, but we don't know the number of outputs...
+            assert False, "Output name(s) must be specified"
             outputs = []
 
         f_name = f.__name__
@@ -200,13 +201,13 @@ class Graph:
                 print(self._oxml, file=f)
             print("Done saving as text")
 
-        onnx.checker.check_model(self._oxml)
+        #onnx.checker.check_model(self._oxml)
         try:
             import onnxruntime as _ort
             _ort.InferenceSession(self._oxml.SerializeToString())
         except Exception as e:
             print(e)
-        print("{} save!".format(path))
+        print("{} saved!".format(path))
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
@@ -282,30 +283,51 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             return self._output_names_to_tensors(super().apply_op(apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs))
 
     def apply_invoke_inline(self, ox_graph, input_map, output_map):
+        input_map  = dict(input_map)
+        output_map = dict(output_map)
         # input_map:  [name in graph] -> actual input Tensor
         # output_map: [name in graph] -> desired name for the result, or None
         f_name = "invoke_inline_" + ox_graph.name
         for graph_output in output_map.keys():  # @TODO: use proper comprehensions
             output_map[graph_output] = self._process_outputs(
                 output_map[graph_output], name=f_name)[0]
+        outputs = list(output_map.values())  # remember these; these are the outputs of this invocation
         for graph_input in input_map.keys():
             input_map[graph_input] = self._process_inputs(
                 [input_map[graph_input].name], name=f_name)[0]
         print(f_name, input_map, output_map)
+
+        existing_node_names        = { item.name : item for item in self._container.nodes }
+        existing_initializer_names = { item.name : item for item in self._container.initializers }
+        existing_value_infos       = { item.name : item for item in self._container.value_info }
+
+        # collect all outputs from the graph we are expanding, so that we can map them to unique names
+        # @TODO: This will also map some code that may be shared later on. Leave that to the optimizer.
+        node_map = dict()
+        for node in ox_graph.node:
+            if not node.input:  # leaves do not need to be mapped; they can just get uniq'ed
+                continue
+            for output in node.output:
+                if output in output_map:  # this is an actual output that already has been mapped
+                    continue
+                uniq_name = onnx_ops._create_name_or_use_existing_one(self._scope, self._generate_name(output, None), None)
+                output_map[output] = uniq_name
+            uniq_node_name = onnx_ops._create_name_or_use_existing_one(self._scope, self._generate_name(node.name, None), None)
+            node_map[output] = uniq_node_name
 
         def map_tensors(args, arg_map):
             for i in range(len(args)):
                 if args[i] in arg_map:
                     print("Remapping", args[i], "to", arg_map[args[i]])
                     args[i] = arg_map[args[i]]
-        existing_node_names        = { item.name : item for item in self._container.nodes }
-        existing_initializer_names = { item.name : item for item in self._container.initializers }
-        existing_value_infos       = { item.name : item for item in self._container.value_info }
+
         for node in ox_graph.node:
             node = copy.deepcopy(node)            # since we patch, we must clone it first
             map_tensors(node.input,  input_map)   # patch the input references to the function arguments
             map_tensors(node.output, output_map)  # rename the outputs to unique ones
             map_tensors(node.input,  output_map)  # outputs may be inputs to other nodes in this graph
+            if node.name in node_map:
+                node.name = node_map[node.name]
             if node.name in existing_node_names:
                 str_node  = str(node)
                 str_other = str(existing_node_names[node.name])
@@ -331,7 +353,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             # @TODO: Not sure what must be mapped, and how
             print(value_info)
             self._container.value_info.append(value_info)
-        return self._output_names_to_tensors(output_map.values())
+        return self._output_names_to_tensors(outputs)
     
     def _value_to_tensor(self, value, name):
         if isinstance(value, (int, float, bool)):
@@ -445,7 +467,7 @@ if True:
     def g(x,y):
         return x.ox.abs(f(x, y))
 
-    g.save("abssum.onnx")
+    g.save("c:/me/abssum.onnx")
 
     print(g([2.0], [-5.0]))
 
@@ -515,7 +537,7 @@ if True:  # old version that does only one step
         # BEGIN LOOP
 
         Y = [y_t]
-        for t in range(1):
+        for t in range(2):
             logp, *out_decoder_states = decode_next(
                 prev_word=y_t, data_1_posrange=y_len,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
@@ -590,9 +612,12 @@ if __name__ == "__main__":
 
         g.save("func_g.onnx")
 
-    # @WORKAROUND: To make this work, must comment out the call to MergeCommonSequenceOptimizer():
-
-    @Graph.trace(outputs="z")
+    @Graph.trace(
+        input_types =[ Int32TensorType(shape=['SOURCE_LENGTH']),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1]),
+                    FloatTensorType(shape=['SOURCE_LENGTH', 1, 1])],
+        output_types=[ FloatTensorType(shape=[1, 'SOURCE_LENGTH', 1, 512]) ],
+        outputs="z")
     def h(a, b, c):
         return encode_source(a, b, c)
 
