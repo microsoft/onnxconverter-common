@@ -471,18 +471,19 @@ if True:
 
     print(g([2.0], [-5.0]))
 
-#text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
+text = input("Python process id: {} >".format(os.getpid()))  # or raw_input in python2
 
 
 if False:
     @Graph.trace(outputs='y',
-        input_types = [Int64TensorType(shape=['1'])],
+        input_types  = [Int64TensorType(shape=[1])],
         output_types = [FloatTensorType(shape=['1'])])
     def onnx_range(len):
         ox = len.ox
         s_len = ox.squeeze(len, axes=[0])
-        @Graph.trace(
-            input_types =[FloatTensorType(shape=[1])])
+        @Graph.trace(outputs='r',
+            input_types  = [FloatTensorType(shape=[1])],
+            output_types = [FloatTensorType(shape=[1])])
         def range_body(i):
             return i + i.ox.constant(value=1.0)
 
