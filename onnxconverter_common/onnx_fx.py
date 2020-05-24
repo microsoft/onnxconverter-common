@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 # The codegen script to build oopb opset functions
 
-import os
+import os, sys, io, copy
 import onnx
 import onnxruntime as ort
 import numpy as np
-import io
-import copy
 
 from onnx import helper
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
@@ -269,6 +267,22 @@ class Tensor:
     # def __not__(self):
     #    return self.ox.not([self])
 
+    def __getitem__(self, indices):
+        # normalize indices to tuples of slices
+        indices = tuple(index if isinstance(index, slice) else slice(index, index+1, 1) for index in indices)
+        bs, es, ss, ds = [], [], [], []
+        for axis, index in enumerate(indices):
+            if not isinstance(index, slice):
+                raise ValueError("Index expected")
+            if index.start is None and index.stop is None:  # [:] can be skipped
+                continue
+            b, e, s = index.start, index.stop, index.step
+            bs.append(b if b is not None else 0)
+            es.append(e if e is not None else 2**31-1)  # @TODO: Is this MAX_INT according to spec?
+            ss.append(s if s is not None else 1)
+            ds.append(axis)
+        return self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
+
 
 class OnnxOperatorBuilderX(OnnxOperatorBuilder):
     def _output_names_to_tensors(self, outputs):
@@ -422,8 +436,8 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             attrs['ends'] = ends
             if axes:
                 attrs['axes'] = axes
-            if steps:
-                attrs['steps'] = steps
+            if steps and any(step != 1 for step in steps):
+                attrs['steps'] = steps  # @BUGBUG: This does not seem to get recognized
             container.add_node('Slice', input_names, output_names, name=name, op_version=9, **attrs)
         return self.apply_op(apply_slice, inputs, name, None)
 
@@ -539,7 +553,7 @@ if True:  # old version that does only one step
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
         
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
+        y_t = ox.argmax(logp[0,0], axis=-1)
         test_y_t = (y_t == 0)
         y_len = ox.constant(value=np.array([[[1]]], dtype=np.float32))
 
@@ -553,7 +567,7 @@ if True:  # old version that does only one step
                 decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
                 decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
                 decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-            y_t = ox.argmax(ox.slice(logp, [0, 0], [1, 1], axes=[0, 1]), axis=-1)
+            y_t = ox.argmax(logp[0,0], axis=-1)
             test_y_t = (y_t == 0)
             y_len = y_len + 1.0
 
