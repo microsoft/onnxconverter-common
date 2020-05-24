@@ -566,14 +566,14 @@ if True:  # old version that does only one step
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
                                         data_0_posrange=data_0_index_range)
 
-        y_len_0 = ox.constant(value=np.array([[[0]]], dtype=np.float32))
+        y_len_0 = ox.constant(value=0.0)
         logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
         
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = logp[0,0].argmax(axis=-1)
         test_y_t = (y_t == 0)
-        y_len = ox.constant(value=np.array([[[1]]], dtype=np.float32))
+        y_len = ox.constant(value=1.0)
 
         # BEGIN LOOP
 
