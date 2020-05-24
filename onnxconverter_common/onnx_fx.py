@@ -303,7 +303,7 @@ class Tensor(object):
             ss.append(s if s is not None else 1)
             ds.append(axis)
         return self.ox.slice(self, starts=bs, ends=es, axes=ds, steps=ss)
-    
+
     _all_ops = [op_name[6:] for op_name in dir(onnx_ops) if op_name.startswith("apply_")] +  \
                ['shape', 'constant_of_shape', 'range', 'slice', 'equal']  # these are temporarily declared here
 
@@ -603,7 +603,7 @@ if True:  # old version that does only one step
         data_0 = X
         seq_len = data_0.shape()
         data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
-        #data_0_index_range = seq_len.range()
+        data_0_index_range = seq_len.range()
         max_len = seq_len * 3
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -635,8 +635,8 @@ if True:  # old version that does only one step
         #Y = ox.concat(Y, axis=1)
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5'],
-            output_types = [_Ty.b, _Ty.f, _Ty.i]+ [_Ty.f] * 6,
-            input_types=[_Ty.f, _Ty.i] + [_Ty.f] * 6)
+                     output_types=[_Ty.b, _Ty.f, _Ty.i]+ [_Ty.f] * 6,
+                     input_types=[_Ty.f, _Ty.i] + [_Ty.f] * 6)
         def loop_body(y_t, y_len, out_decoder_states_0, out_decoder_states_1,
                     out_decoder_states_2, out_decoder_states_3, out_decoder_states_4, out_decoder_states_5):
             """
@@ -662,11 +662,11 @@ if True:  # old version that does only one step
 
             Outputs:
                 test_y_t: condition
-                y_t. y_len, *out_decoder_states: N loop-carried dependencies
+                y_t, y_len, *out_decoder_states: N loop-carried dependencies
                 ?: K outputs
             """
             ox = y_t.ox
-            data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])
+            data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])  # @TODO: use the loop iteration here, iter_count + 1
             logp, *out_decoder_states = decode_next(
                 prev_word=y_t, data_1_posrange=data_1_posrange,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
