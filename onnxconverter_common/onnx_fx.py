@@ -608,8 +608,8 @@ if True:
 
 
 if True:  # old version that does only one step
-    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
-    path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
+    path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    #path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
     encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                             inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
     decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
@@ -628,10 +628,11 @@ if True:  # old version that does only one step
     def greedy_search(X):
         ox = X.ox
         data_0 = X
-        seq_len = data_0.shape()[-1]
-        data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
-        #data_0_index_range = seq_len.range()
+        data_0_shape = data_0.shape()
+        data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
+        seq_len = data_0_shape[-1]
         data_0_index_range = onnx_range(seq_len).cast(to=1)  # 1=float32
+        data_0_index_range = ox.constant(value=np.array(range(3))).cast(to=1)  # hard-coded for now
         max_len = seq_len * 3
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -645,21 +646,23 @@ if True:  # old version that does only one step
         y_t = logp[0,0].argmax(axis=-1)
         test_y_t = (y_t == 0)
 
-        #Y = [y_t]
-        #for t in range(2):
-        #    logp, *out_decoder_states = decode_next(
-        #        prev_word=y_t, data_1_posrange=y_len,
-        #        encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
-        #        decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
-        #        decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
-        #        decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-        #    y_t = logp[0,0].argmax(axis=-1)
-        #    test_y_t = (y_t == 0)
-        #    y_len = y_len + 1.0
-        #
-        #    Y.append(y_t)
-        #
-        #Y = ox.concat(Y, axis=1)
+        if True:
+            Y = [y_t]
+            y_len = ox.constant(value=float(len(Y)))
+            for t in range(2):
+                logp, *out_decoder_states = decode_next(
+                    prev_word=y_t, data_1_posrange=y_len,
+                    encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+                    decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
+                    decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
+                    decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+                y_t = logp[0,0].argmax(axis=-1)
+                test_y_t = (y_t == 0)
+
+                Y.append(y_t)
+
+            Y = ox.concat(Y, axis=1)
+            return Y
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
                      output_types=[       _Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
