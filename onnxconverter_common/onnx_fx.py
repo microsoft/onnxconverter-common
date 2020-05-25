@@ -616,8 +616,8 @@ if True:
 
 
 if True:  # old version that does only one step
-    # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
-    path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
+    path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
+    #path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
     encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                             inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
     decode_first  = Graph.load(f"{path_stem}.decode_first.onnx",
@@ -636,10 +636,11 @@ if True:  # old version that does only one step
     def greedy_search(X):
         ox = X.ox
         data_0 = X
-        seq_len = data_0.shape()[-1]
-        data_0_mask = ox.constant_of_shape(seq_len, value=1.0)
+        data_0_shape = data_0.shape()
+        data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
+        seq_len = data_0_shape[-1]
         data_0_index_range = onnx_range(seq_len).cast(to=1)  # 1=float32
-        #data_0_index_range = ox.constant(value=np.array(range(3))).cast(to=1)  # hard-coded for now
+        data_0_index_range = ox.constant(value=np.array(range(3))).cast(to=1)  # hard-coded for now
         max_len = seq_len * 3
 
         encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -653,7 +654,7 @@ if True:  # old version that does only one step
         y_t = logp[0,0].argmax(axis=-1)
         test_y_t = (y_t == 0)
 
-        if False:
+        if True:
             Y = [y_t]
             y_len = ox.constant(value=float(len(Y)))
             for t in range(2):
