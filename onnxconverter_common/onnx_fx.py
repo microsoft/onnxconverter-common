@@ -579,7 +579,6 @@ if True:
                  output_types = [_Ty.I(shape=['N'])])
     def onnx_range(len):
         ox = len.ox
-        #s_len = ox.squeeze(len, axes=[0])
         is_true = ox.constant(value=True)  # dummy condition, always True
         dummy_state_val = ox.constant(value=True)
         @Graph.trace(outputs=['c_o', 's_o', 'i_o'],
@@ -598,16 +597,16 @@ if True:
             Inputs:
                 iteration_num
                 condition (dummy)
-                dummy_state: loop-carried dependencies  --@BUGBUG: ORT requires at least one
+                dummy_state: loop-carried dependencies  --@BUGBUG: ORT requires at least one. Known and fixed in opset 11.
 
             Outputs:
                 c_o: dummy condition, always True
-                s_o_: dummy loop-carried dependencies
+                s_o: dummy loop-carried dependencies
                 i_o: K scan outputs
             """
+            iteration_num = iteration_num + 0  # @WORKAROUND: iteration_num is updated by the ONNX loop in-place; adding 0 creates a copy
             return is_true, dummy_state_val, iteration_num
 
-        #one_c = ox.constant(value=-1.0)
         # "Final N loop carried dependency values then K scan_outputs"
         _, range_out = ox.loop(len, is_true, range_body, inputs=[dummy_state_val], outputs=['ds_o', 'range_out'])  # passing is_true for dummy_state
         return range_out
@@ -653,7 +652,6 @@ if True:  # old version that does only one step
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = logp[0,0].argmax(axis=-1)
         test_y_t = (y_t == 0)
-        y_len = ox.constant(value=1.0)
 
         #Y = [y_t]
         #for t in range(2):
@@ -671,11 +669,11 @@ if True:  # old version that does only one step
         #
         #Y = ox.concat(Y, axis=1)
 
-        @Graph.trace(outputs=['ty_t', 'y_t_o', 'y_len_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
-                     output_types=[       _Ty.b, _Ty.i, _Ty.f] + [_Ty.f] * 6 + [_Ty.i],
-                     input_types =[_Ty.i, _Ty.b, _Ty.i, _Ty.f] + [_Ty.f] * 6)
+        @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
+                     output_types=[       _Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
+                     input_types =[_Ty.i, _Ty.b, _Ty.i] + [_Ty.f] * 6)
         def loop_body(iteration_count, condition,  # these are not actually used inside
-                      y_t, y_len,
+                      y_t,
                       out_decoder_states_0, out_decoder_states_1,
                       out_decoder_states_2, out_decoder_states_3,
                       out_decoder_states_4, out_decoder_states_5):
@@ -691,15 +689,15 @@ if True:  # old version that does only one step
             Inputs:
                 iteration_num (not used by our function)
                 test_y_t: condition (not used as an input)
-                y_t, y_len, *out_decoder_states: N loop-carried dependencies
+                y_t, *out_decoder_states: N=7 loop-carried dependencies
 
             Outputs:
                 test_y_t: condition
-                y_t, y_len, *out_decoder_states: N loop-carried dependencies (same as in the Inputs section)
-                y_t: 1 outputs
+                y_t, *out_decoder_states: N=7 loop-carried dependencies (same as in the Inputs section)
+                y_t: K=1 outputs
             """
-            ox = y_t.ox
-            data_1_posrange = ox.unsqueeze(y_len, axes=[0, 1, 2])  # @TODO: use the loop iteration here, iter_count + 1
+            pos = iteration_count + 1
+            data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])
             logp, *out_decoder_states = decode_next(
                 prev_word=y_t, data_1_posrange=data_1_posrange,
                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
@@ -708,13 +706,12 @@ if True:  # old version that does only one step
                 decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
             y_t = logp[0,0].argmax(axis=-1)
             test_y_t = (y_t == 0)
-            y_len = y_len + 1.0
-            return [test_y_t, y_t, y_len] + out_decoder_states + [y_t]
+            return [test_y_t, y_t] + out_decoder_states + [y_t]
 
         # "Final N loop carried dependency values then K scan_outputs"
         ret_vals = ox.loop(max_len, test_y_t, loop_body,
-                           inputs=[y_t, y_len] + out_decoder_states,
-                           outputs=['gy_t_o', 'gy_len_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
+                           inputs=[y_t] + out_decoder_states,
+                           outputs=['gy_t_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
         y = ret_vals[-1]  # scan_output
         return y
 
