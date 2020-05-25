@@ -56,8 +56,6 @@ def _to_list(element_or_list):
 
 class Graph:
 
-    function_dict = {}
-
     def __init__(self, name, oxml, inputs, outputs):
         ox_graph = oxml.graph
         if name is None:
@@ -97,11 +95,6 @@ class Graph:
         else:
             return lambda f: Graph._to_Graph(f, *args, **kwargs)
 
-    # need store it globally, do it in this way temperarily.
-    @staticmethod
-    def my_oopb(func):
-        return Graph.function_dict.get(func, None)
-
     @staticmethod
     def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
         assert outputs is not None, "outputs has to be specified."
@@ -128,7 +121,6 @@ class Graph:
             nonlocal f_outputs
             with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:
                 inputs = [ox.arg(arg_name) for arg_name in arg_names]
-                Graph.function_dict.update({f.__name__: ox})
                 f_outputs = f(*inputs)
                 if outputs:
                     if isinstance(f_outputs, Tensor):
@@ -573,7 +565,7 @@ if True:
         is_true = ox.constant(value=True)  # dummy condition, always True
         dummy_state_val = ox.constant(value=True)
         @Graph.trace(outputs=['c_o', 's_o', 'i_o'],
-                     input_types  = [_Ty.i, _Ty.b, _Ty.b],
+                     input_types  = [_Ty.I([1]), _Ty.b, _Ty.b],
                      output_types = [_Ty.b, _Ty.b, _Ty.i])
         def range_body(iteration_num, condition, dummy_state):
             """
@@ -595,15 +587,16 @@ if True:
                 s_o_: dummy loop-carried dependencies
                 i_o: K scan outputs
             """
-            return is_true, dummy_state_val, iteration_num
+            ox = iteration_num.ox
+            return is_true, dummy_state_val, ox.identity(iteration_num)
 
         #one_c = ox.constant(value=-1.0)
         # "Final N loop carried dependency values then K scan_outputs"
         _, range_out = ox.loop(len, is_true, range_body, inputs=[dummy_state_val], outputs=['ds_o', 'range_out'])  # passing is_true for dummy_state
         return range_out
 
-    #onnx_range.save('range.onnx')
-    #print(onnx_range(np.array(16, dtype=np.int64)))
+    onnx_range.save('range.onnx')
+    print(onnx_range(np.array(16, dtype=np.int64)))
 
 
 if True:  # old version that does only one step
