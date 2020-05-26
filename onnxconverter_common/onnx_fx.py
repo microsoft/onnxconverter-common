@@ -204,6 +204,14 @@ class Graph:
         params_set = {arg for arg in params}
         return Graph._map_function_arguments(params, params_set, *args, **kwargs)
 
+    def _lazy_load_sess(self):
+        if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
+            self._sess = ort.InferenceSession(self._oxml.SerializeToString())
+            def format_var(var):
+                return f"{var.name}: {var.type}{var.shape}"
+            print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
+                    f"-> {', '.join(format_var(output) for output in self._sess.get_outputs())}")
+
     def __call__(self, *args, **kwargs):
         # parse argument list and map to the function's input
         arg_map = self._argument_map(*args, **kwargs)
@@ -218,12 +226,7 @@ class Graph:
         else:
             # evaluate with real values
             kwargs = {name: val for name, val in arg_map.items()}
-            if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
-                self._sess = ort.InferenceSession(self._oxml.SerializeToString())
-                def format_var(var):
-                    return f"{var.name}: {var.type}{var.shape}"
-                print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
-                      f"-> {', '.join(format_var(output) for output in self._sess.get_outputs())}")
+            self._lazy_load_sess()
             res = self._sess.run(None, kwargs)
             if len(res) == 1:
                 return res[0]
@@ -256,7 +259,9 @@ class Graph:
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
-        return Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
+        g = Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
+        g._lazy_load_sess()  # for diagnostics: This shows the shapes.
+        return g
 
 
 class Tensor(object):

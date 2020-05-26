@@ -148,7 +148,7 @@ if __name__ == '__main__':
                                                      encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
 
             # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-            y_t = logp[0, 0].argmax(axis=-1)
+            y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # Concat fails with keepdims=False
 
             Y = [y_t]
             for iteration_count in range(1,3):
@@ -160,10 +160,10 @@ if __name__ == '__main__':
                     decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
                     decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
                     decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
-                y_t = logp[0, 0].argmax(axis=-1)
+                y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # Concat fails with keepdims=False
                 Y += [y_t]
 
-            Y = ox.concat(Y, axis=-1)
+            Y = ox.concat(Y, axis=0)  # note: y_t are rank-1 tensors, not scalars (ORT concat fails with scalars)
             return Y
 
         greedy_search_fixed_length_3.save("greedy3.onnx")
@@ -196,7 +196,7 @@ if __name__ == '__main__':
                                                  encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        y_t = logp[0, 0].argmax(axis=-1)
+        y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # note: rank-1 tensor, not a scalar
         test_y_t = (y_t != 0)
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
@@ -234,7 +234,7 @@ if __name__ == '__main__':
                 decoder_state_0=out_decoder_states_0, decoder_state_1=out_decoder_states_1,
                 decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
                 decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
-            y_t = logp[0, 0].argmax(axis=-1)
+            y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)
             test_y_t = (y_t != 0)
             return [test_y_t, y_t] + out_decoder_states + [y_t]
 
