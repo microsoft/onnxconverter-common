@@ -55,7 +55,7 @@ if __name__ == '__main__':
                 output_types = [_Ty.b],
                 input_types = [_Ty.b])
     def func_not(x):
-        return x.ox.onnx_not(x)
+        return x.ox.not_(x)
 
     print(func_not(np.array([True])))
 
