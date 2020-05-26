@@ -60,6 +60,7 @@ class Graph:
     """
     The ONNX Graph build from a python function, or load it from an ONNX object
     """
+
     def __init__(self, name, oxml, inputs, outputs):
         ox_graph = oxml.graph
         if name is None:
@@ -134,7 +135,9 @@ class Graph:
         def on_conversion(scope, operator, container):
             nonlocal inputs
             nonlocal f_outputs
-            with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:
+            with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:  # type: OnnxOperatorBuilderX
+                if ox.upper_context is not None:
+                    container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
                 inputs = [ox.arg(arg_name) for arg_name in arg_names]
                 f_outputs = f(*inputs)
                 if outputs:
@@ -148,9 +151,9 @@ class Graph:
                 assert n_outputs == len(
                     outputs), f"Function {f_name}() returned {n_outputs} but {len(outputs)} were declared"
 
-        GRAPH_OPERATOR_NAME = f_name
-        register_converter(GRAPH_OPERATOR_NAME, on_conversion, overwrite=True)
-        top_level.declare_local_operator(GRAPH_OPERATOR_NAME)
+        graph_opname = f_name
+        register_converter(graph_opname, on_conversion, overwrite=True)
+        top_level.declare_local_operator(graph_opname)
         for i_ in raw_model.input_names:
             top_level.get_local_variable_or_declare_one(i_,
                                                         FloatTensorType(shape=[1]) if not input_types else input_types[
@@ -159,7 +162,7 @@ class Graph:
             top_level.get_local_variable_or_declare_one(o_, FloatTensorType(shape=[1]) if not output_types else
             output_types[outputs.index(o_)])
 
-        oxml = convert_topology(topo, f_name, "doc_string", target_opset=9, enable_optimizer=True)
+        oxml = convert_topology(topo, f_name, "doc_string", target_opset=9)
         return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
 
     @staticmethod
@@ -507,12 +510,6 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=9, **attrs)
 
         return self.apply_op(apply_constant_of_shape, inputs, name, None)
-
-    def range(self, inputs, name=None, outputs=None):
-        return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
-                             onnx_ops._apply_unary_operation(scope, 'Range', input_name, output_name, container,
-                                                             operator_name=operator_name),
-                             inputs, name, outputs)
 
     def slice(self, inputs, starts, ends, name=None, outputs=None, axes=None, steps=None):
         def apply_slice(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):

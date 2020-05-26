@@ -1,12 +1,12 @@
 import numpy as np
-from .onnx_fx import Graph
-from .onnx_fx import GraphFunctionType as _Ty
+from onnxconverter_common.onnx_fx import Graph
+from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 import unittest
 
 
-class DecastTestCase(unittest.TestCase):
+class ONNXFunctionTest(unittest.TestCase):
     # this works, and the exported graph is usable:
-    def basic_test(self):
+    def test_core(self):
         @Graph.trace(outputs="s")
         def f(x, y):
             return x + y
@@ -44,8 +44,8 @@ class DecastTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
-
+    suite = unittest.TestLoader().loadTestsFromTestCase(ONNXFunctionTest)
+    suite.debug()
 
     @Graph.trace(outputs='range_res',
                  input_types=[_Ty.I(shape=[])],

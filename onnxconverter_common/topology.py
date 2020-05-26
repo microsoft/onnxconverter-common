@@ -13,7 +13,7 @@ from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
 from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, get_maximum_opset_supported
 from .container import ModelComponentContainer
-from .optimizer import optimize_onnx
+from .optimizer import optimize_onnx, optimize_onnx_graph
 from .interface import OperatorBase, ScopeBase
 
 
@@ -680,7 +680,7 @@ class Topology:
         self._check_structure()
 
 
-def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None, enable_optimizer=True):
+def convert_topology(topology, model_name, doc_string, target_opset, targeted_onnx=None, channel_first_inputs=None):
     '''
     This function is used to convert our Topology object defined in _parser.py into a ONNX model (type: ModelProto).
     :param topology: The Topology object we are going to convert
@@ -688,9 +688,10 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
     assigned to "model.graph.name."
     :param doc_string: A string attached to the produced model
     :param target_opset: number, for example, 7 for ONNX 1.2, and 8 for ONNX 1.3.
-    :param targeted_onnx[deprecated]: A string, which specifies the targeted ONNX version of the produced model. Possible values
-    include '1.1.2', '1.2', and so on.
-    :return: a ONNX ModelProto
+    :param targeted_onnx[deprecated]: A string, which specifies the targeted ONNX version of the produced model
+        Possible values include '1.1.2', '1.2', and so on.
+    :param channel_first_inputs: specify which inputs will be added a transpose to turn NHWC into NCHW
+    :return: an ONNX ModelProto
     '''
     if targeted_onnx is not None and StrictVersion(targeted_onnx) != StrictVersion(onnx.__version__):
         warnings.warn(
@@ -792,25 +793,40 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
+    graph = None
+    nodes = container.nodes
     # enable the ONNX optimizations
-    if enable_optimizer:
-        nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    if container.enable_optimizer:
+        if target_opset < 9:
+            nodes = optimize_onnx(nodes, nchw_inputs=channel_first_inputs,
+                                  inputs=container.inputs + extra_inputs,
+                                  outputs=container.outputs)
+        else:
+            graph = optimize_onnx_graph(nodes, nchw_inputs=channel_first_inputs,
+                                        inputs=container.inputs,
+                                        outputs=container.outputs,
+                                        initializers=container.initializers,
+                                        model_value_info=container.value_info,
+                                        model_name=model_name,
+                                        target_opset=container.target_opset)
+
     else:
         nodes = container.nodes
 
-    # Create a graph from its main components
-    if container.target_opset < 9:
-        # Before ONNX opset 9, initializers need to be passed in with inputs
-        graph = helper.make_graph(nodes, model_name, container.inputs + extra_inputs,
-                                  container.outputs, container.initializers)
-    else:
-        # In ONNX opset 9 and above, initializers are included as operator
-        # inputs, and therefore do not need to be passed as extra_inputs
-        graph = helper.make_graph(nodes, model_name, container.inputs,
-                                  container.outputs, container.initializers)
+    if graph is None:
+        # Create a graph from its main components
+        if container.target_opset < 9:
+            # Before ONNX opset 9, initializers need to be passed in with inputs
+            graph = helper.make_graph(nodes, model_name, container.inputs + extra_inputs,
+                                      container.outputs, container.initializers)
+        else:
+            # In ONNX opset 9 and above, initializers are included as operator
+            # inputs, and therefore do not need to be passed as extra_inputs
+            graph = helper.make_graph(nodes, model_name, container.inputs,
+                                      container.outputs, container.initializers)
+        # Add extra information related to the graph
+        graph.value_info.extend(container.value_info)
 
-    # Add extra information related to the graph
-    graph.value_info.extend(container.value_info)
     onnx_model = make_model_ex(graph, container.node_domain_version_pair_sets,
                                target_opset, topology.metadata_props, doc_string=doc_string)
     return onnx_model

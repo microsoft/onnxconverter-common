@@ -7,10 +7,11 @@ import numpy as np
 from onnx import onnx_pb as onnx_proto
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 from . import onnx_ops
-from .data_types import Int64TensorType, BooleanTensorType
 
 
 class _OperatorNameContext:
+    _history = []
+
     def __init__(self, oopb, basename):
         self.basename = basename
         self.oopb = oopb
@@ -18,9 +19,13 @@ class _OperatorNameContext:
     def __enter__(self):
         assert self.oopb.basename is None, "The previous context doesn't quit"
         self.oopb.basename = self.basename
+        if len(_OperatorNameContext._history) > 0:
+            self.oopb.upper_ctx = _OperatorNameContext._history[-1]
+        _OperatorNameContext._history.append(self)
         return self.oopb
 
     def __exit__(self, type, value, traceback):
+        assert self is _OperatorNameContext._history.pop()
         self.oopb.basename = None
 
 
@@ -29,6 +34,9 @@ class OnnxOperatorBuilder:
         self._container = container
         self._scope = scope
         self.basename = None
+        # TODO: not all OnnxOperatorBuilder invocation is via as_default...
+        # ... temporarily enable this for onnx_fx
+        self.upper_ctx = None
         self.int32 = onnx_proto.TensorProto.INT32
         self.int64 = onnx_proto.TensorProto.INT64
         self.float = onnx_proto.TensorProto.FLOAT
@@ -38,6 +46,10 @@ class OnnxOperatorBuilder:
 
     def as_default(self, basename):
         return _OperatorNameContext(self, basename)
+
+    @property
+    def upper_context(self):
+        return self.upper_ctx
 
     def _process_inputs(self, inputs, name):
         if not isinstance(inputs, (list, tuple)):
@@ -157,8 +169,6 @@ class OnnxOperatorBuilder:
         cond_name = '' if cond is None else cond
         ox_inputs = self._process_inputs(inputs, name)
         ox_inputs = [trip_count, cond_name] + ox_inputs
-        # o1 = self._scope.get_local_variable_or_declare_one('ox_b', type=Int64TensorType())
-        # ox_outputs = outputs + [o1.onnx_name]
         ox_outputs = outputs
         self._container.add_node(
             'Loop', ox_inputs, ox_outputs, op_version=1, name=name, body=body)
