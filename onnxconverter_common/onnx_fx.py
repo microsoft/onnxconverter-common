@@ -136,8 +136,9 @@ class Graph:
             nonlocal inputs
             nonlocal f_outputs
             with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:  # type: OnnxOperatorBuilderX
-                if ox.upper_context is not None:
-                    container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
+                # if ox.upper_context is not None:
+                #     container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
+                container.enable_optimizer = False
                 inputs = [ox.arg(arg_name) for arg_name in arg_names]
                 f_outputs = f(*inputs)
                 if outputs:
