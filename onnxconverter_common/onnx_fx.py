@@ -95,7 +95,7 @@ class Graph:
 
     @property
     def name(self):
-        return self.name
+        return self._name
 
     @staticmethod
     def trace(*args, **kwargs):
@@ -220,10 +220,17 @@ class Graph:
             kwargs = {name: val for name, val in arg_map.items()}
             if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
                 self._sess = ort.InferenceSession(self._oxml.SerializeToString())
+                def format_var(var):
+                    return f"{var.name}: {var.type}{var.shape}"
+                print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
+                      f"-> {', '.join(format_var(output) for output in self._sess.get_outputs())}")
             res = self._sess.run(None, kwargs)
-            return res  # @TODO: of more than one, turn into a dict, or something
+            if len(res) == 1:
+                return res[0]
+            else:
+                return tuple(res)
 
-    def save(self, path):
+    def save(self, path, save_as_text=False):
         if self._oxml.opset_import[0].version < 7:  # @WORKAROUND: lower versions will crash onnxruntime upon load
             self._oxml.opset_import[0].version = 7
         # print("Model:")
@@ -232,7 +239,7 @@ class Graph:
         # print("--- outputs:", self._oxml.graph.output)
         # print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if save_as_text:  # for diagnostics
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -363,7 +370,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         if isinstance(outputs, str):
             return Tensor(outputs, self)
         else:
-            return [self._output_names_to_tensors(output) for output in outputs]
+            return tuple(self._output_names_to_tensors(output) for output in outputs)
 
     def _tensors_to_input_names(self, inputs):
         if isinstance(inputs, Tensor):
@@ -456,7 +463,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             # @TODO: Not sure what must be mapped, and how
             print(value_info)
             self._container.value_info.append(value_info)
-        return self._output_names_to_tensors(outputs)
+        return self._output_names_to_tensors(outputs)  # note: outputs is either a string or a list of strings
 
     def _value_to_tensor(self, value, name, atleast_1d=False):
         if isinstance(value, (int, float, bool)):
