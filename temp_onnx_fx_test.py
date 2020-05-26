@@ -137,7 +137,7 @@ if __name__ == '__main__':
             data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
             seq_len = data_0_shape[-1]
             data_0_index_range = onnx_range(seq_len).cast(to=ox.float)
-            data_0_index_range = ox.unsqueeze(data_0_index_range, axes=[1,2])
+            data_0_index_range = ox.unsqueeze(data_0_index_range, axes=[1,2])  # [SOURCE_LENGTH, 1, 1]
             #max_len = seq_len * 3
 
             encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
@@ -149,12 +149,11 @@ if __name__ == '__main__':
 
             # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
             y_t = logp[0, 0].argmax(axis=-1)
-            #test_y_t = (y_t == 0)
 
             Y = [y_t]
             for iteration_count in range(1,3):
                 pos = ox.constant(value=iteration_count) + 1
-                data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])
+                data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])  # [1, 1, 1]
                 logp, *out_decoder_states = decode_next(
                     prev_word=y_t, data_1_posrange=data_1_posrange,
                     encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
@@ -163,14 +162,14 @@ if __name__ == '__main__':
                     decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
                 y_t = logp[0, 0].argmax(axis=-1)
                 Y += [y_t]
-                #test_y_t = (y_t == 0)
 
             Y = ox.concat(Y, axis=-1)
             return Y
 
         greedy_search_fixed_length_3.save("greedy3.onnx")
 
-        Y = greedy_search_fixed_length_3(np.array([530, 4, 0], dtype=np.int64))[0]
+        Y = greedy_search_fixed_length_3(np.array([530, 4, 0], dtype=np.int64))
+        # expected: [3421, 4, 0]
         print(Y.shape, Y)
 
     # --- full greedy search
@@ -198,8 +197,7 @@ if __name__ == '__main__':
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = logp[0, 0].argmax(axis=-1)
-        eos = (y_t == 0)
-        test_y_t = ox.onnx_not(eos)
+        test_y_t = (y_t != 0)
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
                      output_types=[_Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
@@ -237,8 +235,7 @@ if __name__ == '__main__':
                 decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
                 decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
             y_t = logp[0, 0].argmax(axis=-1)
-            eos = (y_t == 0)
-            test_y_t = ox.onnx_not(eos)
+            test_y_t = (y_t != 0)
             return [test_y_t, y_t] + out_decoder_states + [y_t]
 
         # "Final N loop carried dependency values then K scan_outputs"
@@ -248,10 +245,9 @@ if __name__ == '__main__':
         y = ret_vals[-1]  # scan_output
         return y
 
-
     greedy_search.save("greedy.onnx")
 
-    Y = greedy_search(np.array([530, 4, 0], dtype=np.int64))[0]
+    Y = greedy_search(np.array([530, 4, 0], dtype=np.int64))
     print(Y.shape, Y)
 
     # --- encoder only

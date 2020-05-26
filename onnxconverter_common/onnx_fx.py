@@ -95,7 +95,7 @@ class Graph:
 
     @property
     def name(self):
-        return self.name
+        return self._name
 
     @staticmethod
     def trace(*args, **kwargs):
@@ -220,10 +220,17 @@ class Graph:
             kwargs = {name: val for name, val in arg_map.items()}
             if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
                 self._sess = ort.InferenceSession(self._oxml.SerializeToString())
+                def format_var(var):
+                    return f"{var.name}: {var.type}{var.shape}"
+                print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
+                      f"-> {', '.join(format_var(output) for output in self._sess.get_outputs())}")
             res = self._sess.run(None, kwargs)
-            return res  # @TODO: of more than one, turn into a dict, or something
+            if len(res) == 1:
+                return res[0]
+            else:
+                return tuple(res)
 
-    def save(self, path):
+    def save(self, path, save_as_text=False):
         if self._oxml.opset_import[0].version < 7:  # @WORKAROUND: lower versions will crash onnxruntime upon load
             self._oxml.opset_import[0].version = 7
         # print("Model:")
@@ -232,7 +239,7 @@ class Graph:
         # print("--- outputs:", self._oxml.graph.output)
         # print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if False:
+        if save_as_text:  # for diagnostics
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -293,8 +300,8 @@ class Tensor(object):
     def __eq__(self, other):
         return self.ox.equal(self._to_binary_tensor_args(other))
 
-    def __ne__(self, other):
-       return self.ox.equal(self._to_binary_tensor_args(other))
+    def __ne__(self, other):  # ONNX has no NotEqual
+        return self.ox.not_([self.ox.equal(self._to_binary_tensor_args(other))])
 
     def __gt__(self, other):
         return self.ox.greater(self._to_binary_tensor_args(other))
@@ -305,8 +312,8 @@ class Tensor(object):
     def __neg__(self):
         return self.ox.neg([self])
 
-    # def __not__(self):
-    #    return self.ox.not([self])
+    def __not__(self):
+       return self.ox.not_([self])
 
     def __getitem__(self, indices):
         # normalize indices to tuples of slices
@@ -363,7 +370,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         if isinstance(outputs, str):
             return Tensor(outputs, self)
         else:
-            return [self._output_names_to_tensors(output) for output in outputs]
+            return tuple(self._output_names_to_tensors(output) for output in outputs)
 
     def _tensors_to_input_names(self, inputs):
         if isinstance(inputs, Tensor):
@@ -456,7 +463,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             # @TODO: Not sure what must be mapped, and how
             print(value_info)
             self._container.value_info.append(value_info)
-        return self._output_names_to_tensors(outputs)
+        return self._output_names_to_tensors(outputs)  # note: outputs is either a string or a list of strings
 
     def _value_to_tensor(self, value, name, atleast_1d=False):
         if isinstance(value, (int, float, bool)):
@@ -535,21 +542,12 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             else:
                 op_version = 9
             container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
-
         return self.apply_op(apply_equal, inputs, name, outputs)
 
-    def onnx_not(self, inputs, name=None, outputs=None):
-        def apply_not(scope, input_names, output_name, container, operator_name=None):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'not', operator_name)
-            if container.target_opset < 7:
-                op_version = 1
-            elif container.target_opset < 9:
-                op_version = 7
-            else:
-                op_version = 9
-            container.add_node('Not', input_names, output_name, name=name, op_version=op_version)
-
-        return self.apply_op(apply_not, inputs, name, outputs)
+    def not_(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
+        def apply_not(scope, input_name, output_name, container, operator_name=None, axis=None, broadcast=None):
+            onnx_ops._apply_unary_operation(scope, 'Not', input_name, output_name, container, operator_name)
+        return self.apply_op(apply_not, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def apply_tensor(self, func, inputs, output):
         func(self, inputs, outputs=[output])
