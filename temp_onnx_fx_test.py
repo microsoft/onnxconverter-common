@@ -4,7 +4,7 @@ from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 import unittest
 
 
-if True:
+if False:
     class ONNXFunctionTest(unittest.TestCase):
         # this works, and the exported graph is usable:
         def test_core(self):
@@ -50,6 +50,14 @@ if __name__ == '__main__':
         suite.debug()
     
     # --- range
+
+    @Graph.trace(outputs='n',
+                output_types = [_Ty.b],
+                input_types = [_Ty.b])
+    def func_not(x):
+        return x.ox.onnx_not(x)
+
+    print(func_not(np.array([True])))
 
     @Graph.trace(outputs='range_res',
                  input_types=[_Ty.I(shape=[])],
@@ -117,7 +125,7 @@ if __name__ == '__main__':
 
     # --- greedy search for fixed length of 3
 
-    if True:
+    if False:
         @Graph.trace(
             input_types =[_Ty.I(shape=['SOURCE_LENGTH'])],
             output_types=[_Ty.I(shape=[3])],
@@ -190,11 +198,12 @@ if __name__ == '__main__':
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = logp[0, 0].argmax(axis=-1)
-        test_y_t = (y_t == 0)
+        eos = (y_t == 0)
+        test_y_t = ox.onnx_not(eos)
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
                      output_types=[_Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
-                     input_types=[_Ty.i, _Ty.b, _Ty.i] + [_Ty.f] * 6)
+                     input_types=[_Ty.I([1]), _Ty.b, _Ty.i] + [_Ty.f] * 6)
         def loop_body(iteration_count, condition,  # these are not actually used inside
                       y_t,
                       out_decoder_states_0, out_decoder_states_1,
@@ -228,7 +237,8 @@ if __name__ == '__main__':
                 decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
                 decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
             y_t = logp[0, 0].argmax(axis=-1)
-            test_y_t = (y_t == 0)
+            eos = (y_t == 0)
+            test_y_t = ox.onnx_not(eos)
             return [test_y_t, y_t] + out_decoder_states + [y_t]
 
         # "Final N loop carried dependency values then K scan_outputs"
@@ -245,24 +255,24 @@ if __name__ == '__main__':
     print(Y.shape, Y)
 
     # --- encoder only
+    if False:
+        # @BUGBUG: This last one kills the model checker. The two above work.
+        @Graph.trace(
+            input_types=[_Ty.I32(shape=['SOURCE_LENGTH']),
+                         _Ty.F(shape=['SOURCE_LENGTH', 1, 1]),
+                         _Ty.F(shape=['SOURCE_LENGTH', 1, 1])],
+            output_types=[_Ty.F(shape=[1, 'SOURCE_LENGTH', 1, 512])],
+            outputs="z")
+        def h(a, b, c):
+            return encode_source(a, b, c)
 
-    # @BUGBUG: This last one kills the model checker. The two above work.
-    @Graph.trace(
-        input_types=[_Ty.I32(shape=['SOURCE_LENGTH']),
-                     _Ty.F(shape=['SOURCE_LENGTH', 1, 1]),
-                     _Ty.F(shape=['SOURCE_LENGTH', 1, 1])],
-        output_types=[_Ty.F(shape=[1, 'SOURCE_LENGTH', 1, 512])],
-        outputs="z")
-    def h(a, b, c):
-        return encode_source(a, b, c)
 
+        model_path = "enc.onnx"
+        print("Saving to:", model_path, flush=True)
+        h.save(model_path)
 
-    model_path = "enc.onnx"
-    print("Saving to:", model_path, flush=True)
-    h.save(model_path)
+        res = h(np.array([530, 4, 0], dtype=np.int32),
+                np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
+                np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))
 
-    res = h(np.array([530, 4, 0], dtype=np.int32),
-            np.array([[[1.0]], [[1.0]], [[1.0]]], dtype=np.float32),
-            np.array([[[0.0]], [[1.0]], [[2.0]]], dtype=np.float32))
-
-    print(res)
+        print(res)

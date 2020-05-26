@@ -232,7 +232,7 @@ class Graph:
         # print("--- outputs:", self._oxml.graph.output)
         # print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)
@@ -293,8 +293,8 @@ class Tensor(object):
     def __eq__(self, other):
         return self.ox.equal(self._to_binary_tensor_args(other))
 
-    # def __ne__(self, other):
-    #    return self.ox.matmul(self._to_binary_tensor_args(other))
+    def __ne__(self, other):
+       return self.ox.equal(self._to_binary_tensor_args(other))
 
     def __gt__(self, other):
         return self.ox.greater(self._to_binary_tensor_args(other))
@@ -527,7 +527,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
 
     def equal(self, inputs, name=None, outputs=None):
         def apply_equal(scope, input_names, output_name, container, operator_name=None):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'Greater', operator_name)
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'equal', operator_name)
             if container.target_opset < 7:
                 op_version = 1
             elif container.target_opset < 9:
@@ -537,6 +537,19 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
 
         return self.apply_op(apply_equal, inputs, name, outputs)
+
+    def onnx_not(self, inputs, name=None, outputs=None):
+        def apply_not(scope, input_names, output_name, container, operator_name=None):
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'not', operator_name)
+            if container.target_opset < 7:
+                op_version = 1
+            elif container.target_opset < 9:
+                op_version = 7
+            else:
+                op_version = 9
+            container.add_node('Not', input_names, output_name, name=name, op_version=op_version)
+
+        return self.apply_op(apply_not, inputs, name, outputs)
 
     def apply_tensor(self, func, inputs, output):
         func(self, inputs, outputs=[output])
