@@ -300,8 +300,8 @@ class Tensor(object):
     def __eq__(self, other):
         return self.ox.equal(self._to_binary_tensor_args(other))
 
-    # def __ne__(self, other):
-    #    return self.ox.matmul(self._to_binary_tensor_args(other))
+    def __ne__(self, other):  # ONNX has no NotEqual
+        return self.ox.not_([self.ox.equal(self._to_binary_tensor_args(other))])
 
     def __gt__(self, other):
         return self.ox.greater(self._to_binary_tensor_args(other))
@@ -312,8 +312,8 @@ class Tensor(object):
     def __neg__(self):
         return self.ox.neg([self])
 
-    # def __not__(self):
-    #    return self.ox.not([self])
+    def __not__(self):
+       return self.ox.not_([self])
 
     def __getitem__(self, indices):
         # normalize indices to tuples of slices
@@ -534,7 +534,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
 
     def equal(self, inputs, name=None, outputs=None):
         def apply_equal(scope, input_names, output_name, container, operator_name=None):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'Greater', operator_name)
+            name = onnx_ops._create_name_or_use_existing_one(scope, 'Equal', operator_name)
             if container.target_opset < 7:
                 op_version = 1
             elif container.target_opset < 9:
@@ -542,8 +542,12 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             else:
                 op_version = 9
             container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
-
         return self.apply_op(apply_equal, inputs, name, outputs)
+
+    def not_(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
+        def apply_not(scope, input_name, output_name, container, operator_name=None, axis=None, broadcast=None):
+            onnx_ops._apply_unary_operation(scope, 'Not', input_name, output_name, container, operator_name)
+        return self.apply_op(apply_not, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def apply_tensor(self, func, inputs, output):
         func(self, inputs, outputs=[output])

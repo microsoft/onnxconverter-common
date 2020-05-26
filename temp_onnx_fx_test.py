@@ -140,6 +140,7 @@ if __name__ == '__main__':
                                                      encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
 
             # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
+            y_t = logp[0, 0].argmax(axis=-1)
 
             Y = [y_t]
             for iteration_count in range(1,3):
@@ -235,7 +236,6 @@ if __name__ == '__main__':
                            outputs=['gy_t_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
         y = ret_vals[-1]  # scan_output
         return y
-
 
     greedy_search.save("greedy.onnx")
 
