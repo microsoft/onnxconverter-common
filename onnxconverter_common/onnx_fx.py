@@ -232,7 +232,7 @@ class Graph:
         # print("--- outputs:", self._oxml.graph.output)
         # print("--- nodes:", self._oxml.graph.node)
         onnx.save_model(self._oxml, path)
-        if True:
+        if False:
             print("Saving as text: ", path + ".txt")
             with open(path + ".txt", "wt") as f:
                 print(self._oxml, file=f)

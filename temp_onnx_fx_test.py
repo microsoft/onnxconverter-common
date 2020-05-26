@@ -48,6 +48,8 @@ if __name__ == '__main__':
     if False: # due to early build graph, the test cannot be disabled here.
         suite = unittest.TestLoader().loadTestsFromTestCase(ONNXFunctionTest)
         suite.debug()
+    
+    # --- range
 
     @Graph.trace(outputs='range_res',
                  input_types=[_Ty.I(shape=[])],
@@ -88,7 +90,6 @@ if __name__ == '__main__':
                                outputs=['ds_o', 'range_out'])  # passing is_true for dummy_state
         return range_out
 
-
     onnx_range.save('range.onnx')
     print(onnx_range(np.array(16, dtype=np.int64)))
 
@@ -109,12 +110,59 @@ if __name__ == '__main__':
                                       'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4',
                                       'next_decoder_state_5'])
 
+    # --- greedy search for fixed length of 3
 
     @Graph.trace(
-        input_types=[_Ty.I32(shape=['SOURCE_LENGTH']),
-                     _Ty.F(shape=['SOURCE_LENGTH', 1, 1]),
-                     _Ty.F(shape=['SOURCE_LENGTH', 1, 1])],
-        output_types=[_Ty.I(shape=[1, 'SOURCE_LENGTH', 1, 1])],
+        input_types =[_Ty.I(shape=['SOURCE_LENGTH'])],
+        output_types=[_Ty.I(shape=[3])],
+        outputs="Y")
+    def greedy_search_fixed_length_3(X):
+        ox = X.ox
+        data_0 = X
+        data_0_shape = data_0.shape()
+        data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
+        seq_len = data_0_shape[-1]
+        data_0_index_range = onnx_range(seq_len).cast(to=ox.float)
+        #max_len = seq_len * 3
+
+        encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                          data_0_posrange=data_0_index_range)
+
+        y_len_0 = ox.constant(value=0.0)
+        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
+                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+
+        # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
+        y_t = logp[0, 0].argmax(axis=-1)
+        #test_y_t = (y_t == 0)
+
+        Y = [y_t]
+        for iteration_count in range(1,3):
+            pos = ox.constant(value=iteration_count) + 1
+            data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])
+            logp, *out_decoder_states = decode_next(
+                prev_word=y_t, data_1_posrange=data_1_posrange,
+                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+                decoder_state_0=out_decoder_states[0], decoder_state_1=out_decoder_states[1],
+                decoder_state_2=out_decoder_states[2], decoder_state_3=out_decoder_states[3],
+                decoder_state_4=out_decoder_states[4], decoder_state_5=out_decoder_states[5])
+            y_t = logp[0, 0].argmax(axis=-1)
+            Y += [y_t]
+            #test_y_t = (y_t == 0)
+
+        Y = ox.concat(Y, axis=1)
+        return Y
+
+    greedy_search_fixed_length_3.save("greedy3.onnx")
+
+    Y = greedy_search_fixed_length_3(np.array([530, 4, 0], dtype=np.int64))[0]
+    print(Y.shape, Y)
+
+    # --- full greedy search
+
+    @Graph.trace(
+        input_types =[_Ty.I(shape=['SOURCE_LENGTH'])],
+        output_types=[_Ty.I(shape=['SOURCE_LENGTH'])],
         outputs="Y")
     def greedy_search(X):
         ox = X.ox
@@ -183,12 +231,12 @@ if __name__ == '__main__':
         return y
 
 
-    # greedy_search.save("c:/me/greedy.onnx")
     greedy_search.save("greedy.onnx")
 
-    Y = greedy_search(np.array([530, 4, 0], dtype=np.int32))[0]
+    Y = greedy_search(np.array([530, 4, 0], dtype=np.int64))[0]
     print(Y.shape, Y)
 
+    # --- encoder only
 
     # @BUGBUG: This last one kills the model checker. The two above work.
     @Graph.trace(
