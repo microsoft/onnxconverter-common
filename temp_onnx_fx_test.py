@@ -89,8 +89,14 @@ if __name__ == '__main__':
         return range_out
 
 
+
     onnx_range.save('range.onnx')
     print(onnx_range(np.array(16, dtype=np.int64)))
+
+    import sys
+    if len(sys.argv) > 1:
+        import os
+        text = input("Python process id: {} > ".format(os.getpid()))  # or raw_input in python2
 
     # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
     path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
