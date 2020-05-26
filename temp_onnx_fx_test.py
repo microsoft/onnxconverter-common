@@ -243,7 +243,9 @@ if __name__ == '__main__':
                            inputs=[y_t] + out_decoder_states,
                            outputs=['gy_t_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
         y = ret_vals[-1]  # scan_output
-        return y
+        Y = ox.concat([ox.unsqueeze(y_t), y], axis=0)  # note: y_t are rank-1 tensors, not scalars (ORT concat fails with scalars)
+        return ox.squeeze(Y, axes=[1])
+
 
     greedy_search.save("greedy.onnx")
 
