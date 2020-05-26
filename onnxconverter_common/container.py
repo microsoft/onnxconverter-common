@@ -89,6 +89,7 @@ class ModelComponentContainer(ModelContainer):
         self.node_domain_version_pair_sets = set()
         # The targeted ONNX operator set (referred to as opset) that matches the ONNX version.
         self.target_opset = target_opset
+        self.enable_optimizer = True
 
     def _make_value_info(self, variable):
         value_info = helper.ValueInfoProto()

@@ -54,8 +54,8 @@ class OnnxGraphContext:
     def _OnIdentity(self, node, inputs):
         return inputs
 
-    def _OnConst(self, node, inputs):
-        return [OnnxGraphContext.get_attribute(node, 'value')]
+    def _OnConstant(self, node, inputs):
+        return [numpy_helper.to_array(OnnxGraphContext.get_attribute(node, 'value'))]
 
     def _OnAdd(self, node, inputs):
         return [np.add(inputs[0], inputs[1])]
@@ -204,7 +204,7 @@ def _dfs_calc(graph, node, reserved_names, node_status):
     else:
         calc_status = [0] * len(node.input)
         for idx_, ts_ in enumerate(node.input):
-            if ts_ in graph.initializers:
+            if ts_ in graph.initializers or ts_ in graph.variables:
                 calc_status[idx_] = -1 if ts_ in reserved_names else 0
             elif ts_ not in graph.tensor_to_node:  # input of graph
                 calc_status[idx_] = -1
