@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
     @Graph.trace(
         input_types =[_Ty.I(shape=['SOURCE_LENGTH'])],
-        output_types=[_Ty.I(shape=['SOURCE_LENGTH'])],
+        output_types=[_Ty.I(shape=['TARGET_LENGTH'])],
         outputs="Y")
     def greedy_search(X):
         ox = X.ox
