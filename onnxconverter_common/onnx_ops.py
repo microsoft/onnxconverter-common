@@ -56,7 +56,7 @@ def _apply_basic_numerical_operation(scope, op_type, input_names, output_name, c
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
 
-def _apply_pointwise_operation(scope, op_type, input_names, output_name, container, operator_name):
+def _apply_pointwise_operation(scope, op_type, input_names, output_name, container, operator_name, input_op_version=None):
     name = _create_name_or_use_existing_one(scope, op_type, operator_name)
     attrs = {}
 
@@ -67,6 +67,9 @@ def _apply_pointwise_operation(scope, op_type, input_names, output_name, contain
         op_version = 6
     else:
         op_version = 8
+
+    if input_op_version is not None:
+        op_version = input_op_version
 
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
@@ -579,16 +582,16 @@ def apply_matmul(scope, input_names, output_name, container, operator_name=None)
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name)
 
 
-def apply_max(scope, input_names, output_name, container, operator_name=None):
-    _apply_pointwise_operation(scope, 'Max', input_names, output_name, container, operator_name)
+def apply_max(scope, input_names, output_name, container, operator_name=None, op_version=None):
+    _apply_pointwise_operation(scope, 'Max', input_names, output_name, container, operator_name, op_version)
 
 
-def apply_mean(scope, input_names, output_name, container, operator_name=None):
-    _apply_pointwise_operation(scope, 'Mean', input_names, output_name, container, operator_name)
+def apply_mean(scope, input_names, output_name, container, operator_name=None, op_version=None):
+    _apply_pointwise_operation(scope, 'Mean', input_names, output_name, container, operator_name, op_version)
 
 
-def apply_min(scope, input_names, output_name, container, operator_name=None):
-    _apply_pointwise_operation(scope, 'Min', input_names, output_name, container, operator_name)
+def apply_min(scope, input_names, output_name, container, operator_name=None, op_version=None):
+    _apply_pointwise_operation(scope, 'Min', input_names, output_name, container, operator_name, op_version)
 
 
 def apply_mul(scope, input_names, output_name, container, operator_name=None, axis=None, broadcast=None):
