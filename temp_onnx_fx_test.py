@@ -175,10 +175,10 @@ if __name__ == '__main__':
     # --- full greedy search
 
     @Graph.trace(
-        input_types =[_Ty.I(shape=['SOURCE_LENGTH'])],
+        input_types=[_Ty.I(shape=['SOURCE_LENGTH']), _Ty.I([1])],
         output_types=[_Ty.I(shape=['TARGET_LENGTH'])],
         outputs="Y")
-    def greedy_search(X):
+    def greedy_search(X, eos):
         ox = X.ox
         data_0 = X
         data_0_shape = data_0.shape()
@@ -197,7 +197,8 @@ if __name__ == '__main__':
 
         # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
         y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # note: rank-1 tensor, not a scalar
-        test_y_t = (y_t != 0)
+        eos_token = eos + 0
+        test_y_t = (y_t != eos_token)
 
         @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
                      output_types=[_Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
@@ -235,7 +236,7 @@ if __name__ == '__main__':
                 decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
                 decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
             y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)
-            test_y_t = (y_t != 0)
+            test_y_t = (y_t != eos_token)
             return [test_y_t, y_t] + out_decoder_states + [y_t]
 
         # "Final N loop carried dependency values then K scan_outputs"
@@ -251,8 +252,15 @@ if __name__ == '__main__':
 
     greedy_search.save("greedy.onnx")
 
-    Y = greedy_search(np.array([530, 4, 0], dtype=np.int64))
+    import time
+    Y = greedy_search(np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64),
+                      np.array([0], dtype=np.int64))
     print(Y.shape, Y)
+    t_begin = time.time()
+    np_input = np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64)
+    for i in range(10):
+        Y = greedy_search(np_input, np.array([0], dtype=np.int64))
+    print("time elapsed: {}".format(time.time() - t_begin))
 
     # --- encoder only
     if False:
