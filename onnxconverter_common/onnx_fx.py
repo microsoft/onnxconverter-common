@@ -88,6 +88,7 @@ class Graph:
         self._inputs = inputs
         self._outputs = outputs
         self._sess = None
+        self._sess_options = None
 
     @property
     def oxml(self):
@@ -206,7 +207,7 @@ class Graph:
 
     def _lazy_load_sess(self):
         if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
-            self._sess = ort.InferenceSession(self._oxml.SerializeToString())
+            self._sess = ort.InferenceSession(self._oxml.SerializeToString(), self._sess_options)
             def format_var(var):
                 return f"{var.name}: {var.type}{var.shape}"
             print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
@@ -225,7 +226,7 @@ class Graph:
             return ox.apply_invoke_inline(self._oxml.graph, arg_map, output_map)
         else:
             # evaluate with real values
-            kwargs = {name: val for name, val in arg_map.items()}
+            kwargs = {name: OnnxOperatorBuilderX.value_to_ndarray(val) for name, val in arg_map.items()}
             self._lazy_load_sess()
             res = self._sess.run(None, kwargs)
             if len(res) == 1:
@@ -257,8 +258,20 @@ class Graph:
             print(e)
         print("{} saved!".format(path))
 
+    def set_sess_options(self, sess_options):
+        """
+        This sets session options when this Graph is used for evaluation.
+        Currently used for constraining to a single CPU for benchmarking.
+        """
+        self._sess_options = sess_options
+        self._sess = None  # clear the cached object, as it likely has different options
+        self._lazy_load_sess()
+
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
+        """
+        Construct a Graph object by loading an ONNX model.
+        """
         g = Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
         g._lazy_load_sess()  # for diagnostics: This shows the shapes.
         return g
@@ -469,8 +482,9 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             print(value_info)
             self._container.value_info.append(value_info)
         return self._output_names_to_tensors(outputs)  # note: outputs is either a string or a list of strings
-
-    def _value_to_tensor(self, value, name, atleast_1d=False):
+    
+    @staticmethod
+    def value_to_ndarray(value):
         if isinstance(value, (int, float, bool)):
             ty = np.int64
             if isinstance(value, float):
@@ -480,9 +494,13 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             else:
                 pass
             value = np.array(value).astype(ty)
+        return value
+
+    def _value_to_tensor(self, value, name, atleast_1d=False):
+        value = OnnxOperatorBuilderX.value_to_ndarray(value)
+        if isinstance(value, np.ndarray):
             if atleast_1d:
                 value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
-        if isinstance(value, np.ndarray):
             l = value.flatten().tolist()
             value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
         return value

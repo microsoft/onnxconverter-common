@@ -50,6 +50,7 @@ if __name__ == '__main__':
         suite.debug()
     
     # --- range
+    # This function is used by greedy_search() below.
 
     @Graph.trace(outputs='n',
                 output_types = [_Ty.b],
@@ -101,6 +102,9 @@ if __name__ == '__main__':
     onnx_range.save('range.onnx')
     print(onnx_range(np.array(16, dtype=np.int64)))
 
+    # --- the Marian pieces
+    # We load three sub-functions that were exported by Marian. They are invoked by greedy_search() below.
+
     import sys
     if len(sys.argv) > 1:
         import os
@@ -123,7 +127,129 @@ if __name__ == '__main__':
                                       'next_decoder_state_2', 'next_decoder_state_3', 'next_decoder_state_4',
                                       'next_decoder_state_5'])
 
+    # --- full greedy search
+    # This defines the full greedy-search model in ONNX. It invokes four functions defined above.
+
+    @Graph.trace(
+        input_types=[_Ty.I(shape=['SOURCE_LENGTH']), _Ty.I([1])],
+        output_types=[_Ty.I(shape=['TARGET_LENGTH'])],
+        outputs="Y")
+    def greedy_search(X, eos_id):
+        ox = X.ox
+        data_0 = X
+        data_0_shape = data_0.shape()
+        data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
+        seq_len = data_0_shape[-1]
+        data_0_index_range = onnx_range(seq_len).cast(to=ox.float)
+        data_0_index_range = ox.unsqueeze(data_0_index_range, axes=[1,2])
+        max_len = seq_len * 3
+
+        encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
+                                          data_0_posrange=data_0_index_range)
+
+        y_len_0 = ox.constant(value=0.0)
+        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
+                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
+
+        # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
+        y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # note: rank-1 tensor, not a scalar
+        eos_token = eos_id + 0
+        test_y_t = (y_t != eos_token)
+
+        @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
+                     output_types=[_Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
+                     input_types=[_Ty.I([1]), _Ty.b, _Ty.i] + [_Ty.f] * 6)
+        def loop_body(iteration_count, condition,  # these are not actually used inside
+                      y_t,
+                      out_decoder_states_0, out_decoder_states_1,
+                      out_decoder_states_2, out_decoder_states_3,
+                      out_decoder_states_4, out_decoder_states_5):
+            """
+            Loop body follows the requirements of ONNX Loop:
+
+            "The graph run each iteration.
+            It has 2+N inputs: (iteration_num, condition, loop carried dependencies...).
+            It has 1+N+K outputs: (condition, loop carried dependencies..., scan_outputs...).
+            Each scan_output is created by concatenating the value of the specified output value at the end of each iteration of the loop.
+            It is an error if the dimensions or data type of these scan_outputs change across loop iterations."
+
+            Inputs:
+                iteration_num (not used by our function)
+                test_y_t: condition (not used as an input)
+                y_t, *out_decoder_states: N=7 loop-carried dependencies
+
+            Outputs:
+                test_y_t: condition, return True if there is more to decode
+                y_t, *out_decoder_states: N=7 loop-carried dependencies (same as in the Inputs section)
+                y_t: K=1 outputs
+            """
+            pos = iteration_count + 1
+            data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])
+            logp, *out_decoder_states = decode_next(
+                prev_word=y_t, data_1_posrange=data_1_posrange,
+                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
+                decoder_state_0=out_decoder_states_0, decoder_state_1=out_decoder_states_1,
+                decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
+                decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
+            y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)
+            test_y_t = (y_t != eos_token)
+            return [test_y_t, y_t] + out_decoder_states + [y_t]
+
+        # "Final N loop carried dependency values then K scan_outputs"
+        ret_vals = ox.loop(max_len, test_y_t, loop_body,
+                           inputs=[y_t] + out_decoder_states,
+                           outputs=['gy_t_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
+        y = ret_vals[-1]  # scan_output
+
+        # we must prepend the very first token
+        Y = ox.concat([ox.unsqueeze(y_t), y], axis=0)  # note: y_t are rank-1 tensors, not scalars (ORT concat fails with scalars)
+        return ox.squeeze(Y, axes=[1])
+
+    greedy_search.save("greedy.onnx")
+
+    import time
+    Y = greedy_search(np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64),
+                      np.array([0], dtype=np.int64))
+    print(Y.shape, Y)
+    t_begin = time.time()
+    np_input = np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64)
+    for i in range(10):
+        Y = greedy_search(np_input, np.array([0], dtype=np.int64))
+        print("time elapsed: {}".format(time.time() - t_begin))
+
+    # run a full test
+    # The input must already be SentencePiece-tokenized, and the corresponding word list must be
+    # given in voc_path.
+
+    src_path = "C:/work/marian-dev/local/model/predictions.in.tok"
+    out_path = "C:/work/marian-dev/local/model/predictions.out-onnx-model.tok"
+    voc_path = "c:/work/marian-dev/local/model/vocab_v1.wl"
+
+    id2word = { id : word.rstrip() for id, word in enumerate(open(voc_path, encoding='utf-8').readlines()) }
+    word2id = { word : id for id, word in id2word.items() }
+    eos_id, unk_id = word2id["</s>"], word2id["<unk>"]
+
+    import os
+    import onnxruntime as ort
+    os.environ['OMP_NUM_THREADS'] = '1'
+    sess_options = ort.SessionOptions()
+    sess_options.intra_op_num_threads = 1
+    sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    greedy_search.set_sess_options(sess_options)
+
+    start_time = time.time()
+    with open(out_path, 'wt', encoding='utf-8') as out_f:
+        for line in open(src_path, encoding='utf-8').readlines():
+            data = [word2id.get(w, unk_id) for w in (line.rstrip() + " </s>").split(' ') if w]
+            Y = greedy_search(data, np.array([eos_id], dtype=np.int64))
+            #print("input: ", ' '.join(id2word[x] for x in data))
+            #print("output:", ' '.join(id2word[y] for y in Y))
+            print(' '.join(id2word[y] for y in Y[:-1]), file=out_f, flush=True)  # strip </s> for output to file
+    print(f"--- {(time.time() - start_time)} seconds --- {out_path} ")
+
     # --- greedy search for fixed length of 3
+    # This is just a test of decoding without requiring an ONNX Loop. Can be disabled.
 
     if False:
         @Graph.trace(
@@ -172,97 +298,9 @@ if __name__ == '__main__':
         # expected: [3421, 4, 0]
         print(Y.shape, Y)
 
-    # --- full greedy search
-
-    @Graph.trace(
-        input_types=[_Ty.I(shape=['SOURCE_LENGTH']), _Ty.I([1])],
-        output_types=[_Ty.I(shape=['TARGET_LENGTH'])],
-        outputs="Y")
-    def greedy_search(X, eos):
-        ox = X.ox
-        data_0 = X
-        data_0_shape = data_0.shape()
-        data_0_mask = ox.constant_of_shape(data_0_shape, value=1.0)
-        seq_len = data_0_shape[-1]
-        data_0_index_range = onnx_range(seq_len).cast(to=ox.float)
-        data_0_index_range = ox.unsqueeze(data_0_index_range, axes=[1,2])
-        max_len = seq_len * 3
-
-        encoder_context_0 = encode_source(data_0=data_0, data_0_mask=data_0_mask,
-                                          data_0_posrange=data_0_index_range)
-
-        y_len_0 = ox.constant(value=0.0)
-        logp, *out_decoder_states = decode_first(data_1_posrange=y_len_0,
-                                                 encoder_context_0=encoder_context_0, data_0_mask=data_0_mask)
-
-        # # !!!! logp[:, :, :, unk_id] = -1e8  # suppress <unk>, like Marian
-        y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)  # note: rank-1 tensor, not a scalar
-        eos_token = eos + 0
-        test_y_t = (y_t != eos_token)
-
-        @Graph.trace(outputs=['ty_t', 'y_t_o', 'ods_0', 'ods_1', 'ods_2', 'ods_3', 'ods_4', 'ods_5', 'y_t_o2'],
-                     output_types=[_Ty.b, _Ty.i] + [_Ty.f] * 6 + [_Ty.i],
-                     input_types=[_Ty.I([1]), _Ty.b, _Ty.i] + [_Ty.f] * 6)
-        def loop_body(iteration_count, condition,  # these are not actually used inside
-                      y_t,
-                      out_decoder_states_0, out_decoder_states_1,
-                      out_decoder_states_2, out_decoder_states_3,
-                      out_decoder_states_4, out_decoder_states_5):
-            """
-            Loop body follows the requirements of ONNX Loop:
-
-            "The graph run each iteration.
-            It has 2+N inputs: (iteration_num, condition, loop carried dependencies...).
-            It has 1+N+K outputs: (condition, loop carried dependencies..., scan_outputs...).
-            Each scan_output is created by concatenating the value of the specified output value at the end of each iteration of the loop.
-            It is an error if the dimensions or data type of these scan_outputs change across loop iterations."
-
-            Inputs:
-                iteration_num (not used by our function)
-                test_y_t: condition (not used as an input)
-                y_t, *out_decoder_states: N=7 loop-carried dependencies
-
-            Outputs:
-                test_y_t: condition
-                y_t, *out_decoder_states: N=7 loop-carried dependencies (same as in the Inputs section)
-                y_t: K=1 outputs
-            """
-            pos = iteration_count + 1
-            data_1_posrange = pos.cast(to=1).unsqueeze(axes=[0, 1, 2])
-            logp, *out_decoder_states = decode_next(
-                prev_word=y_t, data_1_posrange=data_1_posrange,
-                encoder_context_0=encoder_context_0, data_0_mask=data_0_mask,
-                decoder_state_0=out_decoder_states_0, decoder_state_1=out_decoder_states_1,
-                decoder_state_2=out_decoder_states_2, decoder_state_3=out_decoder_states_3,
-                decoder_state_4=out_decoder_states_4, decoder_state_5=out_decoder_states_5)
-            y_t = logp[0, 0, 0].argmax(axis=-1, keepdims=True)
-            test_y_t = (y_t != eos_token)
-            return [test_y_t, y_t] + out_decoder_states + [y_t]
-
-        # "Final N loop carried dependency values then K scan_outputs"
-        ret_vals = ox.loop(max_len, test_y_t, loop_body,
-                           inputs=[y_t] + out_decoder_states,
-                           outputs=['gy_t_o', 'gods_0', 'gods_1', 'gods_2', 'gods_3', 'gods_4', 'gods_5', 'greedy_out'])
-        y = ret_vals[-1]  # scan_output
-
-        # we must prepend the very first token
-        Y = ox.concat([ox.unsqueeze(y_t), y], axis=0)  # note: y_t are rank-1 tensors, not scalars (ORT concat fails with scalars)
-        return ox.squeeze(Y, axes=[1])
-
-
-    greedy_search.save("greedy.onnx")
-
-    import time
-    Y = greedy_search(np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64),
-                      np.array([0], dtype=np.int64))
-    print(Y.shape, Y)
-    t_begin = time.time()
-    np_input = np.array([274, 35, 52, 791, 59, 4060, 6, 2688, 2, 7744, 9, 2128, 7, 2, 4695, 9, 950, 2561, 3, 0], dtype=np.int64)
-    for i in range(10):
-        Y = greedy_search(np_input, np.array([0], dtype=np.int64))
-    print("time elapsed: {}".format(time.time() - t_begin))
-
     # --- encoder only
+    # This is another test that only runs the encoder. No longer really needed.
+
     if False:
         # @BUGBUG: This last one kills the model checker. The two above work.
         @Graph.trace(
