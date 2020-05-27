@@ -66,7 +66,10 @@ def _apply_pointwise_operation(scope, op_type, input_names, output_name, contain
     elif container.target_opset < 8:
         op_version = 6
     else:
-        op_version = 8
+        if container.target_opset < 12 or op_type == 'Mean':
+            op_version = 8
+        else:
+            op_version = 12
 
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
