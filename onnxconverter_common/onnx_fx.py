@@ -256,7 +256,7 @@ class Graph:
             _ort.InferenceSession(self._oxml.SerializeToString())
         except Exception as e:
             print(e)
-        print("{} saved!".format(path))
+        print(f"{path} saved!")
 
     def set_sess_options(self, sess_options):
         """
@@ -272,6 +272,7 @@ class Graph:
         """
         Construct a Graph object by loading an ONNX model.
         """
+        print("Loading ONNX model:", path)
         g = Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
         g._lazy_load_sess()  # for diagnostics: This shows the shapes.
         return g

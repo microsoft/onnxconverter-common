@@ -111,7 +111,7 @@ if __name__ == '__main__':
         text = input("Python process id: {} > ".format(os.getpid()))  # or raw_input in python2
 
     # path_stem = "c:/work/marian-dev/local/model/model.npz.best-ce-mean-words-debug-sin-uniq"
-    path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq"
+    path_stem = "C:/f/.odxcaches/_modeldata/model.npz.best-ce-mean-words-debug-sin-uniq-notrans-nounk"
     encode_source = Graph.load(f"{path_stem}.encode_source.onnx",
                                inputs=['data_0', 'data_0_mask', 'data_0_posrange'])  # define the order of arguments
     decode_first = Graph.load(f"{path_stem}.decode_first.onnx",
@@ -221,8 +221,10 @@ if __name__ == '__main__':
     # The input must already be SentencePiece-tokenized, and the corresponding word list must be
     # given in voc_path.
 
-    src_path = "C:/work/marian-dev/local/model/predictions.in.tok"
-    out_path = "C:/work/marian-dev/local/model/predictions.out-onnx-model.tok"
+    greedy_search_from_file = Graph.load("greedy.onnx")  # reloading, to make it a full test (just using greedy_search() gives the same output)
+
+    src_path = "C:/work/marian-dev/local/model/predictions.in-first100.tok"
+    out_path = "C:/work/marian-dev/local/model/predictions.out-onnx-model-first100.tok"
     voc_path = "c:/work/marian-dev/local/model/vocab_v1.wl"
 
     id2word = { id : word.rstrip() for id, word in enumerate(open(voc_path, encoding='utf-8').readlines()) }
@@ -236,13 +238,13 @@ if __name__ == '__main__':
     sess_options.intra_op_num_threads = 1
     sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    greedy_search.set_sess_options(sess_options)
+    greedy_search_from_file.set_sess_options(sess_options)
 
     start_time = time.time()
     with open(out_path, 'wt', encoding='utf-8') as out_f:
         for line in open(src_path, encoding='utf-8').readlines():
             data = [word2id.get(w, unk_id) for w in (line.rstrip() + " </s>").split(' ') if w]
-            Y = greedy_search(data, np.array([eos_id], dtype=np.int64))
+            Y = greedy_search_from_file(data, np.array([eos_id], dtype=np.int64))
             #print("input: ", ' '.join(id2word[x] for x in data))
             #print("output:", ' '.join(id2word[y] for y in Y))
             print(' '.join(id2word[y] for y in Y[:-1]), file=out_f, flush=True)  # strip </s> for output to file
