@@ -940,7 +940,6 @@ class MergeReshapeTransposeSolution(Solution):
         self.begin_n.in_redirect(self.begin_n.get_input_by_idx(1), reshape_initilizer.name)
 
         node_list = Solution.delete_node_nto1(node_list, self.begin_n, self.end_p, self.end)
-
         return node_list, True
 
 
