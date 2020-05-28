@@ -966,6 +966,7 @@ class MergeReshapeOptimizer(object):
                         if reshape_value_0[0] == 0 and cur_perm[0] == 0 and reshape_ones + 2 == len(reshape_value_0):
                             solution = MergeReshapeTransposeSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
                             return solution
+
         return None
 
 
