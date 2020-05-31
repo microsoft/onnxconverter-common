@@ -26,22 +26,21 @@ class ONNXFunctionTest(unittest.TestCase):
         def g(x, y):
             return x.ox.abs(f(x, y) + 1.0)
 
-        g.save('test_g.onnx')
         self.assertTrue(
             np.allclose(g([2.0], [-5.0]), np.array([2.0])))
 
     def test_loop(self):
         @onnx_function(outputs=['y1', 'y2', 'y3', 'y4'],
-                     input_types=[_Ty.I(shape=[1])],
-                     output_types=[_Ty.F(shape=[None]), _Ty.F(shape=[None]), _Ty.F(shape=[None]), _Ty.F(shape=[None])])
+                       input_types=[_Ty.I([1])],
+                       output_types=[_Ty.F([None]), _Ty.F([None]), _Ty.F([None, 1]), _Ty.F([None, 1])])
         def loop_test(len):
             ox = len.ox
             s_len = ox.squeeze(len, axes=[0])
             is_true = ox.constant(value=True)
 
             @onnx_function(outputs=['c_o', 'i_o', 'j_o', 'all_i', 'all_j'],
-                         output_types=[_Ty.b, _Ty.f, _Ty.f, _Ty.f, _Ty.f],
-                         input_types=[_Ty.I([1]), _Ty.b, _Ty.F(shape=[1]), _Ty.F(shape=[1])])
+                           output_types=[_Ty.b, _Ty.f, _Ty.f, _Ty.f, _Ty.f],
+                           input_types=[_Ty.I([1]), _Ty.b, _Ty.F([1]), _Ty.F([1])])
             def range_body(iter_n, cond, i, j):
                 return (is_true,
                         i + i.ox.constant(value=1.0), j + 2.0, i, j)
@@ -57,5 +56,5 @@ class ONNXFunctionTest(unittest.TestCase):
 
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(ONNXFunctionTest)
-    #suite.debug()
+    # suite.debug()
     unittest.TextTestRunner().run(suite)
