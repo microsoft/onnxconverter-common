@@ -793,7 +793,10 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         extra_inputs.append(value_info)
 
     # enable the ONNX optimizations
-    nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    if container.enable_optimizer:
+        nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    else:
+        nodes = container.nodes
 
     # Create a graph from its main components
     if container.target_opset < 9:
