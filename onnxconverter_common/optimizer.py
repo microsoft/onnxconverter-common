@@ -915,20 +915,55 @@ def _is_good_for_match_shape(first_shape, second_shape):
     return first_shape == second_shape
 
 
+class MergeReshapeTransposeSolution(Solution):
+    init_number = 0
+
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        if self.end_p.is_reserved:
+            return None, False
+
+        n_tensors = self.begin_n.get_precedence_by_idx(1).tensors
+        reshape_value_0 = numpy_helper.to_array(n_tensors[0]).tolist()
+        cur_perm = Solution.get_perm(self.end_p.origin)
+        adjust_reshape = np.array([reshape_value_0[i_] for i_ in cur_perm], dtype=np.int64)
+
+        reshape_initilizer = numpy_helper.from_array(adjust_reshape, name=self.begin_n.origin.name + '_initializer_' + str(
+            MergeReshapeTransposeSolution.init_number))
+        MergeReshapeTransposeSolution.init_number += 1
+        self.begin_n.initializers = [reshape_initilizer]
+        prev = self.begin_n.get_precedence_by_idx(1)
+        prev.successor.remove(self.begin_n)
+        self.begin_n.precedence.remove(prev)
+        self.begin_n.in_redirect(self.begin_n.get_input_by_idx(1), reshape_initilizer.name)
+
+        node_list = Solution.delete_node_nto1(node_list, self.begin_n, self.end_p, self.end)
+        return node_list, True
+
+
 class MergeReshapeOptimizer(object):
     @staticmethod
     def find(node):
-        if node.origin.op_type == 'Reshape' and len(node.successor) == 1:
+        if node.origin.op_type == 'Reshape' and len(node.successor) == 1 and node.get_precedence_by_idx(1) is not None:
             n_tensors = node.get_precedence_by_idx(1).tensors
             if len(n_tensors) > 0:
                 reshape_value_0 = numpy_helper.to_array(n_tensors[0]).tolist()
                 next = node.successor[0]
-                if next.origin is not None and next.origin.op_type == 'Reshape':
-                    next_tensors = next.get_precedence_by_idx(1).tensors
-                    if len(next_tensors) > 0:
-                        reshape_value_1 = numpy_helper.to_array(next_tensors[0]).tolist()
-                        if _is_good_for_match_shape(reshape_value_0, reshape_value_1):
-                            solution = Solution(node.get_precedence_by_idx(0), node, next, next)
+                if next.origin is not None:
+                    if next.origin.op_type == 'Reshape' and next.get_precedence_by_idx(1) is not None:
+                        next_tensors = next.get_precedence_by_idx(1).tensors
+                        if len(next_tensors) > 0:
+                            reshape_value_1 = numpy_helper.to_array(next_tensors[0]).tolist()
+                            if _is_good_for_match_shape(reshape_value_0, reshape_value_1):
+                                solution = Solution(node.get_precedence_by_idx(0), node, next, next)
+                                return solution
+                    elif next.origin.op_type == 'Transpose' and len(next.successor) == 1:
+                        cur_perm = Solution.get_perm(next.origin)
+                        reshape_ones = np.count_nonzero(np.array(reshape_value_0) == 1)
+                        if reshape_value_0[0] == 0 and cur_perm[0] == 0 and reshape_ones + 2 == len(reshape_value_0):
+                            solution = MergeReshapeTransposeSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
                             return solution
 
         return None
