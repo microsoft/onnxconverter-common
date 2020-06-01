@@ -3,6 +3,7 @@ import numpy as np
 import onnxruntime as _ort
 from onnxconverter_common.onnx_fx import Graph
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
+from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 
 
 def _ort_inference(mdl, inputs):
@@ -15,6 +16,7 @@ Graph.opset = 9
 onnx_function = Graph.trace
 
 
+@unittest.skipIf(get_maximum_opset_supported() < 9, "onnx_fx only supports ONNX opset 9 and greater")
 class ONNXFunctionTest(unittest.TestCase):
     # this works, and the exported graph is usable:
     def test_core(self):
