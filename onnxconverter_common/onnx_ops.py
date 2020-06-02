@@ -769,15 +769,6 @@ def apply_relu(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Relu', input_name, output_name, container, operator_name)
 
 
-def apply_relu6(scope, input_name, output_name, container, operator_name=None, dtype=None):
-    name_relu = _create_name_or_use_existing_one(scope, 'relu', operator_name)
-    name_relu_op = _create_name_or_use_existing_one(scope, 'relu6', operator_name)
-    apply_relu(scope, input_name, name_relu, container, name_relu_op+'_relu')
-    value_6 = np.array(6, dtype=dtype)
-    value_0 = np.array(0, dtype=dtype)
-    apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', value_6, value_0)
-
-
 def apply_relu_6(scope, input_name, output_name, container, operator_name=None, zero_value=0.0):
     name_relu = _create_name_or_use_existing_one(scope, 'relu', operator_name)
     name_relu_op = _create_name_or_use_existing_one(scope, 'relu6', operator_name)
