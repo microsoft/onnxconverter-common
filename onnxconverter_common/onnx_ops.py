@@ -228,7 +228,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(min.shape) == 0:
                         min = [min]
                     elif min.shape == (1,):
-                        min = list(min[0])
+                        min = list(min[0]) if hasattr(min[0], '__iter__') else list(min)
                     else:
                         raise RuntimeError("min must be an array of one element.")
                 else:
@@ -259,7 +259,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(max.shape) == 0:
                         max = [max]
                     elif max.shape == (1,):
-                        max = list(max[0])
+                        max = list(max[0]) if hasattr(max[0], '__iter__') else [max]
                     else:
                         raise RuntimeError("max must be an array of one element.")
                 else:
@@ -776,6 +776,13 @@ def apply_relu6(scope, input_name, output_name, container, operator_name=None, d
     value_6 = np.array(6, dtype=dtype)
     value_0 = np.array(0, dtype=dtype)
     apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', value_6, value_0)
+
+
+def apply_relu_6(scope, input_name, output_name, container, operator_name=None, zero_value=0):
+    name_relu = _create_name_or_use_existing_one(scope, 'relu', operator_name)
+    name_relu_op = _create_name_or_use_existing_one(scope, 'relu6', operator_name)
+    apply_relu(scope, input_name, name_relu, container, name_relu_op+'_relu')
+    apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', zero_value+6, zero_value)
 
 
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
