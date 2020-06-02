@@ -64,6 +64,15 @@ class CommonSklearnModelContainer(RawModelContainer):
             self._outputs.append(variable)
 
 
+# in case some this oc-common pkg works with some older onnxmltools?
+class LightGbmModelContainer(CommonSklearnModelContainer):
+    pass
+
+
+class XGBoostModelContainer(CommonSklearnModelContainer):
+    pass
+
+
 class ModelComponentContainer(ModelContainer):
     '''
     In the conversion phase, this class is used to collect all materials required to build an ONNX GraphProto, which is

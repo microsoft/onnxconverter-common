@@ -54,6 +54,11 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
+      pip install flake8
+      python -m flake8 onnxconverter_common
+    displayName: 'run flake8 check'
+
+  - script: |
       python -c "import onnxconverter_common"
       pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
     displayName: 'pytest - onnxutils'
