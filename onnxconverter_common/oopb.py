@@ -127,8 +127,8 @@ class OnnxOperatorBuilder:
         if isinstance(value, np.ndarray):
             if atleast_1d:
                 value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
-            l = value.flatten().tolist()
-            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
+            lst = value.flatten().tolist()
+            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, lst)
         return value
 
     def add_node(self, op_type, inputs, name=None, outputs=None, op_domain='', op_version=None, **attrs):
@@ -332,8 +332,8 @@ class OnnxOperatorBuilder:
     def relu(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_relu, inputs, name, outputs)
 
-    def relu6(self, inputs, name=None, outputs=None, dtype=None):
-        return self.apply_op(onnx_ops.apply_relu6, inputs, name, outputs, dtype=dtype)
+    def relu_6(self, inputs, name=None, outputs=None, zero_value=0.0):
+        return self.apply_op(onnx_ops.apply_relu_6, inputs, name, outputs, zero_value=zero_value)
 
     def reshape(self, inputs, name=None, outputs=None, desired_shape=None):
         return self.apply_op(onnx_ops.apply_reshape, inputs, name, outputs, desired_shape=desired_shape)
