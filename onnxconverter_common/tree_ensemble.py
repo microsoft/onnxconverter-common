@@ -7,7 +7,7 @@
 Common functions to convert any learner based on trees.
 """
 
-from .registration import register_converter
+from .registration import register_converter  # noqa F401
 
 
 def get_default_tree_classifier_attribute_pairs():
