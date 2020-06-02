@@ -6,7 +6,7 @@
 # This file contains some high-level APIs for applying operations on variables specified by names. We should try our
 # best to use those functions because they can produce ONNX operators according to the ONNX version specified in the
 # `container` argument. Notice that those function behaviors are defined in a way very similar to ONNX-1.2.
-
+import warnings
 import numpy as np
 from onnx import onnx_pb as onnx_proto
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
@@ -776,6 +776,16 @@ def apply_relu_6(scope, input_name, output_name, container, operator_name=None, 
     apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', zero_value+6, zero_value)
 
 
+def apply_relu6(scope, input_name, output_name, container, operator_name=None, dtype=None):
+    warnings.warn("apply_relu6 will be removed in version 1.8.0", DeprecationWarning)
+    name_relu = _create_name_or_use_existing_one(scope, 'relu', operator_name)
+    name_relu_op = _create_name_or_use_existing_one(scope, 'relu6', operator_name)
+    apply_relu(scope, input_name, name_relu, container, name_relu_op+'_relu')
+    value_6 = np.array(6, dtype=dtype)
+    value_0 = np.array(0, dtype=dtype)
+    apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', value_6, value_0)
+
+    
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
     if not isinstance(desired_shape, str) and len(list(i for i in desired_shape if i is not None and i < 0)) > 1:
         raise ValueError('There can only be one -1 in the targeted shape of a Reshape but got %s' % desired_shape)
