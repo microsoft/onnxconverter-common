@@ -57,7 +57,7 @@ jobs:
   - script: |
       call activate py$(python.version)
       pip install flake8
-      python -m flake8 onnxmltools
+      python -m flake8 onnxconverter_common
     displayName: 'run flake8 check'
 
   - script: |
