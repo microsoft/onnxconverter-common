@@ -259,7 +259,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(max.shape) == 0:
                         max = [max]
                     elif max.shape == (1,):
-                        max = list(max[0]) if hasattr(max[0], '__iter__') else [max]
+                        max = list(max[0]) if hasattr(max[0], '__iter__') else list(max)
                     else:
                         raise RuntimeError("max must be an array of one element.")
                 else:
