@@ -332,8 +332,8 @@ class OnnxOperatorBuilder:
     def relu(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_relu, inputs, name, outputs)
 
-    def relu6(self, inputs, name=None, outputs=None, dtype=None):
-        return self.apply_op(onnx_ops.apply_relu6, inputs, name, outputs, dtype=dtype)
+    def relu_6(self, inputs, name=None, outputs=None, zero_value=0.0):
+        return self.apply_op(onnx_ops.apply_relu_6, inputs, name, outputs, zero_value=zero_value)
 
     def reshape(self, inputs, name=None, outputs=None, desired_shape=None):
         return self.apply_op(onnx_ops.apply_reshape, inputs, name, outputs, desired_shape=desired_shape)
