@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-# The codegen script to build oopb opset functions
-
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+###############################################################################
 import copy
 import onnx
-import onnxruntime as ort
+import logging
 import numpy as np
 
-from onnx import helper
-from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
-from onnxconverter_common.registration import register_converter
-from onnxconverter_common.topology import Topology, convert_topology
-from onnxconverter_common.oopb import OnnxOperatorBuilder
-from onnxconverter_common.data_types import (DoubleTensorType, FloatTensorType,
-                                             Int64TensorType, Int32TensorType, BooleanTensorType)
-from onnxconverter_common import onnx_ops
+from . import onnx_ops
+from .registration import register_converter
+from .topology import Topology, convert_topology
+from .oopb import OnnxOperatorBuilder
+from .onnx_ex import get_maximum_opset_supported
+from .data_types import (DoubleTensorType, FloatTensorType,
+                         Int64TensorType, Int32TensorType, BooleanTensorType)
+
+_logger = logging.getLogger(__name__)
 
 
 class GraphFunctionType:
@@ -31,9 +34,9 @@ class GraphFunctionType:
 
 
 def _get_python_function_arguments(f):
-    '''
+    """
     Helper to get the parameter names and annotations of a Python function.
-    '''
+    """
     # Note that we only return non-optional arguments (we assume that any optional args are not specified).
     # This allows to, e.g., accept max(a, b, *more, name='') as a binary function
     from inspect import getfullargspec
@@ -43,28 +46,45 @@ def _get_python_function_arguments(f):
     # "if this tuple has n elements, they correspond to the last n elements listed in args"
     defaults = param_specs.defaults
     if defaults:
-        # we allow Function(functions with default arguments), but those args will always have default values since CNTK Functions do not support this
+        # we allow Function(functions with default arguments),
+        # but those args will always have default values since CNTK Functions do not support this
         arg_names = arg_names[:-len(defaults)]
-    return (arg_names, annotations)
+    return arg_names, annotations
 
 
-def _to_list(element_or_list):
-    if element_or_list is None:
-        return []
-
-    return element_or_list if isinstance(
-        element_or_list, (list, tuple)) else [element_or_list]
+class _SimpleRawModelContainer(object):
+    def __init__(self, inputs, outputs):
+        self.input_names = inputs
+        self.output_names = outputs
 
 
 class Graph:
     """
     The ONNX Graph build from a python function, or load it from an ONNX object
     """
+    opset = get_maximum_opset_supported()
 
-    def __init__(self, name, oxml, inputs, outputs):
+    inference_runtime = None
+
+    def __init__(self, name):
+        self._name = name
+        self._oxml = None
+        self._onnxfunc = None
+        self._onnxfunc_args = []
+        self._onnxfunc_kwargs = {}
+
+    @property
+    def oxml(self):
+        if self._oxml is None:
+            self._defer_building()
+        return self._oxml
+
+    @property
+    def name(self):
+        return self._name
+
+    def _bind(self, oxml, inputs, outputs):
         ox_graph = oxml.graph
-        if name is None:
-            name = ox_graph.name
         initializer_set = {
             initializer.name for initializer in ox_graph.initializer}
         model_inputs = [
@@ -75,28 +95,26 @@ class Graph:
         else:
             assert {input for input in inputs} == {
                 input for input in
-                model_inputs}, f"User-specified set of inputs ({', '.join(inputs)}) to {name} does not match actual set ({', '.join(model_inputs)})"
+                model_inputs}, "User-specified set of inputs does not match actual set"
         if outputs is None:
             outputs = model_outputs
         else:
             assert {output for output in outputs} == {
                 output for output in
-                model_outputs}, f"User-specified set of outputs ({', '.join(outputs)}) to {name} does not match actual set ({', '.join(model_outputs)})"
-        print(f"Graph: {name}({', '.join(inputs)}) -> {', '.join(outputs)}")
-        self._name = name
+                model_outputs}, "User-specified set of outputs does not match actual set"
         self._oxml = oxml
         self._inputs = inputs
         self._outputs = outputs
-        self._sess = None
-        self._sess_options = None
 
-    @property
-    def oxml(self):
-        return self._oxml
-
-    @property
-    def name(self):
-        return self._name
+    @staticmethod
+    def _create(func, *args, **kwargs):
+        name = kwargs.get('name', None)
+        f_name = name or func.__name__
+        graph = Graph(f_name)
+        graph._onnxfunc = func
+        graph._onnxfunc_args = args
+        graph._onnxfunc_kwargs = kwargs
+        return graph
 
     @staticmethod
     def trace(*args, **kwargs):
@@ -107,74 +125,79 @@ class Graph:
             ...
         """
         if len(args) > 0 and hasattr(args[0], '__call__'):  # first arg is function
-            return Graph._to_Graph(args[0])
+            return Graph._create(args[0])
         else:
-            return lambda f: Graph._to_Graph(f, *args, **kwargs)
+            return lambda f: Graph._create(f, *args, **kwargs)
 
     @staticmethod
-    def _to_Graph(f, op_name=None, input_types=None, output_types=None, outputs=None, name=None):
-        assert outputs is not None, "outputs has to be specified."
-        input_types = _to_list(input_types)
-        output_types = _to_list(output_types)
-        outputs = _to_list(outputs)
+    def _to_list(element_or_list):
+        if element_or_list is None:
+            return []
 
-        f_name = f.__name__
+        return element_or_list if isinstance(
+            element_or_list, (list, tuple)) else [element_or_list]
+
+    @staticmethod
+    def _on_conversion(scope, operator, container):
+        with OnnxOperatorBuilderX(container, scope).as_default(operator.full_name) as ox:  # type: OnnxOperatorBuilderX
+            f = operator.raw_operator
+            # if ox.upper_context is not None:
+            #     container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
+            container.enable_optimizer = False
+            fn_inputs = [ox.arg(arg_name) for arg_name in operator.input_full_names]
+            f_outputs = f(*fn_inputs)
+            outputs = operator.output_full_names
+            if outputs:
+                if isinstance(f_outputs, Tensor):
+                    f_outputs = ox.identity([f_outputs], outputs=outputs)
+                    n_outputs = 1
+                else:
+                    f_outputs = [ox.identity([f_output], outputs=[output_name])
+                                 for f_output, output_name in zip(f_outputs, outputs)]
+                    n_outputs = len(f_outputs)
+            assert n_outputs == len(
+                outputs), "Function {}() returned {} but {} were declared".format(
+                operator.full_name, n_outputs, len(outputs))
+
+    def _build_graph(self, f, input_types=None, output_types=None, outputs=None):
+        input_types = Graph._to_list(input_types)
+        output_types = Graph._to_list(output_types)
+        outputs = Graph._to_list(outputs)
+        if not outputs:
+            outputs.append(f.__name__)
+
+        f_name = self._name
         arg_names, _ = _get_python_function_arguments(f)
-
-        class _SimpleRawModelContainer(object):
-            def __init__(self, inputs, outputs):
-                self.input_names = inputs
-                self.output_names = outputs
-
         raw_model = _SimpleRawModelContainer(arg_names, outputs)
         topo = Topology(raw_model)
         top_level = topo.declare_scope(f_name)
-
-        inputs = None
-        f_outputs = None
-
-        def on_conversion(scope, operator, container):
-            nonlocal inputs
-            nonlocal f_outputs
-            with OnnxOperatorBuilderX(container, scope).as_default(f_name) as ox:  # type: OnnxOperatorBuilderX
-                # if ox.upper_context is not None:
-                #     container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
-                container.enable_optimizer = False
-                inputs = [ox.arg(arg_name) for arg_name in arg_names]
-                f_outputs = f(*inputs)
-                if outputs:
-                    if isinstance(f_outputs, Tensor):
-                        f_outputs = ox.identity([f_outputs], outputs=outputs)
-                        n_outputs = 1
-                    else:
-                        f_outputs = [ox.identity([f_output], outputs=[output_name])
-                                     for f_output, output_name in zip(f_outputs, outputs)]
-                        n_outputs = len(f_outputs)
-                assert n_outputs == len(
-                    outputs), f"Function {f_name}() returned {n_outputs} but {len(outputs)} were declared"
-
         graph_opname = f_name
-        register_converter(graph_opname, on_conversion, overwrite=True)
-        top_level.declare_local_operator(graph_opname)
+        op_whole = top_level.declare_local_operator(graph_opname, f)
+        register_converter(op_whole.type, type(self)._on_conversion, overwrite=True)
         for i_ in raw_model.input_names:
-            top_level.get_local_variable_or_declare_one(i_,
-                                                        FloatTensorType(shape=[1]) if not input_types else input_types[
-                                                            arg_names.index(i_)])
+            vi_ = top_level.get_local_variable_or_declare_one(i_,
+                                                              FloatTensorType(shape=[None]) if not input_types else
+                                                              input_types[
+                                                                  arg_names.index(i_)])
+            op_whole.inputs.append(vi_)
         for o_ in raw_model.output_names:
-            top_level.get_local_variable_or_declare_one(o_, FloatTensorType(shape=[1]) if not output_types else
-            output_types[outputs.index(o_)])
+            vo_ = top_level.get_local_variable_or_declare_one(o_,
+                                                              FloatTensorType(shape=[None]) if not output_types else
+                                                              output_types[outputs.index(o_)])
+            op_whole.outputs.append(vo_)
 
-        oxml = convert_topology(topo, f_name, "doc_string", target_opset=9)
-        return Graph(name=f_name, oxml=oxml, inputs=arg_names, outputs=outputs)
+        oxml = convert_topology(topo, f_name, "onnx.fn: {}".format(f_name), target_opset=Graph.opset)
+        self._bind(oxml, arg_names, outputs)
+        return self
 
     @staticmethod
     def _map_function_arguments(params, params_set, *args, **kwargs):
-        '''
+        """
         Helper to determine the argument map for use with various call operations.
         Returns a dictionary from parameters to whatever arguments are passed.
         Accepted are both positional and keyword arguments.
         This mimics Python's argument interpretation, except that keyword arguments are not optional.
-        '''
+        """
         # start with positional arguments
         arg_map = dict(zip(params, args))
 
@@ -190,14 +213,18 @@ class Graph:
 
         return arg_map
 
+    def _defer_building(self):
+        if self._oxml is None:
+            self._build_graph(self._onnxfunc, *self._onnxfunc_args, **self._onnxfunc_kwargs)
+
     def _argument_map(self, *args, **kwargs):
-        '''
+        """
         Determines the {placeholder: variable} map for use with various call operations
         Returns a dictionary from this function's placeholders to whatever arguments are passed.
         Accepted are both positional and keyword arguments.
         This mimics Python's argument interpretation, except that keyword arguments are not optional
         (there is no concept of default value).
-        '''
+        """
         params = self._inputs
         if len(args) + len(kwargs) != len(params):
             raise TypeError("Graph invocation expected {} arguments, got {}".format(
@@ -205,15 +232,8 @@ class Graph:
         params_set = {arg for arg in params}
         return Graph._map_function_arguments(params, params_set, *args, **kwargs)
 
-    def _lazy_load_sess(self):
-        if self._sess == None:  # This requires an ORT session, which we create lazily and keep around for future calls.
-            self._sess = ort.InferenceSession(self._oxml.SerializeToString(), self._sess_options)
-            def format_var(var):
-                return f"{var.name}: {var.type}{var.shape}"
-            print(f"Session: {self._name}({', '.join(format_var(input) for input in self._sess.get_inputs())})",
-                    f"-> {', '.join(format_var(output) for output in self._sess.get_outputs())}")
-
     def __call__(self, *args, **kwargs):
+        self._defer_building()
         # parse argument list and map to the function's input
         arg_map = self._argument_map(*args, **kwargs)
         # determine whether this is eval() or clone()
@@ -223,58 +243,24 @@ class Graph:
             ox = first_arg.ox
             output_map = {output: None for output in self._outputs}
             # @TODO: outputs missing
-            return ox.apply_invoke_inline(self._oxml.graph, arg_map, output_map)
+            return ox.apply_invoke_inline(self.oxml.graph, arg_map, output_map)
         else:
+            assert Graph.inference_runtime is not None, "No inference runtime has been provided."
             # evaluate with real values
             kwargs = {name: OnnxOperatorBuilderX.value_to_ndarray(val) for name, val in arg_map.items()}
-            self._lazy_load_sess()
-            res = self._sess.run(None, kwargs)
-            if len(res) == 1:
-                return res[0]
-            else:
-                return tuple(res)
+            return Graph.inference_runtime(self.oxml, kwargs)
 
-    def save(self, path, save_as_text=False):
-        if self._oxml.opset_import[0].version < 7:  # @WORKAROUND: lower versions will crash onnxruntime upon load
-            self._oxml.opset_import[0].version = 7
-        # print("Model:")
-        # print("--- opset_import:", self._oxml.opset_import[0])
-        # print("--- inputs:", self._oxml.graph.input)
-        # print("--- outputs:", self._oxml.graph.output)
-        # print("--- nodes:", self._oxml.graph.node)
-        onnx.save_model(self._oxml, path)
-        if save_as_text:  # for diagnostics
-            print("Saving as text: ", path + ".txt")
-            with open(path + ".txt", "wt") as f:
-                print(self._oxml, file=f)
-            print("Done saving as text")
-
-        # check the model
-        # onnx.checker.check_model(self._oxml)
-        try:
-            import onnxruntime as _ort
-            _ort.InferenceSession(self._oxml.SerializeToString())
-        except Exception as e:
-            print(e)
-        print(f"{path} saved!")
-
-    def set_sess_options(self, sess_options):
-        """
-        This sets session options when this Graph is used for evaluation.
-        Currently used for constraining to a single CPU for benchmarking.
-        """
-        self._sess_options = sess_options
-        self._sess = None  # clear the cached object, as it likely has different options
-        self._lazy_load_sess()
+    def save(self, path):
+        onnx.save_model(self.oxml, path)
 
     @staticmethod
     def load(path, name=None, inputs=None, outputs=None):
         """
         Construct a Graph object by loading an ONNX model.
         """
-        print("Loading ONNX model:", path)
-        g = Graph(name=name, oxml=onnx.load_model(path), inputs=inputs, outputs=outputs)
-        g._lazy_load_sess()  # for diagnostics: This shows the shapes.
+        oxml = onnx.load_model(path)
+        g = Graph(name or oxml.graph.name)
+        g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
 
 
@@ -283,12 +269,12 @@ class Tensor(object):
         self.name = tensor_name
         self.ox = ox
 
-    def _to_binary_tensor_args(self,
-                               other):  # convert self, other to [self, other], but if either is a number, convert that to a constant
+    def _to_binary_tensor_args(self, other):
+        # convert self, other to [self, other], but if either is a number, convert that to a constant
         x, y = self, other
-        if (isinstance(y, (int, float, bool, np.ndarray))):
+        if isinstance(y, (int, float, bool, np.ndarray)):
             y = self.ox.constant(value=y)
-        elif (isinstance(x, (int, float, bool, np.ndarray))):
+        elif isinstance(x, (int, float, bool, np.ndarray)):
             x = self.ox.constant(value=x)
         return [x, y]
 
@@ -332,7 +318,7 @@ class Tensor(object):
         return self.ox.neg([self])
 
     def __not__(self):
-       return self.ox.not_([self])
+        return self.ox.not_op([self])
 
     def __getitem__(self, indices):
         # normalize indices to tuples of slices
@@ -347,7 +333,7 @@ class Tensor(object):
             index if isinstance(index, slice) else slice(index, index + 1 if index != -1 else None, 1) for index in
             indices)  # make all tuple items of type Slice
         bs, es, ss, ds = [], [], [], []
-        INT_MAX = 2 ** 63 - 1  # @TODO: Is this MAX_INT according to the ONNX spec?
+        INT_MAX = 2 ** 63 - 1
         for axis, index in enumerate(indices):
             if not isinstance(index, slice):
                 raise ValueError("Index expected")
@@ -421,7 +407,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         for graph_input in input_map.keys():
             input_map[graph_input] = self._process_inputs(
                 [input_map[graph_input].name], name=f_name)[0]
-        print(f_name, input_map, output_map)
+        _logger.debug(f_name, input_map, output_map)
 
         existing_node_names = {item.name: item for item in self._container.nodes}
         existing_initializer_names = {item.name: item for item in self._container.initializers}
@@ -446,7 +432,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         def map_tensors(args, arg_map):
             for i in range(len(args)):
                 if args[i] in arg_map:
-                    print("Remapping", args[i], "to", arg_map[args[i]])
+                    _logger.debug("Remapping", args[i], "to", arg_map[args[i]])
                     args[i] = arg_map[args[i]]
 
         for node in ox_graph.node:
@@ -460,122 +446,35 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
                 str_node = str(node)
                 str_other = str(existing_node_names[node.name])
                 if str_node != str_other:  # must be the samem, otherwise we have inconsistent dups, e.g. in input models
-                    print("Duplicate node name with inconsistent nodes:\n", node, "vs:\n",
+                    _logger.info("Duplicate node name with inconsistent nodes:\n", node, "vs:\n",
                           existing_node_names[node.name])
                     assert str_node == str_other
                 continue
             self._container.nodes.append(node)
         for initializer in ox_graph.initializer:
             if initializer.name in existing_initializer_names:  # @TODO: check if they are the same
-                print("Duplicate initializer name skipped:", initializer.name)
+                _logger.info("Duplicate initializer name skipped:", initializer.name)
                 continue
             if initializer.name in output_map:  # technically, the whole function could be a lonely initializer
-                # print("Replacing:", initializer.name, initializer.shape)
+                # _logger.debug("Replacing:", initializer.name, initializer.shape)
                 initializer = copy.deepcopy(initializer)
                 initializer.name = output_map[initializer.name]
-            # print(initializer.name)
+            # _logger.debug(initializer.name)
             self._container.initializers.append(initializer)
         for value_info in ox_graph.value_info:
             if value_info.name in existing_value_infos:  # @TODO: check if they are the same
-                print("Duplicate value_info name skipped:", value_info.name)
+                _logger.info("Duplicate value_info name skipped:", value_info.name)
                 continue
             # @TODO: Not sure what must be mapped, and how
-            print(value_info)
+            _logger.debug(value_info)
             self._container.value_info.append(value_info)
         return self._output_names_to_tensors(outputs)  # note: outputs is either a string or a list of strings
-    
-    @staticmethod
-    def value_to_ndarray(value):
-        if isinstance(value, (int, float, bool)):
-            ty = np.int64
-            if isinstance(value, float):
-                ty = np.float32
-            elif isinstance(value, bool):
-                ty = np.bool
-            else:
-                pass
-            value = np.array(value).astype(ty)
-        return value
-
-    def _value_to_tensor(self, value, name, atleast_1d=False):
-        value = OnnxOperatorBuilderX.value_to_ndarray(value)
-        if isinstance(value, np.ndarray):
-            if atleast_1d:
-                value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
-            l = value.flatten().tolist()
-            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
-        return value
-
-    def constant(self, name=None, value=None, outputs=None):  # override!
-        if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
-            name = onnx_ops._create_name_or_use_existing_one(self._scope, self._generate_name("constant", name), None)
-        assert value is not None
-        value = self._value_to_tensor(value, name)
-        return self._output_names_to_tensors(super().constant(name, value, outputs=[name]))[
-            0]  # strip an extra level of list()
 
     def arg(self, name):
         """
         Use this to create a function argument
         """
         return Tensor(name, self)
-
-    # @TODO: make these proper ops
-    def shape(self, inputs, name=None, outputs=None):
-        return self.apply_op(lambda scope, input_name, output_name, container, operator_name=None:
-                             onnx_ops._apply_unary_operation(scope, 'Shape', input_name, output_name, container,
-                                                             operator_name=operator_name),
-                             inputs, name, outputs)
-
-    def constant_of_shape(self, inputs, name=None, value=None):
-        if name is None:  # @BUGBUG: Somehow, constant() does not accept None...??
-            name = self._generate_name("constant_of_shape", name)
-        assert value is not None
-        if not isinstance(value, (int, float, bool)):
-            raise ValueError("constant_of_shape requires 'value' to be a scalar")
-        value = self._value_to_tensor(value, name, atleast_1d=True)
-
-        def apply_constant_of_shape(scope, input_names, output_names, container, operator_name=None, output_seq=0,
-                                    **attrs):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
-            attrs['value'] = value
-            container.add_node('ConstantOfShape', input_names, output_names, name=name, op_version=9, **attrs)
-
-        return self.apply_op(apply_constant_of_shape, inputs, name, None)
-
-    def slice(self, inputs, starts, ends, name=None, outputs=None, axes=None, steps=None):
-        def apply_slice(scope, input_names, output_names, container, operator_name=None, output_seq=0, **attrs):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'Slice', operator_name)
-            attrs['starts'] = starts
-            attrs['ends'] = ends
-            if axes:
-                attrs['axes'] = axes
-            if steps and any(step != 1 for step in steps):
-                attrs['steps'] = steps  # @BUGBUG: This does not seem to get recognized
-            container.add_node('Slice', input_names, output_names, name=name, op_version=9, **attrs)
-
-        return self.apply_op(apply_slice, inputs, name, None)
-
-    def equal(self, inputs, name=None, outputs=None):
-        def apply_equal(scope, input_names, output_name, container, operator_name=None):
-            name = onnx_ops._create_name_or_use_existing_one(scope, 'equal', operator_name)
-            if container.target_opset < 7:
-                op_version = 1
-            elif container.target_opset < 9:
-                op_version = 7
-            else:
-                op_version = 9
-            container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
-        return self.apply_op(apply_equal, inputs, name, outputs)
-
-    def not_(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        def apply_not(scope, input_name, output_name, container, operator_name=None, axis=None, broadcast=None):
-            onnx_ops._apply_unary_operation(scope, 'Not', input_name, output_name, container, operator_name)
-        return self.apply_op(apply_not, inputs, name, outputs, axis=axis, broadcast=broadcast)
-
-    def apply_tensor(self, func, inputs, output):
-        func(self, inputs, outputs=[output])
-        return output
 
     # @TODO?: Should we follow the conventions in the spec? loop(self, count, cond, inputs, body)
     def loop(self, count, cond, body, inputs, outputs=None, name=None):
