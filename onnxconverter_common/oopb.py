@@ -127,8 +127,8 @@ class OnnxOperatorBuilder:
         if isinstance(value, np.ndarray):
             if atleast_1d:
                 value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
-            l = value.flatten().tolist()
-            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, l)
+            lst = value.flatten().tolist()
+            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, lst)
         return value
 
     def add_node(self, op_type, inputs, name=None, outputs=None, op_domain='', op_version=None, **attrs):
