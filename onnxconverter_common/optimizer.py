@@ -1053,7 +1053,11 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     return node
 
 
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add', 'Mul'}
+_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
+_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus',
+                         'Softsign', 'Tanh']
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Reshape', 'Add', 'Mul'}
+_broadcast_flip_whitelist.update(_activation_node_type)
 
 
 def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
@@ -1326,11 +1330,6 @@ class PushTransposeSolution(Solution):
 
         node_list = Solution.delete_node_1ton(node_list, self.begin, self.begin_n, self.end_p)
         return node_list, True
-
-
-_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
-_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus',
-                         'Softsign', 'Tanh']
 
 
 class PushTransposeOptimizer(object):
