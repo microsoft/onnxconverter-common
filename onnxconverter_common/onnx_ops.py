@@ -563,7 +563,7 @@ def apply_inverse(scope, input_name, output_name, container, operator_name=None)
     container.add_node('Inverse', input_name, output_name, name=name, op_version=op_version)
 
 
-def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
+def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=0.2):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
 
 
