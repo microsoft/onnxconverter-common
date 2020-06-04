@@ -952,8 +952,8 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
 
 def apply_slice2(scope, input_name, output_name, container,
                  operator_name=None, starts=None, ends=None, axes=None, steps=None):
-    assert starts is None, 'the starts in slice op cannot be None'
-    assert ends is None, 'the ends in slice op cannot be None'
+    assert starts is not None, 'the starts in slice op cannot be None'
+    assert ends is not None, 'the ends in slice op cannot be None'
     return apply_slice(scope, input_name, output_name, container, starts, ends,
                        axes, steps, operator_name)
 
