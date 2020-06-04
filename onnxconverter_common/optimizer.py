@@ -11,6 +11,7 @@ from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedd
 
 reserved_names_in_graph = frozenset()
 
+
 class LinkedNode(object):
     UNIQUE_NAME_INDEX = 0
 
@@ -52,8 +53,8 @@ class LinkedNode(object):
         """
         Test if a node is not linking to any fan in or out node.
         """
-        return len(self.successor) == 1 and not self.successor[0].in_or_out and \
-               len(self.precedence) == 1
+        return (len(self.successor) == 1 and not self.successor[0].in_or_out and
+                len(self.precedence) == 1)
 
     @property
     def in_single_path_to_output(self):
@@ -77,24 +78,25 @@ class LinkedNode(object):
         """
         Test if a node is not linking to any fan in or out node.
         """
-        return len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and \
-               len(self.precedence) == 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out
+        return (len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and
+                len(self.precedence) == 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out)
 
     @property
     def in_simo_and_inner(self):
         """
         Test if a node is simo: single input and multiple output
         """
-        return len(self.successor) > 1 and self.successor[0] is not None and not self.successor[0].in_or_out and \
-               len(self.precedence) == 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out
+        return (len(self.successor) > 1 and self.successor[0] is not None and not self.successor[0].in_or_out and
+                len(self.precedence) == 1 and self.precedence[0] is not None and not self.precedence[0].in_or_out)
 
     @property
     def in_miso_and_inner(self):
         """
         Test if a node is miso: multiple input and single output
         """
-        return len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and \
-               len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.get_precedence_by_idx(0).in_or_out
+        return (len(self.successor) == 1 and self.successor[0] is not None and not self.successor[0].in_or_out and
+                len(self.precedence) > 1 and self.get_precedence_by_idx(
+                    0) is not None and not self.get_precedence_by_idx(0).in_or_out)
 
     @property
     def in_mi_and_inner(self):
@@ -106,8 +108,9 @@ class LinkedNode(object):
         for pre_ in self.precedence:
             if len(pre_.successor) > 1:
                 return False
-        return len(self.successor) >= 1 and \
-               len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.successor[0].in_or_out
+        return (len(self.successor) >= 1 and
+                len(self.precedence) > 1 and self.get_precedence_by_idx(0) is not None and not self.successor[
+                    0].in_or_out)
 
     @property
     def is_eligible_concat_and_inner(self):
@@ -278,7 +281,6 @@ class LinkedNode(object):
         pre.successor.append(self)
         assert tname in self.input.values() and tname in pre.output.values()
 
-
     @staticmethod
     def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None):
         view = []
@@ -294,14 +296,15 @@ class LinkedNode(object):
         count_nchw = 0
         initializer_map = None
         if initializers is not None:
-            initializer_map = {k.name:k for k in initializers}
+            initializer_map = {k.name: k for k in initializers}
         for n_ in view:
             for var_ in n_.origin.input:
                 target = var_map.get(var_)
                 if target is None:
                     assert var_ == '' or var_ in inputs
                     if initializer_map is not None and var_ in initializer_map:
-                        target = LinkedNode(out_n=[var_], tensors_n=[initializer_map[var_]])  # create an empty node as input
+                        target = LinkedNode(out_n=[var_],
+                                            tensors_n=[initializer_map[var_]])  # create an empty node as input
                     else:
                         target = LinkedNode(out_n=[var_])
                     new_output = var_ + '_nhwc'
@@ -352,7 +355,8 @@ class LinkedNode(object):
             if output_list is not None and output_list:
                 output_list_str = ", ".join(output_list)
             print(
-                "Node origin name: " + n_.origin.name + ", Input id: " + input_list_str + ", Output id: " + output_list_str)
+                "Node origin name: " + n_.origin.name +
+                ", Input id: " + input_list_str + ", Output id: " + output_list_str)
 
 
 class Solution(object):
@@ -398,7 +402,8 @@ class Solution(object):
         else:
             target_var_name = node.get_input_by_idx(0)
             for nb_ in begin:
-                assert target_var_name in nb_.output.values()  # since the output info never be updated, except the final.
+                # since the output info never be updated, except the final.
+                assert target_var_name in nb_.output.values()
                 end.in_redirect(node.single_output, target_var_name)
 
         for nb_ in begin:
@@ -676,7 +681,8 @@ class NextToOutputSolution(Solution):
                 find_begin_output = True
                 break
         if not find_begin_output:
-            raise Exception("begin output is not found for NextToOutputSolution for tensor " + self.begin_n.single_output)
+            raise Exception(
+                "begin output is not found for NextToOutputSolution for tensor " + self.begin_n.single_output)
 
         node_list.remove(self.begin_n)
         return node_list, True
@@ -709,7 +715,7 @@ class ConvBatchNormSolution(Solution):
             return None, False
         conv_bias = (conv_ori_bias - mean) * adjusted_scale + B
 
-        conv_weight_name = self.begin_n.origin.name+'_W_new'
+        conv_weight_name = self.begin_n.origin.name + '_W_new'
         conv_weight_initilizer = numpy_helper.from_array(conv_weight, name=conv_weight_name)
         conv_bias_name = self.begin_n.origin.name + '_B_new'
         conv_bias_initilizer = numpy_helper.from_array(conv_bias, name=conv_bias_name)
@@ -766,7 +772,8 @@ class TransposeOptimizer(object):
                 else:
                     succ = node.successor[0]  # type: LinkedNode
                     while succ.in_single_path:
-                        if succ.is_transpose: break
+                        if succ.is_transpose:
+                            break
                         if succ.element_wise or succ.broadcast:
                             succ = succ.successor[0]
                         else:
@@ -930,8 +937,9 @@ class MergeReshapeTransposeSolution(Solution):
         cur_perm = Solution.get_perm(self.end_p.origin)
         adjust_reshape = np.array([reshape_value_0[i_] for i_ in cur_perm], dtype=np.int64)
 
-        reshape_initilizer = numpy_helper.from_array(adjust_reshape, name=self.begin_n.origin.name + '_initializer_' + str(
-            MergeReshapeTransposeSolution.init_number))
+        reshape_initilizer = numpy_helper.from_array(adjust_reshape,
+                                                     name=self.begin_n.origin.name + '_initializer_' + str(
+                                                         MergeReshapeTransposeSolution.init_number))
         MergeReshapeTransposeSolution.init_number += 1
         self.begin_n.initializers = [reshape_initilizer]
         prev = self.begin_n.get_precedence_by_idx(1)
@@ -963,7 +971,8 @@ class MergeReshapeOptimizer(object):
                         cur_perm = Solution.get_perm(next.origin)
                         reshape_ones = np.count_nonzero(np.array(reshape_value_0) == 1)
                         if reshape_value_0[0] == 0 and cur_perm[0] == 0 and reshape_ones + 2 == len(reshape_value_0):
-                            solution = MergeReshapeTransposeSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
+                            solution = MergeReshapeTransposeSolution(node.get_precedence_by_idx(0), node, next,
+                                                                     next.successor[0])
                             return solution
 
         return None
@@ -980,9 +989,10 @@ class MergeCastOptimizer(object):
             next = node.successor[0]
             if next.origin is not None and next.origin.op_type == 'Cast':
                 to_1 = next.get_attribute('to')
-                if to_0 in MergeCastOptimizer.to_priority_array \
-                    and to_1 in MergeCastOptimizer.to_priority_array \
-                    and MergeCastOptimizer.to_priority_array.index(to_0) > MergeCastOptimizer.to_priority_array.index(to_1):
+                if (to_0 in MergeCastOptimizer.to_priority_array
+                        and to_1 in MergeCastOptimizer.to_priority_array
+                        and MergeCastOptimizer.to_priority_array.index(
+                            to_0) > MergeCastOptimizer.to_priority_array.index(to_1)):
                     solution = Solution(node.get_precedence_by_idx(0), node, next, next)
                     return solution
 
@@ -1003,8 +1013,10 @@ class MergeSqueezeUnsqueezeOptimizer(object):
 
         return None
 
+
 _transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
 _broadcast_types = {'Add', 'Mul', 'PRelu'}
+
 
 def _transpose_pass(node):
     if node.origin is None:
@@ -1041,7 +1053,11 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
     return node
 
 
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Relu', 'Reshape', 'Add', 'Mul'}
+_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
+_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus',
+                         'Softsign', 'Tanh']
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Reshape', 'Add', 'Mul'}
+_broadcast_flip_whitelist.update(_activation_node_type)
 
 
 def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
@@ -1161,7 +1177,7 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
     sub_list = [0] * len(cur_perm)
     for axis in squeeze_axes:
         temp_perm.remove(axis)
-        for axis_sub_ in range(axis+1, len(cur_perm)):
+        for axis_sub_ in range(axis + 1, len(cur_perm)):
             sub_list[axis_sub_] = sub_list[axis_sub_] + 1
 
     for idx_ in range(len(temp_perm)):
@@ -1193,8 +1209,9 @@ def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_
 
 def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map):
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
-    add_initilizer = numpy_helper.from_array(np.asarray(cur_perm).astype(np.int64), name=node.origin.name + '_initializer_' + str(
-        PushTransposeSolution.transpose_number))
+    add_initilizer = numpy_helper.from_array(np.asarray(cur_perm).astype(np.int64),
+                                             name=node.origin.name + '_initializer_' + str(
+                                                 PushTransposeSolution.transpose_number))
     PushTransposeSolution.transpose_number += 1
     node.initializers = [add_initilizer]
     node.precedence.remove(node.get_precedence_by_idx(3))
@@ -1204,11 +1221,13 @@ def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm
 
 
 def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map):
-    type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze, 'Unsqueeze': _process_transpose_unsqueeze,
+    type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze,
+                     'Unsqueeze': _process_transpose_unsqueeze,
                      'Slice': _process_transpose_slice}
 
     if node.origin.op_type in _broadcast_types:
-        node_list, cur_perm_map = _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+        node_list, cur_perm_map = _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
+                                                                    cur_perm_map)
     elif node.origin.op_type in type_func_map:
         cur_perm_map = type_func_map[node.origin.op_type](node, node_list, node_transpose_pass_name, cur_perm_map)
     else:
@@ -1221,7 +1240,6 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
 
 
 class PushTransposeSolution(Solution):
-
     transpose_number = 0
 
     def __init__(self, begin, begin_n, end_p, end):
@@ -1276,7 +1294,8 @@ class PushTransposeSolution(Solution):
 
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
-            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map)
+            node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name,
+                                                                   cur_perm_map)
 
         for node_pair_ in node_transpose_no_pass:
             node = node_pair_[0]
@@ -1286,7 +1305,8 @@ class PushTransposeSolution(Solution):
                 for suc in successor_list:
                     if suc.origin is None:
                         output_name = list(prev.output.values())[0]
-                        push_transpose_in_node_output_name = 'push_transpose_out_' + str(PushTransposeSolution.transpose_number)
+                        push_transpose_in_node_output_name = 'push_transpose_out_' + str(
+                            PushTransposeSolution.transpose_number)
                         prev.out_redirect(output_name, push_transpose_in_node_output_name)
                         PushTransposeSolution.transpose_number += 1
                         for suc_2 in successor_list:
@@ -1312,11 +1332,9 @@ class PushTransposeSolution(Solution):
         return node_list, True
 
 
-_nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
-_activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus', 'Softsign', 'Tanh']
-
 class PushTransposeOptimizer(object):
     opt_number = 0
+
     @staticmethod
     def find(node):
         first_node_type = _nchw_input_node_type + _activation_node_type
@@ -1367,19 +1385,23 @@ class SwapOpOptimizer(object):
                 to_value = node.get_attribute('to')
                 if to_value == 1 and node.successor[0].in_single_path_and_inner \
                         and node.successor[0].origin.op_type in _move_cast_support_types:
-                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0],
+                                              node.successor[0].successor[0])
                     return solution
                 elif to_value in [6, 7] and node.precedence[0].in_single_path_and_inner \
                         and node.precedence[0].origin.op_type in _move_cast_support_types:
-                    solution = SwapOpSolution(node.precedence[0].precedence[0], node.precedence[0], node, node.successor[0])
+                    solution = SwapOpSolution(node.precedence[0].precedence[0], node.precedence[0], node,
+                                              node.successor[0])
                     return solution
 
             if node.origin.op_type in _activation_node_type:
                 if node.successor[0].in_single_path_and_inner \
                         and node.successor[0].origin.op_type in _move_cast_support_types:
-                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0], node.successor[0].successor[0])
+                    solution = SwapOpSolution(node.precedence[0], node, node.successor[0],
+                                              node.successor[0].successor[0])
                     return solution
-                elif node.successor[0].in_miso_and_inner and node.successor[0].origin.op_type in _move_cast_support_types:
+                elif (node.successor[0].in_miso_and_inner and
+                      node.successor[0].origin.op_type in _move_cast_support_types):
                     num_successor_inputs = len(node.successor[0].precedence)
                     all_initializers = True
                     for idx_ in range(1, num_successor_inputs):
@@ -1418,7 +1440,7 @@ class MergeCommonSequenceOptimizer(object):
     @staticmethod
     def find(node):
         succ_len = len(node.successor)
-        if node.origin is not None and  succ_len > 1:
+        if node.origin is not None and succ_len > 1:
             for idx_0 in range(succ_len):
                 succ_0 = node.successor[idx_0]
                 if succ_0.origin is None:
@@ -1650,7 +1672,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
 
     # When calling ModelComponentContainer's add_initializer(...), nothing is added into the input list.
     # However, In ONNX, for target opset < 9, initializers should also be model's (GraphProto) inputs.
-    # Thus, we create ValueInfoProto objects from initializers (type: TensorProto) directly and then add them into model's input list.
+    # Thus, we create ValueInfoProto objects from initializers (type: TensorProto) directly,
+    # ...and then add them into model's input list.
     extra_inputs = []  # ValueInfoProto list of the initializers
     for tensor in initializers:
         # Sometimes (especially when creating optional input values such as RNN's initial hidden state), an initializer

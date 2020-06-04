@@ -22,7 +22,7 @@ _logger = logging.getLogger(__name__)
 class GraphFunctionType:
     D = DoubleTensorType
     F = FloatTensorType
-    I = Int64TensorType
+    I = Int64TensorType  # noqa: E741 ambiguous variable name 'I'
     B = BooleanTensorType
     I32 = Int32TensorType
 
@@ -445,9 +445,10 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
             if node.name in existing_node_names:
                 str_node = str(node)
                 str_other = str(existing_node_names[node.name])
-                if str_node != str_other:  # must be the samem, otherwise we have inconsistent dups, e.g. in input models
+                if str_node != str_other:
+                    # must be the same, otherwise we have inconsistent dups, e.g. in input models
                     _logger.info("Duplicate node name with inconsistent nodes:\n", node, "vs:\n",
-                          existing_node_names[node.name])
+                                 existing_node_names[node.name])
                     assert str_node == str_other
                 continue
             self._container.nodes.append(node)

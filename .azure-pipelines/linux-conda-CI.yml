@@ -54,15 +54,9 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
-      pip install pandas
-      pip install skl2onnx --no-deps
-      pip install onnxruntime --no-deps
-    displayName: 'Install skl2onnx'
-    condition: ne(variables['python.version'], '2.7')
-
-  - script: |
-      pip install -e .
-    displayName: 'Install this'
+      pip install flake8
+      python -m flake8 onnxconverter_common
+    displayName: 'run flake8 check'
 
   - script: |
       python -c "import onnxconverter_common"

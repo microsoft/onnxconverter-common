@@ -965,7 +965,7 @@ def apply_slice2(scope, input_name, output_name, container,
     assert starts is None, 'the starts in slice op cannot be None'
     assert ends is None, 'the ends in slice op cannot be None'
     return apply_slice(scope, input_name, output_name, container, starts, ends,
-                       axes,steps, operator_name)
+                       axes, steps, operator_name)
 
 
 def apply_split(scope, input_name, output_names, container, operator_name=None, split=None, axis=0):
