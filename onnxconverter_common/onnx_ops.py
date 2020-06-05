@@ -563,7 +563,7 @@ def apply_inverse(scope, input_name, output_name, container, operator_name=None)
     container.add_node('Inverse', input_name, output_name, name=name, op_version=op_version)
 
 
-def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
+def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=0.01):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
 
 
@@ -962,8 +962,8 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
 
 def apply_slice2(scope, input_name, output_name, container,
                  operator_name=None, starts=None, ends=None, axes=None, steps=None):
-    assert starts is None, 'the starts in slice op cannot be None'
-    assert ends is None, 'the ends in slice op cannot be None'
+    assert starts is not None, 'the starts in slice op cannot be None'
+    assert ends is not None, 'the ends in slice op cannot be None'
     return apply_slice(scope, input_name, output_name, container, starts, ends,
                        axes, steps, operator_name)
 
