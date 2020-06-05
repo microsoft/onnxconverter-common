@@ -1664,7 +1664,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     :param outputs: the model output
     :param initializers: the model initializers
     :param model_value_info: the model value_info
-    :param model_name the internal name of model
+    :param model_name: the internal name of model
+    :param target_opset: the opset version of the model
     :return: the optimized onnx graph
     """
     if target_opset < 9:

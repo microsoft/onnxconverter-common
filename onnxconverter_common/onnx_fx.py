@@ -306,7 +306,7 @@ class Tensor(object):
         return self.ox.equal(self._to_binary_tensor_args(other))
 
     def __ne__(self, other):  # ONNX has no NotEqual
-        return self.ox.not_([self.ox.equal(self._to_binary_tensor_args(other))])
+        return self.ox.not_op([self.ox.equal(self._to_binary_tensor_args(other))])
 
     def __gt__(self, other):
         return self.ox.greater(self._to_binary_tensor_args(other))
