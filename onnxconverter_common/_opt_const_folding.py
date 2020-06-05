@@ -34,7 +34,7 @@ class OnnxGraphContext:
         func_name = '_On' + node.op_type
         func = type(self).__dict__.get(func_name, None)
         if func is None:
-            return False
+            return None
 
         inputs = []
         for ts_ in node.input:
@@ -200,6 +200,7 @@ def _dfs_calc(graph, node, reserved_names, node_status):
             "Assume only the generator operation node hasn't any inputs"
         if all(o_ not in reserved_names for o_ in node.output):
             graph.calculate(node)
+        node_status[node.name] = 0
         return 0
     else:
         calc_status = [0] * len(node.input)
