@@ -778,7 +778,7 @@ class TransposeOptimizer(object):
                             succ = succ.successor[0]
                         else:
                             break
-                    if succ.is_transpose:
+                    if succ.in_single_path and succ.is_transpose:
                         solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor[0])
                         return solution
 
