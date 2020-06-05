@@ -779,7 +779,7 @@ class TransposeOptimizer(object):
                         else:
                             break
                     if succ.is_transpose:
-                        solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor[0])
+                        solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor)
                         return solution
 
                 last_switchable = node
