@@ -30,6 +30,18 @@ class OnnxGraphContext:
             return helper.get_attribute_value(found[0])
         return default_value
 
+    @staticmethod
+    def get_attr_graph(node):
+        if node.op_type in ['Loop', 'Scan']:
+            inner_graph = OnnxGraphContext.get_attribute(node, 'body')
+            return {'body': inner_graph}
+        elif node.op_type in ['If']:
+            else_graph = OnnxGraphContext.get_attribute(node, 'else_branch')
+            then_graph = OnnxGraphContext.get_attribute(node, 'then_branch')
+            return {'else_branch': else_graph, 'then_branch': then_graph}
+        else:
+            return {}
+
     def calculate(self, node):
         func_name = '_On' + node.op_type
         func = type(self).__dict__.get(func_name, None)
@@ -178,15 +190,15 @@ def _fix_unamed_node(graph):
 
 
 def reserve_node_for_embedded_graph(graph):
-    # type: (onnx.GraphProto)->frozenset
+    # type: (onnx.GraphProto)->(onnx.GraphProto, frozenset)
     fixed_graph = _fix_unamed_node(graph)
     ginputs = []
     for nd_ in fixed_graph.node:
-        if nd_.op_type in ['Loop', 'Scan']:
-            inner_graph = OnnxGraphContext.get_attribute(nd_, 'body')
-            inner_inputs = frozenset([i_.name for i_ in inner_graph.input])
-            for sub_nd_ in inner_graph.node:
+        for _, subgraph_ in OnnxGraphContext.get_attr_graph(nd_).items():
+            inner_inputs = frozenset([i_.name for i_ in subgraph_.input])
+            for sub_nd_ in subgraph_.node:
                 ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
+    ginputs.append('Wemb')
     return fixed_graph, frozenset(ginputs)
 
 
@@ -196,10 +208,9 @@ def _dfs_calc(graph, node, reserved_names, node_status):
         return node_status[node.name]
 
     if len(node.input) == 0:
-        assert node.op_type in ['Constant', 'RandomNormal', 'RandomUniform'],\
+        assert node.op_type in ['Constant', 'RandomNormal', 'RandomUniform'], \
             "Assume only the generator operation node hasn't any inputs"
-        if all(o_ not in reserved_names for o_ in node.output):
-            graph.calculate(node)
+        graph.calculate(node)
         node_status[node.name] = 0
         return 0
     else:
@@ -233,7 +244,8 @@ def _remove_unused_initializers(nodes, initializers, reversed_names):
     for nd_ in nodes:
         nodes_input_set.update(n_ for n_ in nd_.input)
 
-    return [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
+    lst = [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
+    return [intlz_ for intlz_ in lst if intlz_.name != 'Wemb' or len(reversed_names) > 5]
 
 
 def const_folding_optimizer(graph):
@@ -257,4 +269,14 @@ def const_folding_optimizer(graph):
     graph.node.extend(new_nodes)
     del graph.initializer[:]
     graph.initializer.extend(pruned_initilizers)
+
+    for nd_ in graph.node:
+        for aname_, subgraph_ in OnnxGraphContext.get_attr_graph(nd_).items():
+            opt_inner_graph = const_folding_optimizer(subgraph_)
+            lst_attrs = list(nd_.attribute)
+            del nd_.attribute[:]
+            lst_attrs = [helper.make_attribute(aname_, opt_inner_graph) if
+                         attr.name == aname_ else attr for attr in lst_attrs]
+            nd_.attribute.extend(lst_attrs)
+
     return graph
