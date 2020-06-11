@@ -198,7 +198,6 @@ def reserve_node_for_embedded_graph(graph):
             inner_inputs = frozenset([i_.name for i_ in subgraph_.input])
             for sub_nd_ in subgraph_.node:
                 ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
-    ginputs.append('Wemb')
     return fixed_graph, frozenset(ginputs)
 
 
@@ -210,9 +209,11 @@ def _dfs_calc(graph, node, reserved_names, node_status):
     if len(node.input) == 0:
         assert node.op_type in ['Constant', 'RandomNormal', 'RandomUniform'], \
             "Assume only the generator operation node hasn't any inputs"
-        graph.calculate(node)
-        node_status[node.name] = 0
-        return 0
+        status = -1
+        if node.op_type == 'Constant':
+            graph.calculate(node)
+            node_status[node.name] = 0
+        return status
     else:
         calc_status = [0] * len(node.input)
         for idx_, ts_ in enumerate(node.input):
@@ -244,8 +245,7 @@ def _remove_unused_initializers(nodes, initializers, reversed_names):
     for nd_ in nodes:
         nodes_input_set.update(n_ for n_ in nd_.input)
 
-    lst = [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
-    return [intlz_ for intlz_ in lst if intlz_.name != 'Wemb' or len(reversed_names) > 5]
+    return [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
 
 
 def const_folding_optimizer(graph):
