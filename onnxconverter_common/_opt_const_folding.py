@@ -9,6 +9,8 @@ from onnx import numpy_helper, mapping, helper
 
 
 class OnnxGraphContext:
+    stopping_initializer = []
+
     def __init__(self, graph_proto):
         self.initializers = {ts_.name: ts_ for ts_ in graph_proto.initializer}
         # self.nodes = {nd_.name for nd_ in graph_proto.node}
@@ -198,6 +200,7 @@ def reserve_node_for_embedded_graph(graph):
             inner_inputs = frozenset([i_.name for i_ in subgraph_.input])
             for sub_nd_ in subgraph_.node:
                 ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
+    ginputs.extend(OnnxGraphContext.stopping_initializer)
     return fixed_graph, frozenset(ginputs)
 
 
@@ -240,16 +243,29 @@ def _dfs_calc(graph, node, reserved_names, node_status):
         return status
 
 
-def _remove_unused_initializers(nodes, initializers, reversed_names):
+def _is_initializer_existed(intlzer, initializers):
+    val = numpy_helper.to_array(intlzer)
+    for i_ in initializers:
+        if intlzer.name == i_.name:
+            if np.allclose(val, numpy_helper.to_array(i_)):
+                return True
+
+    return False
+
+
+def _remove_unused_initializers(nodes, initializers, reversed_names, outer_initializers=None):
     nodes_input_set = set()
     for nd_ in nodes:
         nodes_input_set.update(n_ for n_ in nd_.input)
 
-    return [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
+    lst = [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
+    if outer_initializers is not None:
+        return [intlz_ for intlz_ in lst if not _is_initializer_existed(intlz_, outer_initializers)]
+    return lst
 
 
-def const_folding_optimizer(graph):
-    # type: (onnx.GraphProto)->onnx.GraphProto
+def const_folding_optimizer(graph, outer_graph=None):
+    # type: (onnx.GraphProto, onnx.GraphProto)->onnx.GraphProto
     fixed_graph, reserved_names = reserve_node_for_embedded_graph(graph)
     opt_graph = OnnxGraphContext(fixed_graph)
     node_status = {}
@@ -264,7 +280,8 @@ def const_folding_optimizer(graph):
         return abs(node_status[nd_.name])
 
     new_nodes.sort(key=node_key)
-    pruned_initilizers = _remove_unused_initializers(new_nodes, graph.initializer, reserved_names)
+    pruned_initilizers = _remove_unused_initializers(new_nodes, graph.initializer, reserved_names,
+                                                     None if outer_graph is None else outer_graph.initializer)
     del graph.node[:]
     graph.node.extend(new_nodes)
     del graph.initializer[:]
@@ -272,7 +289,7 @@ def const_folding_optimizer(graph):
 
     for nd_ in graph.node:
         for aname_, subgraph_ in OnnxGraphContext.get_attr_graph(nd_).items():
-            opt_inner_graph = const_folding_optimizer(subgraph_)
+            opt_inner_graph = const_folding_optimizer(subgraph_, graph)
             lst_attrs = list(nd_.attribute)
             del nd_.attribute[:]
             lst_attrs = [helper.make_attribute(aname_, opt_inner_graph) if

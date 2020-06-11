@@ -1,9 +1,10 @@
 import unittest
 import numpy as np
 import onnxruntime as _ort
-from onnxconverter_common.onnx_fx import Graph
+from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
+from onnxconverter_common.optimizer import optimize_onnx_model
 
 
 def _ort_inference(mdl, inputs):
@@ -54,6 +55,23 @@ class ONNXFunctionTest(unittest.TestCase):
 
         self.assertEqual(
             loop_test(np.array([16], dtype=np.int64))[2][4], 3.0)
+
+    def test_matmul_opt(self):
+        @onnx_function(outputs=['z'],
+                       input_types=(_Ty.F([2, 1, 3, 2]), _Ty.F([3, 2])),
+                       output_types=[_Ty.F([1, 2, 3, 3])])
+        def transpose_n_matmul(x, y):
+            ox = x.ox  # type: OnnxOperatorBuilderX
+            a = ox.transpose(x, perm=[1, 0, 2, 3])
+            b = ox.transpose(y, perm=[1, 0])
+            return ox.matmul([a, b])
+
+        m1 = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 1, 3, 2])
+        m2 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([3, 2])
+        expected = transpose_n_matmul(m1, m2)
+        opted = optimize_onnx_model(transpose_n_matmul.oxml)
+        actual = _ort_inference(opted, {'x': m1, 'y': m2})
+        self.assertTrue(np.allclose(expected, actual), "The result mismatch")
 
 
 if __name__ == '__main__':
