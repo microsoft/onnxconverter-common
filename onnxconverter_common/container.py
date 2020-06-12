@@ -95,7 +95,7 @@ class ModelComponentContainer(ModelContainer):
         # ONNX nodes (type: NodeProto) used to define computation structure
         self.nodes = []
         # ONNX operators' domain-version pair set. They will be added into opset_import field in the final ONNX model.
-        self.node_domain_version_pair_sets = set()
+        self.node_domain_version_pair_sets = {('', target_opset)}
         # The targeted ONNX operator set (referred to as opset) that matches the ONNX version.
         self.target_opset = target_opset
         self.enable_optimizer = True

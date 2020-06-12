@@ -254,11 +254,11 @@ class Graph:
         onnx.save_model(self.oxml, path)
 
     @staticmethod
-    def load(path, name=None, inputs=None, outputs=None):
+    def load(path_or_model, name=None, inputs=None, outputs=None):
         """
         Construct a Graph object by loading an ONNX model.
         """
-        oxml = onnx.load_model(path)
+        oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
         g = Graph(name or oxml.graph.name)
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
