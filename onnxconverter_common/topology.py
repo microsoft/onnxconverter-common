@@ -774,6 +774,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         else:
             # Convert the selected operator into some ONNX objects and save them into the container
             get_converter(operator.type)(scope, operator, container)
+            container.node_domain_version_pair_sets.add(('', operator.target_opset))
 
     # When calling ModelComponentContainer's add_initializer(...), nothing is added into the input list.
     # However, for ONNX target opset < 9, initializers should also be model's (GraphProto) inputs.

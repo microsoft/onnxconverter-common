@@ -170,6 +170,7 @@ class Graph:
         arg_names, _ = _get_python_function_arguments(f)
         raw_model = _SimpleRawModelContainer(arg_names, outputs)
         topo = Topology(raw_model)
+        topo.target_opset = Graph.opset
         top_level = topo.declare_scope(f_name)
         graph_opname = f_name
         op_whole = top_level.declare_local_operator(graph_opname, f)
@@ -259,6 +260,10 @@ class Graph:
         Construct a Graph object by loading an ONNX model.
         """
         oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
+        for opset_import in oxml.opset_import:
+            if opset_import.domain == '':
+                Graph.opset = opset_import.version
+                break
         g = Graph(name or oxml.graph.name)
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
