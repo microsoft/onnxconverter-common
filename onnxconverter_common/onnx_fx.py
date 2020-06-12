@@ -263,6 +263,15 @@ class Graph:
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
 
+    @staticmethod
+    def load_oxml(oxml, name=None, inputs=None, outputs=None):
+        """
+        Construct a Graph object by loading an ONNX model.
+        """
+        g = Graph(name or oxml.graph.name)
+        g._bind(oxml, inputs=inputs, outputs=outputs)
+        return g
+
 
 class Tensor(object):
     def __init__(self, tensor_name: str, ox):
