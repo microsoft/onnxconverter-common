@@ -83,6 +83,10 @@ class Graph:
     def name(self):
         return self._name
 
+    def build_oxml(self):
+        self._build_graph(self._onnxfunc, *self._onnxfunc_args, **self._onnxfunc_kwargs)
+        return self._oxml
+
     def _bind(self, oxml, inputs, outputs):
         ox_graph = oxml.graph
         initializer_set = {
