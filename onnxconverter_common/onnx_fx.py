@@ -5,14 +5,15 @@
 ###############################################################################
 import copy
 import onnx
+from onnx import onnx_pb as onnx_proto
 import logging
 import numpy as np
 
-from . import onnx_ops
+from . import onnx_ops, utils
 from .registration import register_converter
 from .topology import Topology, convert_topology
 from .oopb import OnnxOperatorBuilder
-from .onnx_ex import get_maximum_opset_supported
+from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
 from .data_types import (DoubleTensorType, FloatTensorType,
                          Int64TensorType, Int32TensorType, BooleanTensorType)
 
@@ -170,7 +171,6 @@ class Graph:
         arg_names, _ = _get_python_function_arguments(f)
         raw_model = _SimpleRawModelContainer(arg_names, outputs)
         topo = Topology(raw_model)
-        topo.target_opset = Graph.opset
         top_level = topo.declare_scope(f_name)
         graph_opname = f_name
         op_whole = top_level.declare_local_operator(graph_opname, f)
@@ -188,6 +188,13 @@ class Graph:
             op_whole.outputs.append(vo_)
 
         oxml = convert_topology(topo, f_name, "onnx.fn: {}".format(f_name), target_opset=Graph.opset)
+        if oxml.opset_import[0].domain == '':
+            oxml.opset_import[0].version = Graph.opset
+            opv = Graph.opset
+            irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
+            oxml.ir_version = irv
+            oxml.model_version = utils.get_model_version()
+            _logger.warning('The maximum opset needed by this model is updated to %d.' % Graph.opset)
         self._bind(oxml, arg_names, outputs)
         return self
 
