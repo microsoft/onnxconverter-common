@@ -308,8 +308,8 @@ class OptimizerTestCase(unittest.TestCase):
             model_dir = dir_path + '/data/' + model_name_
             origin_model = onnx.load_model(model_dir)
             opt_model = optimize_onnx_model(origin_model)
-            num_transpose = sum([1 if n_.op_type == 'Transpose' else 0 for n_ in opt_model.graph.node])
             self.assertEqual(num_transpose, num_transpose_list[idx_])
+            num_transpose = sum([1 if n_.op_type == 'Transpose' else 0 for n_ in opt_model.graph.node])
             self.assertIsNotNone(opt_model)
 
 
