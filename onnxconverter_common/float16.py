@@ -94,9 +94,9 @@ def convert_float_to_float16(model):
     # create black list
     op_black_list = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
                      'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
-                     'Normalizer',
-                     'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
-                     'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize', 'Range']
+                     'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
+                     'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize',
+                     'Range', 'CumSum']
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -158,16 +158,14 @@ def convert_float_to_float16(model):
                     # create new value_info for current node's new input name
                     new_value_info = model.graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
-                    new_value_info.name = input + '_casted'
+                    output_name = node.name + '_input_cast_' + str(i)
+                    new_value_info.name = output_name
                     new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT
                     # add Cast node (from tensor(float16) to tensor(float) before current node
-                    attrs = {'name': input + 'Cast'}
-                    attrs['to'] = onnx_proto.TensorProto.FLOAT
-                    nodes = [helper.make_node('Cast', input, input + '_casted', kwargs=attrs)]
+                    nodes = [helper.make_node('Cast', [input], [output_name], to=1, name=node.name + '_input_cast' + str(i))]
                     model.graph.node.extend(nodes)
                     # change current node's input name
-                    node.input[i] = input + '_casted'
-                    domain_flag = 1
+                    node.input[i] = output_name
                     continue
         # if output's name is in the value_info_list meaning output is tensor(float16) type, insert a float to
         # float16 Cast node after the node, change current node's output name and create new value_info for the new name
@@ -178,20 +176,13 @@ def convert_float_to_float16(model):
                     # create new value_info for current node's new output
                     new_value_info = model.graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
-                    new_value_info.name = output + '_casted'
+                    input_name = node.name + '_output_cast_' + str(i)
+                    new_value_info.name = input_name                    
                     new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT
                     # add Cast node (from tensor(float) to tensor(float16) after current node
-                    attrs = {'name': output + 'Cast'}
-                    attrs['to'] = onnx_proto.TensorProto.FLOAT16
-                    nodes = [helper.make_node('Cast', output + '_casted', output, kwarg=attrs)]
+                    nodes = [helper.make_node('Cast', [input_name], [output], to=10, name=node.name + '_output_cast' + str(i))]
                     model.graph.node.extend(nodes)
                     # change current node's input name
-                    node.output[i] = output + '_casted'
-                    domain_flag = 1
+                    node.output[i] = input_name
                     continue
-    if domain_flag:
-        # Create operator set for cast node
-        op_set = model.opset_import.add()
-        op_set.domain = ""
-        op_set.version = 7
     return model
