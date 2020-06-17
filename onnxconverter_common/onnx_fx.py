@@ -5,14 +5,15 @@
 ###############################################################################
 import copy
 import onnx
+from onnx import onnx_pb as onnx_proto
 import logging
 import numpy as np
 
-from . import onnx_ops
+from . import onnx_ops, utils
 from .registration import register_converter
 from .topology import Topology, convert_topology
 from .oopb import OnnxOperatorBuilder
-from .onnx_ex import get_maximum_opset_supported
+from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
 from .data_types import (DoubleTensorType, FloatTensorType,
                          Int64TensorType, Int32TensorType, BooleanTensorType)
 
@@ -187,6 +188,13 @@ class Graph:
             op_whole.outputs.append(vo_)
 
         oxml = convert_topology(topo, f_name, "onnx.fn: {}".format(f_name), target_opset=Graph.opset)
+        if oxml.opset_import[0].domain == '':
+            oxml.opset_import[0].version = Graph.opset
+            opv = Graph.opset
+            irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
+            oxml.ir_version = irv
+            oxml.model_version = utils.get_model_version()
+            _logger.warning('The maximum opset needed by this model is updated to %d.' % Graph.opset)
         self._bind(oxml, arg_names, outputs)
         return self
 
@@ -254,11 +262,17 @@ class Graph:
         onnx.save_model(self.oxml, path)
 
     @staticmethod
-    def load(path, name=None, inputs=None, outputs=None):
+    def load(path_or_model, name=None, inputs=None, outputs=None):
         """
         Construct a Graph object by loading an ONNX model.
         """
-        oxml = onnx.load_model(path)
+        oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
+        for opset_import in oxml.opset_import:
+            if opset_import.domain == '':
+                if Graph.opset != opset_import.version:
+                    raise RuntimeError("Graph opset and model opset mismatch: Graph opset = " + str(Graph.opset)
+                                       + ", model opset = " + str(opset_import.version))
+                break
         g = Graph(name or oxml.graph.name)
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
@@ -306,7 +320,7 @@ class Tensor(object):
         return self.ox.equal(self._to_binary_tensor_args(other))
 
     def __ne__(self, other):  # ONNX has no NotEqual
-        return self.ox.not_([self.ox.equal(self._to_binary_tensor_args(other))])
+        return self.ox.not_op([self.ox.equal(self._to_binary_tensor_args(other))])
 
     def __gt__(self, other):
         return self.ox.greater(self._to_binary_tensor_args(other))
