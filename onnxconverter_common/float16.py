@@ -87,7 +87,6 @@ def convert_float_to_float16(model):
         finally:
             pass
 
-    domain_flag = 0
     if not isinstance(model, onnx_proto.ModelProto):
         raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
 
