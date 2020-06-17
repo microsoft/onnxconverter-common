@@ -627,6 +627,18 @@ class FanInSolution(Solution):
         return node_list, True
 
 
+def _get_pad_from_Pad(node):
+    if len(node.origin.input) == 1:
+        pads = node.get_attribute('pads')
+    else:
+        pad_tensor = node.get_precedence_by_idx(1)
+        if pad_tensor is None:
+            pads = numpy_helper.to_array(node.initializers[0]).tolist()
+        else:
+            pads = numpy_helper.to_array(node.get_precedence_by_idx(1).tensors[0]).tolist()
+    return pads
+
+
 class MergePadConvSolution(Solution):
 
     def __init__(self, begin, begin_n, end_p, end):
@@ -639,19 +651,11 @@ class MergePadConvSolution(Solution):
         if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
             return None, False
 
-        if len(self.begin_n.origin.input) == 1:
-            pads = self.begin_n.get_attribute('pads')
-        else:
-            pad_tensor = self.begin_n.get_precedence_by_idx(1)
-            if pad_tensor is None:
-                pads = numpy_helper.to_array(self.begin_n.initializers[0]).tolist()
-            else:
-                pads = numpy_helper.to_array(self.begin_n.get_precedence_by_idx(1).tensors[0]).tolist()
+        pads = _get_pad_from_Pad(self.begin_n)
         half_len_pads = len(pads) // 2
         pads_new_list = pads[2:half_len_pads]
         pads_new_list.extend(pads[half_len_pads + 2:])
         pads_new = np.asarray(pads_new_list, dtype=np.int64)
-
         self.end_p.attributes['auto_pad'] = 'NOTSET'
         pads = self.end_p.get_attribute('pads')
         if pads:
@@ -661,7 +665,43 @@ class MergePadConvSolution(Solution):
 
         node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
 
-        return None, False
+        return node_list, True
+
+
+class MergePadTransposeConvSolution(Solution):
+
+    def __init__(self, begin, begin_n, end_p, end):
+        Solution.__init__(self, begin, begin_n, end_p, end)
+
+    def apply(self, node_list):
+        if self.begin_n.is_reserved:
+            return None, False
+        auto_pad_value = self.end_p.get_attribute('mode', 'constant')
+        if auto_pad_value == b'SAME_UPPER' or auto_pad_value == b'SAME_LOWER':
+            return None, False
+
+        pads = _get_pad_from_Pad(self.begin_n)
+        perm = Solution.get_perm(self.end_p.origin)
+        half_len_pads = len(pads) // 2
+        pads_1 = pads[0:half_len_pads]
+        pads_2 = pads[half_len_pads:]
+        pads_1_transpose = [pads_1[idx] for idx in perm]
+        pads_2_transpose = [pads_2[idx] for idx in perm]
+        pads = pads_1_transpose + pads_2_transpose
+        pads_new_list = pads[2:half_len_pads]
+        pads_new_list.extend(pads[half_len_pads + 2:])
+        pads_new = np.asarray(pads_new_list, dtype=np.int64)
+
+        self.end.attributes['auto_pad'] = 'NOTSET'
+        pads = self.end.get_attribute('pads')
+        if pads:
+            conv_pads = np.asarray(pads, dtype=np.int64)
+            pads_new_list = list(pads_new + conv_pads)
+        self.end.attributes['pads'] = pads_new_list
+
+        node_list = Solution.delete_node_nto1(node_list, self.begin, self.begin_n, self.end_p)
+
+        return node_list, True
 
 
 class NextToOutputSolution(Solution):
@@ -779,7 +819,7 @@ class TransposeOptimizer(object):
                         else:
                             break
                     if succ.is_transpose:
-                        solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor[0])
+                        solution = MergeSolution(node.get_precedence_by_idx(0), node, succ, succ.successor)
                         return solution
 
                 last_switchable = node
@@ -871,6 +911,26 @@ class MergePadConvOptimizer(object):
                     if number_pad_input_nodes == 1:
                         solution = MergePadConvSolution(node.get_precedence_by_idx(0), node, next, next.successor[0])
                         return solution
+
+        return None
+
+
+class MergePadTransposeConvOptimizer(object):
+    @staticmethod
+    def find(node):
+        if node.origin.op_type == 'Pad':
+            next = node.successor[0]
+            if next.origin is not None and next.origin.op_type == 'Transpose':
+                next_2 = next.successor[0]
+                if next_2.origin is not None and next_2.origin.op_type == 'Conv':
+                    if node.in_single_path_and_inner:
+                        solution = MergePadTransposeConvSolution(node.get_precedence_by_idx(0), node, next, next_2)
+                        return solution
+                    elif node.in_miso_and_inner:
+                        number_pad_input_nodes = sum(pred.origin is not None for pred in node.precedence)
+                        if number_pad_input_nodes == 1:
+                            solution = MergePadTransposeConvSolution(node.get_precedence_by_idx(0), node, next, next_2)
+                            return solution
 
         return None
 
@@ -1085,10 +1145,14 @@ def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
     return count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm
 
 
-def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+def _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map):
     count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
         = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
-    if count_init == 1 or count_pass_node == 2:
+    if count_init == 1:
+        if len(init_pred.tensors) == 0:
+            return False
+        return True
+    elif count_pass_node == 2:
         return True
     else:
         can_process = True
@@ -1097,7 +1161,7 @@ def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, c
             if prev.origin.op_type == 'Identity':
                 while prev.origin is not None and prev.origin.op_type == 'Identity':
                     prev = prev.get_precedence_by_idx(0)
-                if prev.origin is not None:
+                if prev.origin is not None or len(prev.tensors) == 0:
                     can_process = False
                     break
             elif prev.origin.op_type not in _broadcast_flip_whitelist:
@@ -1274,7 +1338,7 @@ class PushTransposeSolution(Solution):
         for node_pair_ in node_transpose_pass:
             node = node_pair_[0]
             if node.origin.op_type in _broadcast_types:
-                success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+                success = _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map)
                 if not success:
                     return None, False
             elif node.origin.op_type == 'Unsqueeze':
@@ -1536,7 +1600,7 @@ def _apply_optimization(solution, node_list):
 
 def _process_optimization(node_list, target_opset=None):
     optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
-                  MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer,
+                  MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer, MergePadTransposeConvOptimizer,
                   MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
         optimizers.append(ConvBatchNormOptimizer)
@@ -1672,7 +1736,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     :param outputs: the model output
     :param initializers: the model initializers
     :param model_value_info: the model value_info
-    :param model_name the internal name of model
+    :param model_name: the internal name of model
+    :param target_opset: the opset version of the model
     :return: the optimized onnx graph
     """
     if target_opset < 9:
