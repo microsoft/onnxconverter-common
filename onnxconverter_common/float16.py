@@ -149,8 +149,9 @@ def convert_float_to_float16(model):
 
     # process the nodes in black list that doesn't support tensor(float16)
     for node in node_list:
-        # if input's name is in the value_info_list meaning input is tensor(float16) type, insert a float16 to float Cast node
-        # before the node, change current node's input name and create new value_info for the new name
+        # if input's name is in the value_info_list meaning input is tensor(float16) type,
+        # insert a float16 to float Cast node before the node,
+        # change current node's input name and create new value_info for the new name
         for i in range(len(node.input)):
             input = node.input[i]
             for value_info in value_info_list:

@@ -11,7 +11,7 @@ from distutils.version import StrictVersion
 from onnx import helper
 from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
-from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, onnx_builtin_opset_version
+from .onnx_ex import OPSET_TO_IR_VERSION, DEFAULT_OPSET_NUMBER, make_model_ex, get_maximum_opset_supported  # noqa
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
 from .interface import OperatorBase, ScopeBase
@@ -405,9 +405,7 @@ class Topology:
                             continue
                         if variable.onnx_name in known_outputs:
                             continue
-                        update = (False if self.root_names and
-                                           variable.onnx_name not in self.root_names
-                                  else True)
+                        update = False if self.root_names and variable.onnx_name not in self.root_names else True
                         if update:
                             variable.is_fed = True
                             is_evaluation_happened = True
@@ -595,8 +593,9 @@ class Topology:
                         if original.type.channel_denotations[i]:
                             continue
                         original.type.channel_denotations[i] = duplicate.type.channel_denotations[i]
-                # Sometime, shapes of duplicates are different. We try to replace the original variable's unknown dimensions
-                # as many as possible because we will get rid of the duplicate.
+                # Sometime, shapes of duplicates are different.
+                # We try to replace the original variable's unknown dimensions...
+                # ...as many as possible because we will get rid of the duplicate.
                 if len(original.type.shape) == len(duplicate.type.shape):
                     for i in range(len(original.type.shape)):
                         if original.type.shape[i] != 'None':
@@ -688,8 +687,8 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
     assigned to "model.graph.name."
     :param doc_string: A string attached to the produced model
     :param target_opset: number, for example, 7 for ONNX 1.2, and 8 for ONNX 1.3.
-    :param targeted_onnx[deprecated]: A string, which specifies the targeted ONNX version of the produced model. Possible values
-    include '1.1.2', '1.2', and so on.
+    :param targeted_onnx[deprecated]: A string, which specifies the targeted ONNX version of the produced model.
+        Possible values include '1.1.2', '1.2', and so on.
     :return: a ONNX ModelProto
     '''
     if targeted_onnx is not None and StrictVersion(targeted_onnx) != StrictVersion(onnx.__version__):
@@ -698,7 +697,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (
                 onnx.__version__, targeted_onnx))
 
-    opset_from_onnx_version = min(onnx_builtin_opset_version(), DEFAULT_OPSET_NUMBER)
+    opset_from_onnx_version = get_maximum_opset_supported()
     if target_opset is None:
         target_opset = opset_from_onnx_version
     elif target_opset > opset_from_onnx_version:
@@ -793,7 +792,10 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         extra_inputs.append(value_info)
 
     # enable the ONNX optimizations
-    nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    if container.enable_optimizer:
+        nodes = optimize_onnx(container.nodes, nhwc_inputs, container.inputs + extra_inputs, container.outputs)
+    else:
+        nodes = container.nodes
 
     # Create a graph from its main components
     if container.target_opset < 9:

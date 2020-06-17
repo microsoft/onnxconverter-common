@@ -64,6 +64,15 @@ class CommonSklearnModelContainer(RawModelContainer):
             self._outputs.append(variable)
 
 
+# in case some this oc-common pkg works with some older onnxmltools?
+class LightGbmModelContainer(CommonSklearnModelContainer):
+    pass
+
+
+class XGBoostModelContainer(CommonSklearnModelContainer):
+    pass
+
+
 class ModelComponentContainer(ModelContainer):
     '''
     In the conversion phase, this class is used to collect all materials required to build an ONNX GraphProto, which is
@@ -89,6 +98,7 @@ class ModelComponentContainer(ModelContainer):
         self.node_domain_version_pair_sets = set()
         # The targeted ONNX operator set (referred to as opset) that matches the ONNX version.
         self.target_opset = target_opset
+        self.enable_optimizer = True
 
     def _make_value_info(self, variable):
         value_info = helper.ValueInfoProto()

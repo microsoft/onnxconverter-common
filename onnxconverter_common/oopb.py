@@ -3,14 +3,15 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
-
 import numpy as np
-from onnx import onnx_pb as onnx_proto
+from onnx import onnx_pb as onnx_proto, helper
 from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 from . import onnx_ops
 
 
 class _OperatorNameContext:
+    _history = []
+
     def __init__(self, oopb, basename):
         self.basename = basename
         self.oopb = oopb
@@ -18,9 +19,13 @@ class _OperatorNameContext:
     def __enter__(self):
         assert self.oopb.basename is None, "The previous context doesn't quit"
         self.oopb.basename = self.basename
+        if len(_OperatorNameContext._history) > 0:
+            self.oopb.upper_ctx = _OperatorNameContext._history[-1]
+        _OperatorNameContext._history.append(self)
         return self.oopb
 
     def __exit__(self, type, value, traceback):
+        assert self is _OperatorNameContext._history.pop()
         self.oopb.basename = None
 
 
@@ -29,6 +34,9 @@ class OnnxOperatorBuilder:
         self._container = container
         self._scope = scope
         self.basename = None
+        # TODO: not all OnnxOperatorBuilder invocation is via as_default...
+        # ... temporarily enable this for onnx_fx
+        self.upper_ctx = None
         self.int32 = onnx_proto.TensorProto.INT32
         self.int64 = onnx_proto.TensorProto.INT64
         self.float = onnx_proto.TensorProto.FLOAT
@@ -38,6 +46,10 @@ class OnnxOperatorBuilder:
 
     def as_default(self, basename):
         return _OperatorNameContext(self, basename)
+
+    @property
+    def upper_context(self):
+        return self.upper_ctx
 
     def _process_inputs(self, inputs, name):
         if not isinstance(inputs, (list, tuple)):
@@ -64,7 +76,8 @@ class OnnxOperatorBuilder:
             elif isinstance(ox_n, str):
                 pass
             else:
-                raise ValueError('Unknown type for ONNX initializer: {}'.format(type(ox_n)))
+                raise ValueError(
+                    'Unknown type for ONNX initializer: {}'.format(type(ox_n)))
             ox_inputs.append(ox_n)
 
         return ox_inputs
@@ -75,11 +88,13 @@ class OnnxOperatorBuilder:
         else:
             ox_outputs = outputs
         if isinstance(ox_outputs, int):
-            ox_outputs = [self._scope.get_unique_variable_name(name + str(i_)) for i_ in range(ox_outputs)]
+            ox_outputs = [self._scope.get_unique_variable_name(
+                name + str(i_)) for i_ in range(ox_outputs)]
         elif isinstance(ox_outputs, (list, tuple)):
             pass
         else:
-            raise ValueError('Unknown type for outputs: {}'.format(type(ox_outputs)))
+            raise ValueError(
+                'Unknown type for outputs: {}'.format(type(ox_outputs)))
         return ox_outputs
 
     def _generate_name(self, type_or_func, name):
@@ -93,6 +108,28 @@ class OnnxOperatorBuilder:
                 suffix = type_or_func.__name__[len('apply_'):]
             long_name = base_name + suffix
         return long_name
+
+    @staticmethod
+    def value_to_ndarray(value):
+        if isinstance(value, (int, float, bool)):
+            ty = np.int64
+            if isinstance(value, float):
+                ty = np.float32
+            elif isinstance(value, bool):
+                ty = np.bool
+            else:
+                pass
+            value = np.array(value).astype(ty)
+        return value
+
+    def _value_to_tensor(self, value, name, atleast_1d=False):
+        value = type(self).value_to_ndarray(value)
+        if isinstance(value, np.ndarray):
+            if atleast_1d:
+                value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
+            lst = value.flatten().tolist()
+            value = helper.make_tensor(name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, lst)
+        return value
 
     def add_node(self, op_type, inputs, name=None, outputs=None, op_domain='', op_version=None, **attrs):
         if op_version is None:
@@ -108,7 +145,8 @@ class OnnxOperatorBuilder:
         if op_version is None:
             op_version = self._container.target_opset
         ox_inputs = self._process_inputs(inputs, name)
-        self._container.add_node(op_type, ox_inputs, outputs, op_domain, op_version, name=name, **attrs)
+        self._container.add_node(
+            op_type, ox_inputs, outputs, op_domain, op_version, name=name, **attrs)
         return outputs
 
     def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):
@@ -119,14 +157,35 @@ class OnnxOperatorBuilder:
                    operator_name=self._scope.get_unique_operator_name(name), **attrs)
         return ox_outputs[0] if outputs is None else ox_outputs
 
-    def constant(self, name, value, outputs=None):
-        name = self._generate_name('constant', name)
-        ox_outputs = self._process_outputs(outputs, name)
-        onnx_ops.apply_constant(self._scope, ox_outputs, self._container,
-                                operator_name=self._scope.get_unique_operator_name(name), value=value)
+    def constant(self, name=None, value=None, outputs=None):
+        c_name = self._scope.get_unique_variable_name(name or 'c')
+        c_value = self._value_to_tensor(value, c_name)
+        return self.apply_op(onnx_ops.apply_constant2, [], name, outputs, value=c_value)
+
+    def constant_of_shape(self, inputs, name=None, outputs=None, value=None):
+        if not isinstance(value, (int, float, bool)):
+            raise ValueError("constant_of_shape requires 'value' to be a scalar")
+        c_name = self._scope.get_unique_variable_name(name or 'cos')
+        c_value = self._value_to_tensor(value, c_name, atleast_1d=True)
+        return self.apply_op(onnx_ops.apply_constant_of_shape, inputs, name, outputs, value=c_value)
+
+    def slice(self, inputs, name=None, outputs=None, starts=None, ends=None, axes=None, steps=None):
+        return self.apply_op(onnx_ops.apply_slice2, inputs, name, outputs,
+                             starts=starts, ends=ends, axes=axes, steps=steps)
+
+    def loop(self, trip_count, cond, body, inputs, outputs, name=None):
+        name = self._generate_name('loop', name)
+        trip_count = '' if trip_count is None else trip_count
+        cond_name = '' if cond is None else cond
+        ox_inputs = self._process_inputs(inputs, name)
+        ox_inputs = [trip_count, cond_name] + ox_inputs
+        ox_outputs = outputs
+        self._container.add_node(
+            'Loop', ox_inputs, ox_outputs, op_version=1, name=name, body=body)
+        return ox_outputs
 
     # !!!!CODE-AUTOGEN!!!! #
-    # The following code was generated by update_ops.py, please copy/paste from the output of it.
+    # The following code was generated by ../update_ops.py
 
     def abs(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_abs, inputs, name, outputs)
@@ -172,6 +231,9 @@ class OnnxOperatorBuilder:
     def elu(self, inputs, name=None, outputs=None, alpha=1.0):
         return self.apply_op(onnx_ops.apply_elu, inputs, name, outputs, alpha=alpha)
 
+    def equal(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_equal, inputs, name, outputs)
+
     def exp(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_exp, inputs, name, outputs)
 
@@ -198,8 +260,7 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_less_or_equal, inputs, name, outputs)
 
     def gru(self, inputs, name=None, outputs=None, output_seq=0, reset_after=0):
-        return self.apply_op(onnx_ops.apply_gru, inputs, name, outputs, output_seq=output_seq,
-                             reset_after=reset_after)
+        return self.apply_op(onnx_ops.apply_gru, inputs, name, outputs, output_seq=output_seq, reset_after=reset_after)
 
     def hard_sigmoid(self, inputs, name=None, outputs=None, alpha=None, beta=None):
         return self.apply_op(onnx_ops.apply_hard_sigmoid, inputs, name, outputs, alpha=alpha, beta=beta)
@@ -240,11 +301,14 @@ class OnnxOperatorBuilder:
     def mul(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
         return self.apply_op(onnx_ops.apply_mul, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
-    def neg(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        return self.apply_op(onnx_ops.apply_neg, inputs, name, outputs, axis=axis, broadcast=broadcast)
+    def neg(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_neg, inputs, name, outputs)
 
     def normalization(self, inputs, name=None, outputs=None, axis=1, p=2):
         return self.apply_op(onnx_ops.apply_normalization, inputs, name, outputs, axis=axis, p=p)
+
+    def not_op(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_not_op, inputs, name, outputs)
 
     def pad(self, inputs, name=None, outputs=None, mode=None, pads=None, value=None, onnx_type=1):
         return self.apply_op(onnx_ops.apply_pad, inputs, name, outputs, mode=mode, pads=pads, value=value,
@@ -259,11 +323,17 @@ class OnnxOperatorBuilder:
     def prelu(self, inputs, name=None, outputs=None, slope=None):
         return self.apply_op(onnx_ops.apply_prelu, inputs, name, outputs, slope=slope)
 
+    def range(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_range, inputs, name, outputs)
+
     def reciprocal(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_reciprocal, inputs, name, outputs)
 
     def relu(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_relu, inputs, name, outputs)
+
+    def relu_6(self, inputs, name=None, outputs=None, zero_value=0.0):
+        return self.apply_op(onnx_ops.apply_relu_6, inputs, name, outputs, zero_value=zero_value)
 
     def reshape(self, inputs, name=None, outputs=None, desired_shape=None):
         return self.apply_op(onnx_ops.apply_reshape, inputs, name, outputs, desired_shape=desired_shape)
@@ -276,6 +346,9 @@ class OnnxOperatorBuilder:
     def rnn(self, inputs, name=None, outputs=None, output_seq=0):
         return self.apply_op(onnx_ops.apply_rnn, inputs, name, outputs, output_seq=output_seq)
 
+    def shape(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_shape, inputs, name, outputs)
+
     def sigmoid(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_sigmoid, inputs, name, outputs)
 
@@ -287,6 +360,10 @@ class OnnxOperatorBuilder:
 
     def scaled_tanh(self, inputs, name=None, outputs=None, alpha=None, beta=None):
         return self.apply_op(onnx_ops.apply_scaled_tanh, inputs, name, outputs, alpha=alpha, beta=beta)
+
+    def slice2(self, inputs, name=None, outputs=None, starts=None, ends=None, axes=None, steps=None):
+        return self.apply_op(onnx_ops.apply_slice2, inputs, name, outputs, starts=starts, ends=ends, axes=axes,
+                             steps=steps)
 
     def split(self, inputs, name=None, outputs=None, split=None, axis=0):
         return self.apply_op(onnx_ops.apply_split, inputs, name, outputs, split=split, axis=axis)

@@ -15,17 +15,21 @@ jobs:
     matrix:
       Python35:
         python.version: '3.5'
-        ONNX_PATH: onnx==1.4.1
+        ONNX_PATH: onnx==1.3.0
 
       Python36:
         python.version: '3.6'
-        ONNX_PATH: onnx==1.4.1
+        ONNX_PATH: onnx==1.5.0
 
       Python37:
         python.version: '3.7'
-        ONNX_PATH: onnx==1.5.0
+        ONNX_PATH: onnx==1.6.0
 
-    maxParallel: 3
+      Python38:
+        python.version: '3.8'
+        ONNX_PATH: onnx==1.7.0
+
+    maxParallel: 4
 
   steps:
   - task: UsePythonVersion@0
@@ -44,10 +48,17 @@ jobs:
       python -m pip install --upgrade pip numpy
       echo Test numpy installation... && python -c "import numpy"
       pip install -r requirements.txt
+      pip install onnxruntime
       pip install %ONNX_PATH%
       pip install pytest
       pip install -e .
     displayName: 'Install dependencies'
+
+  - script: |
+      call activate py$(python.version)
+      pip install flake8
+      python -m flake8 onnxconverter_common
+    displayName: 'run flake8 check'
 
   - script: |
       call activate py$(python.version)

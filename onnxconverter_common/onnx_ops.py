@@ -66,7 +66,10 @@ def _apply_pointwise_operation(scope, op_type, input_names, output_name, contain
     elif container.target_opset < 8:
         op_version = 6
     else:
-        op_version = 8
+        if container.target_opset < 12 or op_type == 'Mean':
+            op_version = 8
+        else:
+            op_version = 12
 
     container.add_node(op_type, input_names, output_name, op_version=op_version, name=name, **attrs)
 
@@ -225,7 +228,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(min.shape) == 0:
                         min = [min]
                     elif min.shape == (1,):
-                        min = list(min[0])
+                        min = list(min[0]) if hasattr(min[0], '__iter__') else list(min)
                     else:
                         raise RuntimeError("min must be an array of one element.")
                 else:
@@ -256,7 +259,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
                     if len(max.shape) == 0:
                         max = [max]
                     elif max.shape == (1,):
-                        max = list(max[0])
+                        max = list(max[0]) if hasattr(max[0], '__iter__') else list(max)
                     else:
                         raise RuntimeError("max must be an array of one element.")
                 else:
@@ -323,6 +326,16 @@ def apply_constant(scope, output_name, container, operator_name=None, value=None
     container.add_node('Constant', [], output_name, op_version=op_version, **attrs)
 
 
+def apply_constant2(scope, input_names, output_name, container, operator_name=None, value=None):
+    assert len(input_names) == 0  # only a placeholder to standardize the argument list.
+    return apply_constant(scope, output_name, container, operator_name, value)
+
+
+def apply_constant_of_shape(scope, input_names, output_name, container, operator_name=None, value=None):
+    name = _create_name_or_use_existing_one(scope, 'ConstantOfShape', operator_name)
+    container.add_node('ConstantOfShape', input_names, output_name, name=name, op_version=9, value=value)
+
+
 def apply_conv(scope, input_names, output_name, container, operator_name=None, **attrs):
     name = _create_name_or_use_existing_one(scope, 'Conv', operator_name)
 
@@ -385,6 +398,17 @@ def apply_div(scope, input_names, output_name, container, operator_name=None, ax
 
 def apply_elu(scope, input_name, output_name, container, operator_name=None, alpha=1.0):
     _apply_unary_operation(scope, 'Elu', input_name, output_name, container, operator_name, alpha=alpha)
+
+
+def apply_equal(scope, input_names, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'equal', operator_name)
+    if container.target_opset < 7:
+        op_version = 1
+    elif container.target_opset < 9:
+        op_version = 7
+    else:
+        op_version = 9
+    container.add_node('Equal', input_names, output_name, name=name, op_version=op_version)
 
 
 def apply_exp(scope, input_name, output_name, container, operator_name=None):
@@ -477,7 +501,7 @@ def _convert_compare_equal(scope, input_names, output_name, container, operator_
                            op_version=op_version)
         container.add_node('Not', [compare_node], output_name, name=name)
     else:
-        container.add_node(onnx_op_string_rev, input_names, output_name,
+        container.add_node(onnx_op_string, input_names, output_name,
                            name=name + '_' + onnx_op_string_rev.lower(), op_version=op_version)
 
 
@@ -539,7 +563,7 @@ def apply_inverse(scope, input_name, output_name, container, operator_name=None)
     container.add_node('Inverse', input_name, output_name, name=name, op_version=op_version)
 
 
-def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=None):
+def apply_leaky_relu(scope, input_name, output_name, container, operator_name=None, alpha=0.01):
     _apply_unary_operation(scope, 'LeakyRelu', input_name, output_name, container, operator_name, alpha=alpha)
 
 
@@ -596,13 +620,17 @@ def apply_mul(scope, input_names, output_name, container, operator_name=None, ax
                                      axis=axis, broadcast=broadcast)
 
 
-def apply_neg(scope, input_name, output_name, container, operator_name=None, axis=None, broadcast=None):
+def apply_neg(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Neg', input_name, output_name, container, operator_name)
 
 
 def apply_normalization(scope, input_name, output_name, container, operator_name=None, axis=1, p=2):
     name = _create_name_or_use_existing_one(scope, 'LpNormalization', operator_name)
     container.add_node('LpNormalization', input_name, output_name, name=name, p=p, axis=axis)
+
+
+def apply_not_op(scope, input_name, output_name, container, operator_name=None):
+    _apply_unary_operation(scope, 'Not', input_name, output_name, container, operator_name)
 
 
 def apply_pad(scope, input_name, output_name, container, operator_name=None, mode=None, pads=None, value=None,
@@ -728,12 +756,24 @@ def apply_prelu(scope, input_name, output_name, container, operator_name=None, s
         container.add_node('PRelu', [input_name, slope_tensor_name], output_name, op_version=op_version, name=name)
 
 
+def apply_range(scope, input_name, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Range', operator_name)
+    container.add_node('Range', input_name, output_name, op_version=11, name=name)
+
+
 def apply_reciprocal(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Reciprocal', input_name, output_name, container, operator_name=operator_name)
 
 
 def apply_relu(scope, input_name, output_name, container, operator_name=None):
     _apply_unary_operation(scope, 'Relu', input_name, output_name, container, operator_name)
+
+
+def apply_relu_6(scope, input_name, output_name, container, operator_name=None, zero_value=0.0):
+    name_relu = _create_name_or_use_existing_one(scope, 'relu', operator_name)
+    name_relu_op = _create_name_or_use_existing_one(scope, 'relu6', operator_name)
+    apply_relu(scope, input_name, name_relu, container, name_relu_op+'_relu')
+    apply_clip(scope, name_relu, output_name, container, name_relu_op + '_clip', zero_value+6, zero_value)
 
 
 def apply_reshape(scope, input_name, output_name, container, operator_name=None, desired_shape=None):
@@ -799,6 +839,11 @@ def apply_rnn(scope, input_names, output_names, container, operator_name=None, o
     else:
         op_version = 7
     container.add_node('RNN', input_names, output_names, name=name, op_version=op_version, **attrs)
+
+
+def apply_shape(scope, input_name, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Shape', operator_name)
+    container.add_node('Shape', input_name, output_name, name=name, op_version=1)
 
 
 def apply_sigmoid(scope, input_name, output_name, container, operator_name=None):
@@ -903,6 +948,14 @@ def apply_slice(scope, input_name, output_name, container, starts, ends,
             inputs.append(steps_name)
         container.add_node('Slice', inputs, output_name, name=name,
                            op_version=op_version)
+
+
+def apply_slice2(scope, input_name, output_name, container,
+                 operator_name=None, starts=None, ends=None, axes=None, steps=None):
+    assert starts is not None, 'the starts in slice op cannot be None'
+    assert ends is not None, 'the ends in slice op cannot be None'
+    return apply_slice(scope, input_name, output_name, container, starts, ends,
+                       axes, steps, operator_name)
 
 
 def apply_split(scope, input_name, output_names, container, operator_name=None, split=None, axis=0):
