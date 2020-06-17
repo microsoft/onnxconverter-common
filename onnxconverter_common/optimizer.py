@@ -1074,8 +1074,11 @@ class MergeSqueezeUnsqueezeOptimizer(object):
         return None
 
 
-_transpose_pass_type_set = {'Add', 'Mul', 'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
-_broadcast_types = {'Add', 'Mul', 'PRelu'}
+_broadcast_types = {'Add', 'And', 'Div', 'Equal', 'Greater', 'GreaterOrEqual', 'Less', 'LessOrEqual',
+                    'MatMul', 'Max', 'Mean', 'Min', 'Mod', 'Mul', 'Or', 'Pow', 'PRelu', 'Sub', 'Sum',
+                    'Where', 'Xor'}
+_transpose_pass_type_set = {'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
+_transpose_pass_type_set.update(_broadcast_types)
 
 
 def _transpose_pass(node):
@@ -1410,6 +1413,13 @@ class PushTransposeOptimizer(object):
                         pred_nchw = True
                         break
             if pred_nchw or node.origin.op_type in _nchw_input_node_type:
+                next = node.successor[0]
+                if next.origin is not None and next.origin.op_type == 'Transpose':
+                    solution = PushTransposeSolution(node, next, next.successor, None)
+                    return solution
+
+        if node.origin.op_type == 'Squeeze' and len(node.successor) == 1 and node.successor[0] is not None:
+            if node.precedence[0].origin is not None and node.precedence[0].origin.op_type == 'LSTM':
                 next = node.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Transpose':
                     solution = PushTransposeSolution(node, next, next.successor, None)

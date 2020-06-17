@@ -300,13 +300,17 @@ class OptimizerTestCase(unittest.TestCase):
         self.assertIsNotNone(model)
 
     def test_onnx_models(self):
-        model_names = ['mobile_segnet_no_opt.onnx', 'srgan_no_opt.onnx', 'test_model_0_no_opt.onnx']
+        model_names = ['mobile_segnet_no_opt.onnx', 'srgan_no_opt.onnx', 'test_model_0_no_opt.onnx',
+                       'test_model_1_no_opt.onnx']
+        num_transpose_list = [2, 3, 11, 4]
         dir_path = os.path.dirname(os.path.realpath(__file__))
-        for model_name_ in model_names:
+        for idx_, model_name_ in enumerate(model_names):
             model_dir = dir_path + '/data/' + model_name_
             origin_model = onnx.load_model(model_dir)
             opt_model = optimize_onnx_model(origin_model)
             self.assertIsNotNone(opt_model)
+            num_transpose = sum([1 if n_.op_type == 'Transpose' else 0 for n_ in opt_model.graph.node])
+            self.assertEqual(num_transpose, num_transpose_list[idx_])
 
 
 if __name__ == '__main__':
