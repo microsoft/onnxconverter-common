@@ -162,8 +162,9 @@ def convert_float_to_float16(model):
                     new_value_info.name = output_name
                     new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT
                     # add Cast node (from tensor(float16) to tensor(float) before current node
-                    nodes = [helper.make_node('Cast', [input], [output_name], to=1, name=node.name + '_input_cast' + str(i))]
-                    model.graph.node.extend(nodes)
+                    node_name = node.name + '_input_cast' + str(i)
+                    new_node = [helper.make_node('Cast', [input], [output_name], to=1, name=node_name)]
+                    model.graph.node.extend(new_node)
                     # change current node's input name
                     node.input[i] = output_name
                     continue
@@ -177,11 +178,12 @@ def convert_float_to_float16(model):
                     new_value_info = model.graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
                     input_name = node.name + '_output_cast_' + str(i)
-                    new_value_info.name = input_name                    
+                    new_value_info.name = input_name
                     new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT
                     # add Cast node (from tensor(float) to tensor(float16) after current node
-                    nodes = [helper.make_node('Cast', [input_name], [output], to=10, name=node.name + '_output_cast' + str(i))]
-                    model.graph.node.extend(nodes)
+                    node_name = node.name + '_output_cast' + str(i)
+                    new_node = [helper.make_node('Cast', [input_name], [output], to=10, name=node_name)]
+                    model.graph.node.extend(new_node)
                     # change current node's input name
                     node.output[i] = input_name
                     continue
