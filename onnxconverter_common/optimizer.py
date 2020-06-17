@@ -1144,10 +1144,14 @@ def _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map):
     return count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm
 
 
-def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map):
+def _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map):
     count_init, init_pred, init_idx, count_pass_node, add_transpose_idx_list, cur_perm \
         = _get_broadcast_info(node, node_transpose_pass_name, cur_perm_map)
-    if count_init == 1 or count_pass_node == 2:
+    if count_init == 1:
+        if len(init_pred.tensors) == 0:
+            return False
+        return True
+    elif count_pass_node == 2:
         return True
     else:
         can_process = True
@@ -1156,7 +1160,7 @@ def _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, c
             if prev.origin.op_type == 'Identity':
                 while prev.origin is not None and prev.origin.op_type == 'Identity':
                     prev = prev.get_precedence_by_idx(0)
-                if prev.origin is not None:
+                if prev.origin is not None or len(prev.tensors) == 0:
                     can_process = False
                     break
             elif prev.origin.op_type not in _broadcast_flip_whitelist:
@@ -1333,7 +1337,7 @@ class PushTransposeSolution(Solution):
         for node_pair_ in node_transpose_pass:
             node = node_pair_[0]
             if node.origin.op_type in _broadcast_types:
-                success = _check_transpose_pass_broadcast(node, node_list, node_transpose_pass_name, cur_perm_map)
+                success = _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map)
                 if not success:
                     return None, False
             elif node.origin.op_type == 'Unsqueeze':
