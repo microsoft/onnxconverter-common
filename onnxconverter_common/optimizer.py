@@ -1074,7 +1074,9 @@ class MergeSqueezeUnsqueezeOptimizer(object):
         return None
 
 
-_broadcast_types = {'Add', 'Mul', 'PRelu', 'MatMul'}
+_broadcast_types = {'Add', 'And', 'Div', 'Equal', 'Greater', 'GreaterOrEqual', 'Less', 'LessOrEqual',
+                    'MatMul', 'Max', 'Mean', 'Min', 'Mod', 'Mul', 'Or', 'Pow', 'PRelu', 'Sub', 'Sum',
+                    'Where', 'Xor'}
 _transpose_pass_type_set = {'Pad', 'Squeeze', 'Unsqueeze', 'Slice'}
 _transpose_pass_type_set.update(_broadcast_types)
 
