@@ -58,19 +58,22 @@ class ONNXFunctionTest(unittest.TestCase):
 
     def test_matmul_opt(self):
         @onnx_function(outputs=['z'],
-                       input_types=(_Ty.F([2, 1, 3, 2]), _Ty.F([3, 2])),
-                       output_types=[_Ty.F([1, 2, 3, 3])])
-        def transpose_n_matmul(x, y):
+                       input_types=(_Ty.F([1, 1, 6, 1])),
+                       output_types=[_Ty.f])
+        def transpose_n_matmul(x):
             ox = x.ox  # type: OnnxOperatorBuilderX
-            a = ox.transpose(x, perm=[1, 0, 2, 3])
-            b = ox.transpose(y, perm=[1, 0])
-            return ox.matmul([a, b])
+            wm = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 6])
+            b = ox.constant(value=wm)
+            a = ox.transpose(x, perm=[0, 1, 3, 2])
+            c = ox.transpose(b, perm=[1, 0])
+            return ox.matmul([a, c])
 
-        m1 = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 1, 3, 2])
-        m2 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([3, 2])
-        expected = transpose_n_matmul(m1, m2)
-        opted = optimize_onnx_model(transpose_n_matmul.oxml)
-        actual = _ort_inference(opted, {'x': m1, 'y': m2})
+        m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
+        expected = transpose_n_matmul(m1)
+        opted = optimize_onnx_model(transpose_n_matmul.to_model())
+        import onnx
+        onnx.save_model(opted, 'mm_opted.onnx')
+        actual = _ort_inference(opted, {'x': m1})
         self.assertTrue(np.allclose(expected, actual), "The result mismatch")
 
 

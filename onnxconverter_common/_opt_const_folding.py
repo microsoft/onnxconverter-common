@@ -11,11 +11,11 @@ from onnx import numpy_helper, mapping, helper
 class OnnxGraphContext:
     stopping_initializer = []
 
-    def __init__(self, graph_proto):
+    def __init__(self, graph_proto, nodelist):
         self.initializers = {ts_.name: ts_ for ts_ in graph_proto.initializer}
         # self.nodes = {nd_.name for nd_ in graph_proto.node}
         self.tensor_to_node = {}
-        for nd_ in graph_proto.node:
+        for nd_ in nodelist:
             self.tensor_to_node.update({ts_: nd_ for ts_ in nd_.output})
         self.variables = {}
 
@@ -169,7 +169,7 @@ class OnnxGraphContext:
         return [retval]
 
 
-def _fix_unamed_node(graph):
+def _fix_unamed_node(nodelist):
     # type: (onnx.GraphProto)->onnx.GraphProto
     node_id = [1]
 
@@ -181,27 +181,21 @@ def _fix_unamed_node(graph):
         node.name = name
         return node
 
-    named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in graph.node]
-
-    if node_id[0] == 1:
-        return graph
-
-    del graph.node[:]
-    graph.node.extend(named_nodes)
-    return graph
+    named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in nodelist]
+    return named_nodes
 
 
-def reserve_node_for_embedded_graph(graph):
+def reserve_node_for_embedded_graph(nodelist):
     # type: (onnx.GraphProto)->(onnx.GraphProto, frozenset)
-    fixed_graph = _fix_unamed_node(graph)
+    nodelist = _fix_unamed_node(nodelist)
     ginputs = []
-    for nd_ in fixed_graph.node:
+    for nd_ in nodelist:
         for _, subgraph_ in OnnxGraphContext.get_attr_graph(nd_).items():
             inner_inputs = frozenset([i_.name for i_ in subgraph_.input])
             for sub_nd_ in subgraph_.node:
                 ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
     ginputs.extend(OnnxGraphContext.stopping_initializer)
-    return fixed_graph, frozenset(ginputs)
+    return nodelist, frozenset(ginputs)
 
 
 def _dfs_calc(graph, node, reserved_names, node_status):
@@ -266,14 +260,14 @@ def _remove_unused_initializers(nodes, initializers, reversed_names, outer_initi
 
 def const_folding_optimizer(graph, outer_graph=None):
     # type: (onnx.GraphProto, onnx.GraphProto)->onnx.GraphProto
-    fixed_graph, reserved_names = reserve_node_for_embedded_graph(graph)
-    opt_graph = OnnxGraphContext(fixed_graph)
+    nodelist, reserved_names = reserve_node_for_embedded_graph(graph.node)
+    opt_graph = OnnxGraphContext(graph, nodelist)
     node_status = {}
     for ts_ in graph.output:
         _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], reserved_names, node_status)
 
     graph.initializer.extend([numpy_helper.from_array(ts_, nm_) for nm_, ts_ in opt_graph.variables.items()])
-    new_nodes = [nd_ for nd_ in graph.node if nd_.name in node_status]
+    new_nodes = [nd_ for nd_ in nodelist if nd_.name in node_status]
     new_nodes = [nd_ for nd_ in new_nodes if nd_.output[0] not in opt_graph.variables]
 
     def node_key(nd_):

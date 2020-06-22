@@ -5,15 +5,15 @@
 
 import numpy as np
 import onnx
+from typing import Union
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
 from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph
 
-reserved_names_in_graph = frozenset()
-
 
 class LinkedNode(object):
     UNIQUE_NAME_INDEX = 0
+    reserved_names_in_graph = frozenset()
 
     def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
         self.origin = node  # type: onnx_proto.NodeProto
@@ -39,6 +39,10 @@ class LinkedNode(object):
     @property
     def op_type(self):
         return None if self.origin is None else self.origin.op_type
+
+    @property
+    def name(self):
+        return '' if self.origin is None else self.origin.name
 
     @property
     def is_identity(self):
@@ -189,7 +193,7 @@ class LinkedNode(object):
         if self.origin is None:
             return False
         for node_output_ in self.origin.output:
-            if node_output_ in reserved_names_in_graph:
+            if node_output_ in LinkedNode.reserved_names_in_graph:
                 return True
         return False
 
@@ -373,6 +377,7 @@ class Solution(object):
 
     @staticmethod
     def get_perm(onode):
+        onode = onode.origin if isinstance(onode, LinkedNode) else onode
         try:
             return next(
                 helper.get_attribute_value(attr) for attr in onode.attribute if attr.name == 'perm')
@@ -443,7 +448,7 @@ class Solution(object):
     @staticmethod
     def add_siso_node(node_list, begin, end, begin_output_name, node):
         # type: ([], LinkedNode, LinkedNode, str, LinkedNode)->[]
-        node.in_redirect(node.single_input, begin_output_name)
+        node.in_redirect(node.get_input_by_idx(0), begin_output_name)
         end.in_redirect(begin_output_name, node.single_output)
         begin.successor[begin.successor.index(end)] = node
         end.precedence[end.precedence.index(begin)] = node
@@ -1596,12 +1601,72 @@ class MergeCommonSequenceOptimizer(object):
         return True
 
 
+class MatmulSolution(Solution):
+    basic_transpose = [1, 0]
+
+    def apply(self, node_list):
+        node = self.begin_n
+        opr_0 = self.begin
+        opr_1 = node.get_precedence_by_idx(1)
+        perm0 = Solution.get_perm(opr_0)
+        perm1 = Solution.get_perm(opr_1)
+        target_opr = opr_0
+        del_opr = opr_1
+        if perm0 == MatmulSolution.basic_transpose:
+            perm0, perm1 = perm1, perm0
+            target_opr = opr_1
+            del_opr = opr_0
+
+        # apply perm1 into perm0
+        new_perm = perm0[:-2] + [perm0[-1], perm0[-2]]
+        target_opr.attributes['perm'] = new_perm
+        Solution.delete_node_1ton(node_list, del_opr.get_precedence_by_idx(0), del_opr, node)
+        lst_input = list(node.origin.input)
+        del node.origin.input[:]
+        node.origin.input.extend(lst_input[::-1])
+        new_node_name = node.origin.output[0] + '_post'
+        back_perm = list(range(len(new_perm)))
+        back_perm = back_perm[:-2] + [back_perm[-1], back_perm[-2]]
+        if False:
+            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
+                node=helper.make_node('Transpose',
+                                      [node.origin.output[0]],
+                                      [new_node_name],
+                                      perm=back_perm,
+                                      name=new_node_name)))
+        else:
+            reshape_initilizer = numpy_helper.from_array(
+                np.array([1, 1, 1, -1]).astype(np.int64), name=new_node_name + '_c')
+            reshape_node = LinkedNode(helper.make_node('Reshape',
+                                                       [node.origin.output[0], new_node_name + '_c'],
+                                                       [new_node_name],
+                                                       name=new_node_name))
+            reshape_node.initializers = [reshape_initilizer]
+            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, reshape_node)
+        return node_list, True
+
+
+class MatmulOptimizer:
+    @staticmethod
+    def find(node):  # type: (LinkedNode)->Union[Solution, None]
+        if node.op_type == 'MatMul' and \
+                node.get_precedence_by_idx(0).is_transpose and \
+                node.get_precedence_by_idx(1).is_transpose:
+
+            # also needs check the inputs of one operants is an initilizer.
+            if Solution.get_perm(node.get_precedence_by_idx(0)) == MatmulSolution.basic_transpose or \
+                    Solution.get_perm(node.get_precedence_by_idx(1)) == MatmulSolution.basic_transpose:
+                return MatmulSolution(node.get_precedence_by_idx(0), node, node, node.successor)
+
+        return None
+
+
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
 
 def _process_optimization(node_list, target_opset=None):
-    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
+    optimizers = [MatmulOptimizer, PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer, MergePadTransposeConvOptimizer,
                   MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
@@ -1705,8 +1770,7 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
                                            [] if outputs is None else [o_.name for o_ in outputs])
     initializers = []
     graph = _generate_graph_from_nodelist(node_list, initializers, '', inputs, outputs)
-    global reserved_names_in_graph
-    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
+    _, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
     node_list = _process_optimization(node_list, target_opset)
 
     if target_opset is None or target_opset < 9:
@@ -1762,20 +1826,19 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         extra_inputs.append(value_info)
 
     in_inputs = list(inputs) + extra_inputs
+    _, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
     node_list = LinkedNode.build_from_onnx(onnx_nodes,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if in_inputs is None else [i_.name for i_ in in_inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs],
                                            initializers)
 
-    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
-    global reserved_names_in_graph
-    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
-
     node_list = _process_optimization(node_list, target_opset)
-
     node_list = [n_ for n_ in node_list if n_.origin is not None]
-    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    # clean up the initializer from input list
+    init_names = set(in_.name for in_ in initializers)
+    purified_inputs = [in_ for in_ in inputs if in_.name not in init_names]
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, purified_inputs, outputs)
     # Add extra information related to the graph
     graph.value_info.extend(model_value_info)
 
@@ -1794,8 +1857,6 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
     graph = origin_model.graph
     nodelist = list(graph.node)
 
-    input_with_initializer = [in_ for in_ in graph.input]
-    input_with_initializer += [in_ for in_ in graph.initializer]
     opt_graph = optimize_onnx_graph(nodelist,
                                     nchw_inputs=nchw_inputs,
                                     inputs=graph.input,
@@ -1803,8 +1864,8 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
                                     initializers=list(graph.initializer),
                                     model_value_info=graph.value_info,
                                     model_name=graph.name,
-                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import)
-                                    )
+                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import
+                                                      if opset_.domain == '' or opset_.domain == 'ai.onnx'))
 
     origin_model.graph.CopyFrom(opt_graph)
     return origin_model
