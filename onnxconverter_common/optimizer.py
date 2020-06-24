@@ -8,7 +8,7 @@ import onnx
 from typing import Union
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
-from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph
+from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph, OnnxGraphContext
 
 
 class LinkedNode(object):
@@ -1459,6 +1459,7 @@ _move_cast_support_types = {'Reshape', 'Squeeze', 'Unsqueeze', 'Slice'}
 class SwapOpOptimizer(object):
     @staticmethod
     def find(node):
+        solution = None
         if node.in_single_path_and_inner:
             if node.origin.op_type == 'Cast':
                 to_value = node.get_attribute('to')
@@ -1680,6 +1681,7 @@ def _process_optimization(node_list, target_opset=None):
             cur_optm_process = True
             while cur_optm_process:
                 success = False
+                temp_list = []
                 for node_ in node_list:
                     if node_ in blockout:
                         continue
@@ -1758,10 +1760,10 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
-    :param opset opset: number of the model
     :param nchw_inputs: the name list of the inputs needed to be transposed as NCHW
     :param inputs: the model input
     :param outputs: the model output
+    :param target_opset: the opset version of the model.
     :return: the optimized onnx node list
     """
     node_list = LinkedNode.build_from_onnx(onnx_nodes,
@@ -1792,7 +1794,8 @@ def _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, o
     return graph
 
 
-def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
+def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
+                        initializers=None, stop_initializers=None,
                         model_value_info=None, model_name=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
@@ -1801,6 +1804,7 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     :param inputs: the model input
     :param outputs: the model output
     :param initializers: the model initializers
+    :param stop_initializers: 'stop' optimization on these initializers
     :param model_value_info: the model value_info
     :param model_name: the internal name of model
     :param target_opset: the opset version of the model
@@ -1825,6 +1829,7 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
+    OnnxGraphContext.stopping_initializers = [] if stop_initializers is None else stop_initializers
     in_inputs = list(inputs) + extra_inputs
     _, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
     node_list = LinkedNode.build_from_onnx(onnx_nodes,
@@ -1846,8 +1851,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     return new_graph
 
 
-def optimize_onnx_model(origin_model, nchw_inputs=None):
-    # type: (onnx.ModelProto, list) -> onnx.ModelProto
+def optimize_onnx_model(origin_model, nchw_inputs=None, stop_initializers=None):
+    # type: (onnx.ModelProto, list, list) -> onnx.ModelProto
     """
     the origin model will be updated after the optimization.
     :param origin_model:
@@ -1862,6 +1867,7 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
                                     inputs=graph.input,
                                     outputs=graph.output,
                                     initializers=list(graph.initializer),
+                                    stop_initializers=stop_initializers,
                                     model_value_info=graph.value_info,
                                     model_name=graph.name,
                                     target_opset=next(opset_.version for opset_ in origin_model.opset_import

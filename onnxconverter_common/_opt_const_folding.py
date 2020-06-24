@@ -9,7 +9,7 @@ from onnx import numpy_helper, mapping, helper
 
 
 class OnnxGraphContext:
-    stopping_initializer = []
+    stopping_initializers = []
 
     def __init__(self, graph_proto, nodelist):
         self.initializers = {ts_.name: ts_ for ts_ in graph_proto.initializer}
