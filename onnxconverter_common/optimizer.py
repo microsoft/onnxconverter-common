@@ -5,14 +5,13 @@
 
 import numpy as np
 import onnx
-from typing import Union
+from uuid import uuid4
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
 from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph, OnnxGraphContext
 
 
 class LinkedNode(object):
-    UNIQUE_NAME_INDEX = 0
     reserved_names_in_graph = frozenset()
 
     def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
@@ -28,10 +27,7 @@ class LinkedNode(object):
         self.precedence = []
         self.successor = []
         self.attributes = {}
-        LinkedNode.UNIQUE_NAME_INDEX += 1
-        self.unique_name = "{}__{}".format(
-            self.origin.name if self.origin and self.origin.name else 'unnamed',
-            str(LinkedNode.UNIQUE_NAME_INDEX))
+        self.unique_name = self.origin.name if self.origin and self.origin.name else str(uuid4().hex)
 
     def __repr__(self):
         return "name: {}, node: <{}>".format(self.unique_name, str(self.origin) if self.origin else 'None')
@@ -42,7 +38,7 @@ class LinkedNode(object):
 
     @property
     def name(self):
-        return '' if self.origin is None else self.origin.name
+        return self.unique_name
 
     @property
     def is_identity(self):
@@ -594,6 +590,7 @@ class FanInSolution(Solution):
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
+        output_name = ''
         for suc in successor_list:
             if suc.origin is None:
                 output_name = list(self.begin.output.values())[0]
@@ -1374,6 +1371,7 @@ class PushTransposeSolution(Solution):
             if node.origin is None:
                 prev = node_pair_[1]
                 successor_list = list(prev.successor)
+                output_name = ''
                 for suc in successor_list:
                     if suc.origin is None:
                         output_name = list(prev.output.values())[0]
@@ -1602,72 +1600,12 @@ class MergeCommonSequenceOptimizer(object):
         return True
 
 
-class MatmulSolution(Solution):
-    basic_transpose = [1, 0]
-
-    def apply(self, node_list):
-        node = self.begin_n
-        opr_0 = self.begin
-        opr_1 = node.get_precedence_by_idx(1)
-        perm0 = Solution.get_perm(opr_0)
-        perm1 = Solution.get_perm(opr_1)
-        target_opr = opr_0
-        del_opr = opr_1
-        if perm0 == MatmulSolution.basic_transpose:
-            perm0, perm1 = perm1, perm0
-            target_opr = opr_1
-            del_opr = opr_0
-
-        # apply perm1 into perm0
-        new_perm = perm0[:-2] + [perm0[-1], perm0[-2]]
-        target_opr.attributes['perm'] = new_perm
-        Solution.delete_node_1ton(node_list, del_opr.get_precedence_by_idx(0), del_opr, node)
-        lst_input = list(node.origin.input)
-        del node.origin.input[:]
-        node.origin.input.extend(lst_input[::-1])
-        new_node_name = node.origin.output[0] + '_post'
-        back_perm = list(range(len(new_perm)))
-        back_perm = back_perm[:-2] + [back_perm[-1], back_perm[-2]]
-        if False:
-            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
-                node=helper.make_node('Transpose',
-                                      [node.origin.output[0]],
-                                      [new_node_name],
-                                      perm=back_perm,
-                                      name=new_node_name)))
-        else:
-            reshape_initilizer = numpy_helper.from_array(
-                np.array([1, 1, 1, -1]).astype(np.int64), name=new_node_name + '_c')
-            reshape_node = LinkedNode(helper.make_node('Reshape',
-                                                       [node.origin.output[0], new_node_name + '_c'],
-                                                       [new_node_name],
-                                                       name=new_node_name))
-            reshape_node.initializers = [reshape_initilizer]
-            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, reshape_node)
-        return node_list, True
-
-
-class MatmulOptimizer:
-    @staticmethod
-    def find(node):  # type: (LinkedNode)->Union[Solution, None]
-        if node.op_type == 'MatMul' and \
-                node.get_precedence_by_idx(0).is_transpose and \
-                node.get_precedence_by_idx(1).is_transpose:
-
-            # also needs check the inputs of one operants is an initilizer.
-            if Solution.get_perm(node.get_precedence_by_idx(0)) == MatmulSolution.basic_transpose or \
-                    Solution.get_perm(node.get_precedence_by_idx(1)) == MatmulSolution.basic_transpose:
-                return MatmulSolution(node.get_precedence_by_idx(0), node, node, node.successor)
-
-        return None
-
-
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
 
 def _process_optimization(node_list, target_opset=None):
-    optimizers = [MatmulOptimizer, PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
+    optimizers = [PushTransposeOptimizer, RedundantOptimizer, TransposeOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer, MergePadTransposeConvOptimizer,
                   MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
@@ -1721,7 +1659,7 @@ def _visit(name_to_node_map, n_name, result):
     node.status = 'temp'
     for m in node.successor:
         if m.origin is not None:
-            _visit(name_to_node_map, m.name, result)
+            _visit(name_to_node_map, m.unique_name, result)
     node.status = 'perm'
     result.insert(0, node.idx)
 
@@ -1743,7 +1681,6 @@ def _topological_sort(node_list):
     for n_ in node_list:
         name = n_.unique_name
         name_set.add(name)
-        setattr(n_, 'name', name)
         setattr(n_, 'status', 'unmark')
         name_to_node_map.update({name: n_})
 
@@ -1766,13 +1703,11 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     :param target_opset: the opset version of the model.
     :return: the optimized onnx node list
     """
-    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+    onnx_nodelist, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
+    node_list = LinkedNode.build_from_onnx(onnx_nodelist,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs])
-    initializers = []
-    graph = _generate_graph_from_nodelist(node_list, initializers, '', inputs, outputs)
-    _, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
     node_list = _process_optimization(node_list, target_opset)
 
     if target_opset is None or target_opset < 9:
@@ -1831,8 +1766,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
 
     OnnxGraphContext.stopping_initializers = [] if stop_initializers is None else stop_initializers
     in_inputs = list(inputs) + extra_inputs
-    _, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
-    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+    onnx_nodelist, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
+    node_list = LinkedNode.build_from_onnx(onnx_nodelist,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if in_inputs is None else [i_.name for i_ in in_inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs],
