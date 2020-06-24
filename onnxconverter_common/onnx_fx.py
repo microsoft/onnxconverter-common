@@ -5,11 +5,12 @@
 ###############################################################################
 import copy
 import onnx
-from onnx import onnx_pb as onnx_proto
 import logging
 import numpy as np
+from onnx import onnx_pb as onnx_proto
+from inspect import getfullargspec
 
-from . import onnx_ops, utils
+from . import onnx_ops
 from .registration import register_converter
 from .topology import Topology, convert_topology
 from .oopb import OnnxOperatorBuilder
@@ -40,7 +41,6 @@ def _get_python_function_arguments(f):
     """
     # Note that we only return non-optional arguments (we assume that any optional args are not specified).
     # This allows to, e.g., accept max(a, b, *more, name='') as a binary function
-    from inspect import getfullargspec
     param_specs = getfullargspec(f)
     annotations = param_specs.annotations
     arg_names = param_specs.args
@@ -76,13 +76,16 @@ class Graph:
 
     @property
     def oxml(self):
-        if self._oxml is None:
-            self._defer_building()
-        return self._oxml
+        return self.to_model()
 
     @property
     def name(self):
         return self._name
+
+    def to_model(self):
+        if self._oxml is None:
+            self._defer_building()
+        return self._oxml
 
     def _bind(self, oxml, inputs, outputs):
         ox_graph = oxml.graph
@@ -160,6 +163,17 @@ class Graph:
                 outputs), "Function {}() returned {} but {} were declared".format(
                 operator.full_name, n_outputs, len(outputs))
 
+    @staticmethod
+    def _enforce_opset_version(oxml):
+        for im_ in oxml.opset_import:
+            if (im_.domain == '' or im_.domain == 'ai.onnx') and \
+                    im_.version != Graph.opset:
+                im_.version = Graph.opset
+                opv = Graph.opset
+                irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
+                oxml.ir_version = irv
+                _logger.warning('The maximum opset needed by this model is updated to %d.' % Graph.opset)
+
     def _build_graph(self, f, input_types=None, output_types=None, outputs=None):
         input_types = Graph._to_list(input_types)
         output_types = Graph._to_list(output_types)
@@ -188,13 +202,7 @@ class Graph:
             op_whole.outputs.append(vo_)
 
         oxml = convert_topology(topo, f_name, "onnx.fn: {}".format(f_name), target_opset=Graph.opset)
-        if oxml.opset_import[0].domain == '':
-            oxml.opset_import[0].version = Graph.opset
-            opv = Graph.opset
-            irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
-            oxml.ir_version = irv
-            oxml.model_version = utils.get_model_version()
-            _logger.warning('The maximum opset needed by this model is updated to %d.' % Graph.opset)
+        type(self)._enforce_opset_version(oxml)
         self._bind(oxml, arg_names, outputs)
         return self
 

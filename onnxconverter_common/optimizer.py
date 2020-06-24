@@ -5,15 +5,14 @@
 
 import numpy as np
 import onnx
+from uuid import uuid4
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
-from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph
-
-reserved_names_in_graph = frozenset()
+from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph, OnnxGraphContext
 
 
 class LinkedNode(object):
-    UNIQUE_NAME_INDEX = 0
+    reserved_names_in_graph = frozenset()
 
     def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
         self.origin = node  # type: onnx_proto.NodeProto
@@ -28,10 +27,7 @@ class LinkedNode(object):
         self.precedence = []
         self.successor = []
         self.attributes = {}
-        LinkedNode.UNIQUE_NAME_INDEX += 1
-        self.unique_name = "{}__{}".format(
-            self.origin.name if self.origin and self.origin.name else 'unnamed',
-            str(LinkedNode.UNIQUE_NAME_INDEX))
+        self.unique_name = self.origin.name if self.origin and self.origin.name else str(uuid4().hex)
 
     def __repr__(self):
         return "name: {}, node: <{}>".format(self.unique_name, str(self.origin) if self.origin else 'None')
@@ -39,6 +35,10 @@ class LinkedNode(object):
     @property
     def op_type(self):
         return None if self.origin is None else self.origin.op_type
+
+    @property
+    def name(self):
+        return self.unique_name
 
     @property
     def is_identity(self):
@@ -189,7 +189,7 @@ class LinkedNode(object):
         if self.origin is None:
             return False
         for node_output_ in self.origin.output:
-            if node_output_ in reserved_names_in_graph:
+            if node_output_ in LinkedNode.reserved_names_in_graph:
                 return True
         return False
 
@@ -373,6 +373,7 @@ class Solution(object):
 
     @staticmethod
     def get_perm(onode):
+        onode = onode.origin if isinstance(onode, LinkedNode) else onode
         try:
             return next(
                 helper.get_attribute_value(attr) for attr in onode.attribute if attr.name == 'perm')
@@ -443,7 +444,7 @@ class Solution(object):
     @staticmethod
     def add_siso_node(node_list, begin, end, begin_output_name, node):
         # type: ([], LinkedNode, LinkedNode, str, LinkedNode)->[]
-        node.in_redirect(node.single_input, begin_output_name)
+        node.in_redirect(node.get_input_by_idx(0), begin_output_name)
         end.in_redirect(begin_output_name, node.single_output)
         begin.successor[begin.successor.index(end)] = node
         end.precedence[end.precedence.index(begin)] = node
@@ -589,6 +590,7 @@ class FanInSolution(Solution):
         # make a copy of self.end_p.successor
         successor_list = list(self.begin.successor)
 
+        output_name = ''
         for suc in successor_list:
             if suc.origin is None:
                 output_name = list(self.begin.output.values())[0]
@@ -1369,6 +1371,7 @@ class PushTransposeSolution(Solution):
             if node.origin is None:
                 prev = node_pair_[1]
                 successor_list = list(prev.successor)
+                output_name = ''
                 for suc in successor_list:
                     if suc.origin is None:
                         output_name = list(prev.output.values())[0]
@@ -1454,6 +1457,7 @@ _move_cast_support_types = {'Reshape', 'Squeeze', 'Unsqueeze', 'Slice'}
 class SwapOpOptimizer(object):
     @staticmethod
     def find(node):
+        solution = None
         if node.in_single_path_and_inner:
             if node.origin.op_type == 'Cast':
                 to_value = node.get_attribute('to')
@@ -1615,6 +1619,7 @@ def _process_optimization(node_list, target_opset=None):
             cur_optm_process = True
             while cur_optm_process:
                 success = False
+                temp_list = []
                 for node_ in node_list:
                     if node_ in blockout:
                         continue
@@ -1654,7 +1659,7 @@ def _visit(name_to_node_map, n_name, result):
     node.status = 'temp'
     for m in node.successor:
         if m.origin is not None:
-            _visit(name_to_node_map, m.name, result)
+            _visit(name_to_node_map, m.unique_name, result)
     node.status = 'perm'
     result.insert(0, node.idx)
 
@@ -1676,7 +1681,6 @@ def _topological_sort(node_list):
     for n_ in node_list:
         name = n_.unique_name
         name_set.add(name)
-        setattr(n_, 'name', name)
         setattr(n_, 'status', 'unmark')
         name_to_node_map.update({name: n_})
 
@@ -1693,20 +1697,17 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     """
     Optimize onnx model by several approaches.
     :param onnx_nodes: the onnx node list in onnx model.
-    :param opset opset: number of the model
     :param nchw_inputs: the name list of the inputs needed to be transposed as NCHW
     :param inputs: the model input
     :param outputs: the model output
+    :param target_opset: the opset version of the model.
     :return: the optimized onnx node list
     """
-    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+    onnx_nodelist, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
+    node_list = LinkedNode.build_from_onnx(onnx_nodelist,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs])
-    initializers = []
-    graph = _generate_graph_from_nodelist(node_list, initializers, '', inputs, outputs)
-    global reserved_names_in_graph
-    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
     node_list = _process_optimization(node_list, target_opset)
 
     if target_opset is None or target_opset < 9:
@@ -1728,7 +1729,8 @@ def _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, o
     return graph
 
 
-def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, initializers=None,
+def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
+                        initializers=None, stop_initializers=None,
                         model_value_info=None, model_name=None, target_opset=None):
     """
     Optimize onnx model by several approaches.
@@ -1737,6 +1739,7 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     :param inputs: the model input
     :param outputs: the model output
     :param initializers: the model initializers
+    :param stop_initializers: 'stop' optimization on these initializers
     :param model_value_info: the model value_info
     :param model_name: the internal name of model
     :param target_opset: the opset version of the model
@@ -1761,21 +1764,21 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
         value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
+    OnnxGraphContext.stopping_initializers = [] if stop_initializers is None else stop_initializers
     in_inputs = list(inputs) + extra_inputs
-    node_list = LinkedNode.build_from_onnx(onnx_nodes,
+    onnx_nodelist, LinkedNode.reserved_names_in_graph = reserve_node_for_embedded_graph(onnx_nodes)
+    node_list = LinkedNode.build_from_onnx(onnx_nodelist,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if in_inputs is None else [i_.name for i_ in in_inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs],
                                            initializers)
 
-    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
-    global reserved_names_in_graph
-    _, reserved_names_in_graph = reserve_node_for_embedded_graph(graph)
-
     node_list = _process_optimization(node_list, target_opset)
-
     node_list = [n_ for n_ in node_list if n_.origin is not None]
-    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, inputs, outputs)
+    # clean up the initializer from input list
+    init_names = set(in_.name for in_ in initializers)
+    purified_inputs = [in_ for in_ in inputs if in_.name not in init_names]
+    graph = _generate_graph_from_nodelist(node_list, initializers, model_name, purified_inputs, outputs)
     # Add extra information related to the graph
     graph.value_info.extend(model_value_info)
 
@@ -1783,8 +1786,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
     return new_graph
 
 
-def optimize_onnx_model(origin_model, nchw_inputs=None):
-    # type: (onnx.ModelProto, list) -> onnx.ModelProto
+def optimize_onnx_model(origin_model, nchw_inputs=None, stop_initializers=None):
+    # type: (onnx.ModelProto, list, list) -> onnx.ModelProto
     """
     the origin model will be updated after the optimization.
     :param origin_model:
@@ -1794,17 +1797,16 @@ def optimize_onnx_model(origin_model, nchw_inputs=None):
     graph = origin_model.graph
     nodelist = list(graph.node)
 
-    input_with_initializer = [in_ for in_ in graph.input]
-    input_with_initializer += [in_ for in_ in graph.initializer]
     opt_graph = optimize_onnx_graph(nodelist,
                                     nchw_inputs=nchw_inputs,
                                     inputs=graph.input,
                                     outputs=graph.output,
                                     initializers=list(graph.initializer),
+                                    stop_initializers=stop_initializers,
                                     model_value_info=graph.value_info,
                                     model_name=graph.name,
-                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import)
-                                    )
+                                    target_opset=next(opset_.version for opset_ in origin_model.opset_import
+                                                      if opset_.domain == '' or opset_.domain == 'ai.onnx'))
 
     origin_model.graph.CopyFrom(opt_graph)
     return origin_model
