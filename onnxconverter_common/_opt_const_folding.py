@@ -9,7 +9,7 @@ from onnx import numpy_helper, mapping, helper
 
 
 class OnnxGraphContext:
-    stopping_initializer = []
+    stopping_initializers = []
 
     def __init__(self, graph_proto, nodelist):
         self.initializers = {ts_.name: ts_ for ts_ in graph_proto.initializer}
@@ -170,15 +170,18 @@ class OnnxGraphContext:
 
 
 def _fix_unamed_node(nodelist):
-    # type: (onnx.GraphProto)->onnx.GraphProto
     node_id = [1]
+    name_set = set(nd_.name if nd_.name else '' for nd_ in nodelist)
 
     def _ensure_node_named(node, incre_id):
         if node.name:
             return node
-        name = node.op_type.lower() + "_{}".format(incre_id[0])
-        incre_id[0] += 1
-        node.name = name
+        while True:
+            name = node.op_type.lower() + "_{}".format(incre_id[0])
+            incre_id[0] += 1
+            if name not in name_set:
+                node.name = name
+                break
         return node
 
     named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in nodelist]
@@ -194,7 +197,7 @@ def reserve_node_for_embedded_graph(nodelist):
             inner_inputs = frozenset([i_.name for i_ in subgraph_.input])
             for sub_nd_ in subgraph_.node:
                 ginputs.extend([i_ for i_ in sub_nd_.input if i_ not in inner_inputs])
-    ginputs.extend(OnnxGraphContext.stopping_initializer)
+    ginputs.extend(OnnxGraphContext.stopping_initializers)
     return nodelist, frozenset(ginputs)
 
 
