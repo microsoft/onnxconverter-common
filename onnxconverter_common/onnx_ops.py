@@ -222,7 +222,8 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
         inputs = [input_name]
 
         if min is not None:
-            if isinstance(min, (np.ndarray, float, int)):
+            if isinstance(min, (np.ndarray, float, int, np.float32,
+                                np.float64, np.int32, np.int64)):
                 # add initializer
                 if isinstance(min, np.ndarray):
                     if len(min.shape) == 0:
