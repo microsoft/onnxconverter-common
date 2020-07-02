@@ -1595,6 +1595,8 @@ class MergeCommonSequenceOptimizer(object):
                 continue
             if pred_0.origin is not None or pred_1.origin is not None:
                 return False
+            if len(pred_0.tensors) == 0 or len(pred_1.tensors) == 0:
+                return False
             val_0 = numpy_helper.to_array(pred_0.tensors[0])
             val_1 = numpy_helper.to_array(pred_1.tensors[0])
             if not np.array_equal(val_0, val_1):
