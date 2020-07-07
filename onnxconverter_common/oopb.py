@@ -352,6 +352,9 @@ class OnnxOperatorBuilder:
     def sigmoid(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_sigmoid, inputs, name, outputs)
 
+    def softsign(self, inputs, name=None, outputs=None):
+        return self.apply_op(onnx_ops.apply_softsign, inputs, name, outputs)
+
     def selu(self, inputs, name=None, outputs=None, alpha=1.673263, gamma=1.050701):
         return self.apply_op(onnx_ops.apply_selu, inputs, name, outputs, alpha=alpha, gamma=gamma)
 
