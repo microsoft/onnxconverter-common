@@ -143,6 +143,18 @@ def h2o_installed():
     return True
 
 
+def hummingbird_installed():
+    """
+    Checks that *Hummingbird* is available.
+    """
+    try:
+        import hummingbird.ml  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 def get_producer():
     """
     Internal helper function to return the producer

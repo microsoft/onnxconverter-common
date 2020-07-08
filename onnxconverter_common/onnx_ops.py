@@ -861,6 +861,11 @@ def apply_sigmoid(scope, input_name, output_name, container, operator_name=None)
     _apply_unary_operation(scope, 'Sigmoid', input_name, output_name, container, operator_name)
 
 
+def apply_softsign(scope, input_name, output_name, container, operator_name=None):
+    name = _create_name_or_use_existing_one(scope, 'Softsign', operator_name)
+    container.add_node('Softsign', input_name, output_name, name=name, op_version=1)
+
+
 # See alpha and gamma at https://github.com/keras-team/keras/blob/master/keras/activations.py#L80-L81
 def apply_selu(scope, input_name, output_name, container, operator_name=None, alpha=1.673263, gamma=1.050701):
     _apply_unary_operation(scope, 'Selu', input_name, output_name, container, operator_name, alpha=alpha, gamma=gamma)
