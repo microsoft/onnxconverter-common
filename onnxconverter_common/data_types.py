@@ -111,6 +111,22 @@ class Int32TensorType(TensorType):
         return onnx_proto.TensorProto.INT32
 
 
+class Int8TensorType(TensorType):
+    def __init__(self, shape=None, doc_string=''):
+        super(Int8TensorType, self).__init__(shape, doc_string)
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.INT8
+
+
+class UInt8TensorType(TensorType):
+    def __init__(self, shape=None, doc_string=''):
+        super(UInt8TensorType, self).__init__(shape, doc_string)
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.UINT8
+
+
 class Int64TensorType(TensorType):
     def __init__(self, shape=None, doc_string=''):
         super(Int64TensorType, self).__init__(shape, doc_string)
