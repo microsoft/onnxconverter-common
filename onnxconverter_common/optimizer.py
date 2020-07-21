@@ -1544,6 +1544,8 @@ class MergeCommonSequenceOptimizer(object):
             return False
         if node_0.origin.name == node_1.origin.name:
             return False
+        if len(node_0.output) > 1 or len(node_1.output) > 1:
+            return False
         no_merge_count = 0
         for node_suc_ in node_0.successor:
             if node_suc_.origin is None:
