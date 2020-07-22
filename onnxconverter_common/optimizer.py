@@ -855,7 +855,7 @@ class ConvBatchNormOptimizer(object):
                     return None
                 else:
                     for idx_ in range(1, 5):
-                        if len(next.precedence[idx_].tensors) == 0:
+                        if len(next.get_precedence_by_idx(idx_).tensors) == 0:
                             return None
 
                 solution = ConvBatchNormSolution(node.get_precedence_by_idx(0), node, next, next.successor)
