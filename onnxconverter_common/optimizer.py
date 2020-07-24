@@ -1634,22 +1634,12 @@ class MatmulSolution(Solution):
         new_node_name = node.origin.output[0] + '_post'
         back_perm = list(range(len(new_perm)))
         back_perm = back_perm[:-2] + [back_perm[-1], back_perm[-2]]
-        if True:
-            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
-                node=helper.make_node('Transpose',
-                                      [node.origin.output[0]],
-                                      [new_node_name],
-                                      perm=back_perm,
-                                      name=new_node_name)))
-        else:
-            reshape_initilizer = numpy_helper.from_array(
-                np.array([1, 1, 1, -1]).astype(np.int64), name=new_node_name + '_c')
-            reshape_node = LinkedNode(helper.make_node('Reshape',
-                                                       [node.origin.output[0], new_node_name + '_c'],
-                                                       [new_node_name],
-                                                       name=new_node_name))
-            reshape_node.initializers = [reshape_initilizer]
-            Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, reshape_node)
+        Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
+            node=helper.make_node('Transpose',
+                                  [node.origin.output[0]],
+                                  [new_node_name],
+                                  perm=back_perm,
+                                  name=new_node_name)))
         return node_list, True
 
 

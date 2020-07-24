@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 import onnxruntime as _ort
+from distutils.version import StrictVersion
 from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
@@ -56,6 +57,8 @@ class ONNXFunctionTest(unittest.TestCase):
         self.assertEqual(
             loop_test(np.array([16], dtype=np.int64))[2][4], 3.0)
 
+    @unittest.skipIf(StrictVersion(_ort.__version__.split('-')[0]) < StrictVersion("1.4.0"),
+                     "onnxruntime fixed the issue in matmul since 1.4.0")
     def test_matmul_opt(self):
         @onnx_function(outputs=['z'],
                        input_types=(_Ty.F([1, 1, 6, 1])),
@@ -71,8 +74,6 @@ class ONNXFunctionTest(unittest.TestCase):
         m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
         expected = transpose_n_matmul(m1)
         opted = optimize_onnx_model(transpose_n_matmul.to_model())
-        import onnx
-        onnx.save_model(opted, 'mm_opted.onnx')
         actual = _ort_inference(opted, {'x': m1})
         self.assertTrue(np.allclose(expected, actual), "The result mismatch")
 
