@@ -1627,7 +1627,7 @@ class MatmulSolution(Solution):
         new_node_name = node.origin.output[0] + '_post'
         back_perm = list(range(len(new_perm)))
         back_perm = back_perm[:-2] + [back_perm[-1], back_perm[-2]]
-        if False:
+        if True:
             Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
                 node=helper.make_node('Transpose',
                                       [node.origin.output[0]],
