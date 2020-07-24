@@ -71,6 +71,8 @@ class ONNXFunctionTest(unittest.TestCase):
         m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
         expected = transpose_n_matmul(m1)
         opted = optimize_onnx_model(transpose_n_matmul.to_model())
+        import onnx
+        onnx.save_model(opted, 'mm_opted.onnx')
         actual = _ort_inference(opted, {'x': m1})
         self.assertTrue(np.allclose(expected, actual), "The result mismatch")
 

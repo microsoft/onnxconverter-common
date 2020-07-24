@@ -182,7 +182,6 @@ def _fix_unamed_node(nodelist):
             if name not in name_set:
                 node.name = name
                 break
-
         return node
 
     named_nodes = [_ensure_node_named(nd_, node_id) for nd_ in nodelist]
