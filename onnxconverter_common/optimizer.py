@@ -6,6 +6,7 @@
 import numpy as np
 import onnx
 from uuid import uuid4
+from typing import Union
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
 from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph, OnnxGraphContext
@@ -855,7 +856,7 @@ class ConvBatchNormOptimizer(object):
                     return None
                 else:
                     for idx_ in range(1, 5):
-                        if len(next.precedence[idx_].tensors) == 0:
+                        if len(next.get_precedence_by_idx(idx_).tensors) == 0:
                             return None
 
                 solution = ConvBatchNormSolution(node.get_precedence_by_idx(0), node, next, next.successor)
@@ -1607,12 +1608,62 @@ class MergeCommonSequenceOptimizer(object):
         return True
 
 
+class MatmulSolution(Solution):
+    basic_transpose = [1, 0]
+
+    def apply(self, node_list):
+        node = self.begin_n
+        opr_0 = self.begin
+        opr_1 = node.get_precedence_by_idx(1)
+        perm0 = Solution.get_perm(opr_0)
+        perm1 = Solution.get_perm(opr_1)
+        target_opr = opr_0
+        del_opr = opr_1
+        if perm0 == MatmulSolution.basic_transpose:
+            perm0, perm1 = perm1, perm0
+            target_opr = opr_1
+            del_opr = opr_0
+
+        # apply perm1 into perm0
+        new_perm = perm0[:-2] + [perm0[-1], perm0[-2]]
+        target_opr.attributes['perm'] = new_perm
+        Solution.delete_node_1ton(node_list, del_opr.get_precedence_by_idx(0), del_opr, node)
+        lst_input = list(node.origin.input)
+        del node.origin.input[:]
+        node.origin.input.extend(lst_input[::-1])
+        new_node_name = node.origin.output[0] + '_post'
+        back_perm = list(range(len(new_perm)))
+        back_perm = back_perm[:-2] + [back_perm[-1], back_perm[-2]]
+        Solution.add_siso_node(node_list, node, node.successor[0], node.single_output, LinkedNode(
+            node=helper.make_node('Transpose',
+                                  [node.origin.output[0]],
+                                  [new_node_name],
+                                  perm=back_perm,
+                                  name=new_node_name)))
+        return node_list, True
+
+
+class MatmulOptimizer:
+    @staticmethod
+    def find(node):  # type: (LinkedNode)->Union[Solution, None]
+        if node.op_type == 'MatMul' and \
+                node.get_precedence_by_idx(0).is_transpose and \
+                node.get_precedence_by_idx(1).is_transpose:
+
+            # also needs check the inputs of one operants is an initilizer.
+            if Solution.get_perm(node.get_precedence_by_idx(0)) == MatmulSolution.basic_transpose or \
+                    Solution.get_perm(node.get_precedence_by_idx(1)) == MatmulSolution.basic_transpose:
+                return MatmulSolution(node.get_precedence_by_idx(0), node, node, node.successor)
+
+        return None
+
+
 def _apply_optimization(solution, node_list):
     return solution.apply(node_list)
 
 
 def _process_optimization(node_list, target_opset=None):
-    optimizers = [TransposeOptimizer, RedundantOptimizer,
+    optimizers = [MatmulOptimizer, TransposeOptimizer, RedundantOptimizer,
                   MergePadConvOptimizer, MergeReshapeOptimizer, MergeCastOptimizer, MergePadTransposeConvOptimizer,
                   MergeSqueezeUnsqueezeOptimizer, SwapOpOptimizer, MergeCommonSequenceOptimizer]
     if target_opset is not None and target_opset >= 9:
