@@ -1266,6 +1266,8 @@ class PushTransposeSolution(Solution):
                 for pred_ in node_pair_[0].precedence:
                     if pred_.origin is not None:
                         pred_count += 1
+                    elif len(pred_.tensors) == 0:  # not an initializer
+                        pred_count += 1
                 if pred_count > 1:
                     return None, False
 
