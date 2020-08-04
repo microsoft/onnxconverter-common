@@ -1024,7 +1024,7 @@ def _update_broadcast_from_initializers(node, init_pred_value, cur_perm, init_id
 _nchw_input_node_type = ['Conv', 'ConvTranspose', 'BatchNormalization', 'Mul']
 _activation_node_type = ['Elu', 'HardSigmoid', 'LeakyRelu', 'Relu', 'Selu', 'Sigmoid', 'Softmax', 'Softplus',
                          'Softsign', 'Tanh']
-_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Reshape', 'Add', 'Mul'}
+_broadcast_flip_whitelist = {'Transpose', 'Conv', 'BatchNormalization', 'Resize', 'Reshape', 'Add', 'Mul', 'Max', 'Min'}
 _broadcast_flip_whitelist.update(_activation_node_type)
 
 
@@ -1262,7 +1262,14 @@ class PushTransposeSolution(Solution):
 
         for node_pair_ in node_transpose_no_pass:
             if len(node_pair_[0].precedence) > 1:
-                return None, False
+                pred_count = 0
+                for pred_ in node_pair_[0].precedence:
+                    if pred_.origin is not None:
+                        pred_count += 1
+                    elif len(pred_.tensors) == 0:  # not an initializer
+                        pred_count += 1
+                if pred_count > 1:
+                    return None, False
 
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
