@@ -112,6 +112,7 @@ def apply_argmin(scope, input_name, output_name, container, operator_name=None, 
 
 
 def apply_affine(scope, input_name, output_name, container, operator_name=None, alpha=1., beta=0.):
+    input_name = input_name if isinstance(input_name) else [input_name]
     if container.target_opset < 9:
         op_type = 'Affine'
         name = _create_name_or_use_existing_one(scope, 'Affine', operator_name)
@@ -127,7 +128,7 @@ def apply_affine(scope, input_name, output_name, container, operator_name=None, 
 
         # Compute Z = a * X, where X is the original input.
         zName = scope.get_unique_variable_name(name + '_scaled')
-        apply_mul(scope, [aName, input_name], zName, container)
+        apply_mul(scope, [aName] + input_name, zName, container)
 
         # Compute Y = Z + b, where Y is the final output.
         apply_add(scope, [zName, bName], output_name, container)
@@ -219,7 +220,7 @@ def apply_clip(scope, input_name, output_name, container, operator_name=None, ma
             op_version = 12
         if min is None and max is not None:
             raise RuntimeError("Operator 'Clip': min must be specified if max is.")
-        inputs = [input_name]
+        inputs = input_name if isinstance(input_name, list) else [input_name]
 
         if min is not None:
             if isinstance(min, (np.ndarray, float, int)):
@@ -350,6 +351,7 @@ def apply_conv(scope, input_names, output_name, container, operator_name=None, *
 def apply_crop_height_width(scope, input_name, output_name, container, operator_name=None,
                             top_border=0, bottom_border=0, left_border=0, right_border=0):
     name = scope.get_unique_operator_name('CropHeightWidth')
+    inputs = input_name if isinstance(input_name, list) else [input_name]
     if container.target_opset < 9:
         # If operator set < 9, we can use the experimental Crop in ONNX.
         attrs = {'name': name, 'border': [left_border, top_border, right_border, bottom_border]}
@@ -387,7 +389,7 @@ def apply_crop_height_width(scope, input_name, output_name, container, operator_
                                   [len(ends)], ends)
 
         # Collect all input names as a list because DynamicSlice has multiple inputs.
-        input_list = [input_name, starts_name, ends_name, axes_name]
+        input_list = input_name + [starts_name, ends_name, axes_name]
         container.add_node('DynamicSlice', input_list, output_name, op_version=9)
 
 
@@ -676,6 +678,7 @@ def apply_parametric_softplus(scope, input_name, output_name, container, operato
         beta = [0.]
 
     name = _create_name_or_use_existing_one(scope, 'ParametricSoftplus', operator_name)
+    input_name = input_name if isinstance(input_name, list) else [input_name]
     if container.target_opset < 9:
         if len(alpha) != 1 or len(beta) != 1:
             raise ValueError('alpha and beta must be 1-element lists')
@@ -695,7 +698,7 @@ def apply_parametric_softplus(scope, input_name, output_name, container, operato
 
         # c = b * x
         cName = scope.get_unique_variable_name(name + '_c')
-        apply_mul(scope, [input_name, bName], cName, container)
+        apply_mul(scope, input_name + [bName], cName, container)
 
         # d = exp(c)
         dName = scope.get_unique_variable_name(name + '_d')
@@ -735,6 +738,7 @@ def apply_pow(scope, input_names, output_name, container, operator_name=None, ax
 
 def apply_prelu(scope, input_name, output_name, container, operator_name=None, slope=None):
     name = _create_name_or_use_existing_one(scope, 'PRelu', operator_name)
+    input_name = input_name if isinstance(input_name, list) else [input_name]
     slope_tensor_name = scope.get_unique_variable_name('slope')
     s_shape = slope.shape
     if container.target_opset < 7:
@@ -742,7 +746,7 @@ def apply_prelu(scope, input_name, output_name, container, operator_name=None, s
     container.add_initializer(slope_tensor_name, onnx_proto.TensorProto.FLOAT, s_shape, slope.flatten())
 
     if container.target_opset < 6:
-        container.add_node('PRelu', [input_name, slope_tensor_name], output_name, op_version=1, name=name,
+        container.add_node('PRelu', input_name + [slope_tensor_name], output_name, op_version=1, name=name,
                            consumed_inputs=[0, 0])
     else:
         if container.target_opset < 7:
@@ -753,7 +757,7 @@ def apply_prelu(scope, input_name, output_name, container, operator_name=None, s
             # opset 9 supports unidirectional broadcasting
             op_version = 9
 
-        container.add_node('PRelu', [input_name, slope_tensor_name], output_name, op_version=op_version, name=name)
+        container.add_node('PRelu', input_name + [slope_tensor_name], output_name, op_version=op_version, name=name)
 
 
 def apply_range(scope, input_name, output_name, container, operator_name=None):
@@ -811,7 +815,7 @@ def apply_resize(scope, input_name, output_name, container, operator_name=None, 
     attrs = {'name': name}
     attrs['mode'] = mode.lower()
 
-    inputs = [input_name]
+    inputs = input_name if isinstance(input_name, list) else [input_name]
 
     if container.target_opset < 11:
         op_version = 10
@@ -874,6 +878,7 @@ def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=N
         raise ValueError('alpha and beta must be 1-element lists')
 
     name = _create_name_or_use_existing_one(scope, 'ScaledTanh', operator_name)
+    input_name = input_name if isinstance(input_name, list) else [input_name]
     if container.target_opset < 9:
         attrs = {'name': name, 'alpha': alpha[0], 'beta': beta[0]}
         container.add_node('ScaledTanh', input_name, output_name, **attrs)
@@ -890,7 +895,7 @@ def apply_scaled_tanh(scope, input_name, output_name, container, operator_name=N
 
         # c = b * x
         cName = scope.get_unique_variable_name(name + '_c')
-        apply_mul(scope, [input_name, bName], cName, container)
+        apply_mul(scope, input_name + [bName], cName, container)
 
         # d = tanh(c)
         dName = scope.get_unique_variable_name(name + '_d')
@@ -1082,7 +1087,7 @@ def apply_tile(scope, input_name, output_name, container, operator_name=None, re
         else:
             repeat_tensor_name = scope.get_unique_variable_name(name + '_repeats')
             container.add_initializer(repeat_tensor_name, onnx_proto.TensorProto.INT64, [len(repeats)], repeats)
-            container.add_node('Tile', [input_name, repeat_tensor_name], output_name, op_version=6, name=name)
+            container.add_node('Tile', input_name + [repeat_tensor_name], output_name, op_version=6, name=name)
 
 
 def apply_topk(scope, input_name, output_names, container, k, operator_name=None):
@@ -1117,9 +1122,10 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
     :param mode: nearest or linear
     :param scales: an integer list of scaling-up rate of all input dimensions
     '''
+    input_name = input_name if isinstance(input_name, list) else [input_name]
     if container.target_opset < 10:
         name = _create_name_or_use_existing_one(scope, 'Upsample', operator_name)
-        inputs = [input_name]
+        inputs = input_name
         attrs = {'name': name}
         if container.target_opset < 7:
             if len(scales) != 4:
@@ -1137,7 +1143,7 @@ def apply_upsample(scope, input_name, output_name, container, operator_name=None
                 # scales moved from attribute to input in opset 9
                 scales_tensor_name = scope.get_unique_variable_name(name + '_scales')
                 container.add_initializer(scales_tensor_name, onnx_proto.TensorProto.FLOAT, [len(scales)], scales)
-                inputs = [input_name, scales_tensor_name]
+                inputs = input_name + [scales_tensor_name]
                 op_version = 9
 
         container.add_node('Upsample', inputs, output_name, op_version=op_version, **attrs)
