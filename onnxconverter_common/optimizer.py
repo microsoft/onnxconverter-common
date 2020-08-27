@@ -506,7 +506,7 @@ class MergeSolution(Solution):
             node_list = self.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor[0])
             node_list = self.delete_node_1ton(node_list, self.end_p.get_precedence_by_idx(0), self.end_p, self.end)
         else:
-            node_list = self.delete_node_1ton(node_list, self.begin_n, self.end_p, self.end)
+            node_list = self.delete_node_1ton(node_list, self.end_p.get_precedence_by_idx(0), self.end_p, self.end)
             self.begin_n.origin = helper.make_node('Transpose', self.begin_n.origin.input, self.begin_n.origin.output,
                                                    self.begin_n.origin.name, perm=perm_f)
         return node_list, True
