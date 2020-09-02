@@ -1453,7 +1453,8 @@ class SwapOpSolution(Solution):
 
         self.begin_n.precedence[0] = self.end_p
         self.end_p.precedence[0] = self.begin
-        self.end.precedence[0] = self.begin_n
+        # self.end can have multiple precedences
+        self.end.precedence[self.end.precedence.index(self.end_p)] = self.begin_n
 
         self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
         self.end_p.in_redirect(self.begin_n.single_output, self.begin.single_output)
