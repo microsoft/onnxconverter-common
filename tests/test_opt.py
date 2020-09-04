@@ -302,7 +302,7 @@ class OptimizerTestCase(unittest.TestCase):
     def test_onnx_models(self):
         model_names = ['mobile_segnet_no_opt.onnx', 'srgan_no_opt.onnx', 'test_model_0_no_opt.onnx',
                        'test_model_1_no_opt.onnx']
-        num_transpose_list = [2, 3, 11, 5]
+        num_transpose_list = [2, 3, 11, 6]
         dir_path = os.path.dirname(os.path.realpath(__file__))
         for idx_, model_name_ in enumerate(model_names):
             model_dir = dir_path + '/data/' + model_name_

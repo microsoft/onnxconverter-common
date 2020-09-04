@@ -1071,7 +1071,7 @@ def _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map
                 if prev.origin is not None or len(prev.tensors) == 0:
                     can_process = False
                     break
-            elif prev.origin.op_type not in _broadcast_flip_whitelist:
+            else:
                 can_process = False
                 break
         return can_process
@@ -1097,17 +1097,6 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
                 if prev.origin is None:
                     init_pred_value = numpy_helper.to_array(prev.tensors[0])
                     _update_broadcast_from_initializers(node, init_pred_value, cur_perm, add_transpose_idx_)
-            elif prev.origin.op_type in _broadcast_flip_whitelist:
-                nnode = LinkedNode(
-                    helper.make_node(
-                        'Transpose',
-                        ['push_transpose_in_' + str(PushTransposeSolution.transpose_number)],
-                        ['push_transpose_out_' + str(PushTransposeSolution.transpose_number)],
-                        perm=_get_reverse_perm(cur_perm),
-                        name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
-                PushTransposeSolution.transpose_number += 1
-                node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
-
     return node_list, cur_perm_map
 
 
