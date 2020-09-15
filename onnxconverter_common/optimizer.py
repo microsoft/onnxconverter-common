@@ -506,7 +506,7 @@ class MergeSolution(Solution):
             node_list = self.delete_node_1ton(node_list, self.begin, self.begin_n, self.begin_n.successor[0])
             node_list = self.delete_node_1ton(node_list, self.end_p.get_precedence_by_idx(0), self.end_p, self.end)
         else:
-            node_list = self.delete_node_1ton(node_list, self.begin_n, self.end_p, self.end)
+            node_list = self.delete_node_1ton(node_list, self.end_p.get_precedence_by_idx(0), self.end_p, self.end)
             self.begin_n.origin = helper.make_node('Transpose', self.begin_n.origin.input, self.begin_n.origin.output,
                                                    self.begin_n.origin.name, perm=perm_f)
         return node_list, True
@@ -1071,7 +1071,7 @@ def _check_transpose_pass_broadcast(node, node_transpose_pass_name, cur_perm_map
                 if prev.origin is not None or len(prev.tensors) == 0:
                     can_process = False
                     break
-            elif prev.origin.op_type not in _broadcast_flip_whitelist:
+            else:
                 can_process = False
                 break
         return can_process
@@ -1097,17 +1097,6 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
                 if prev.origin is None:
                     init_pred_value = numpy_helper.to_array(prev.tensors[0])
                     _update_broadcast_from_initializers(node, init_pred_value, cur_perm, add_transpose_idx_)
-            elif prev.origin.op_type in _broadcast_flip_whitelist:
-                nnode = LinkedNode(
-                    helper.make_node(
-                        'Transpose',
-                        ['push_transpose_in_' + str(PushTransposeSolution.transpose_number)],
-                        ['push_transpose_out_' + str(PushTransposeSolution.transpose_number)],
-                        perm=_get_reverse_perm(cur_perm),
-                        name='PushTranspose_' + str(PushTransposeSolution.transpose_number)))
-                PushTransposeSolution.transpose_number += 1
-                node_list = Solution.add_siso_node(node_list, prev, node, list(prev.output.values())[0], nnode)
-
     return node_list, cur_perm_map
 
 
@@ -1453,7 +1442,8 @@ class SwapOpSolution(Solution):
 
         self.begin_n.precedence[0] = self.end_p
         self.end_p.precedence[0] = self.begin
-        self.end.precedence[0] = self.begin_n
+        # self.end can have multiple precedences
+        self.end.precedence[self.end.precedence.index(self.end_p)] = self.begin_n
 
         self.begin_n.in_redirect(self.begin.single_output, self.end_p.single_output)
         self.end_p.in_redirect(self.begin_n.single_output, self.begin.single_output)
