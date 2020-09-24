@@ -69,6 +69,10 @@ def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_pr
     if metadata_props:
         add_metadata_props(onnx_model, metadata_props, target_default_opset)
     opv = _get_main_opset_version(onnx_model) or target_default_opset
+    # Initializers are a subset of graph inputs for IR_VERSION <= 3 (target opset < 8).
+    # Need upgrade opv since initializers are separate for IR_VERSION >= 4 to pass onnx.checker.
+    if opv < 8 and target_default_opset is not None and target_default_opset >= 8:
+        opv = 8
     irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
     onnx_model.ir_version = irv
     onnx_model.producer_name = kwargs.get('producer_name') if 'producer_name' in kwargs else utils.get_producer()
