@@ -277,10 +277,11 @@ class Graph:
         oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
         for opset_import in oxml.opset_import:
             if opset_import.domain == '':
-                if Graph.opset != opset_import.version:
-                    raise RuntimeError("Graph opset and model opset mismatch: Graph opset = " + str(Graph.opset)
+                if Graph.opset < opset_import.version:
+                    raise RuntimeError("Graph opset < model opset: Graph opset = " + str(Graph.opset)
                                        + ", model opset = " + str(opset_import.version))
-                break
+                elif Graph.opset > opset_import.version:
+                    Graph._enforce_opset_version(oxml)
         g = Graph(name or oxml.graph.name)
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g
