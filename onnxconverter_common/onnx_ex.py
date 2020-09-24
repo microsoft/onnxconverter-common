@@ -40,6 +40,11 @@ def make_model_ex(graph, imported_opset_pairs, target_default_opset, metadata_pr
     purified_operator_set = dict()
     for op_domain, op_version in imported_opset_pairs:
         if op_domain not in purified_operator_set:
+            if op_domain == '':
+                # Initializers are a subset of graph inputs for IR_VERSION <= 3 (target opset < 8).
+                # Need upgrade opv since initializers are separate for IR_VERSION >= 4 to pass onnx.checker.
+                if op_version < 8 and target_default_opset is not None and target_default_opset >= 8:
+                    op_version = 8
             purified_operator_set[op_domain] = op_version
         else:
             purified_operator_set[op_domain] = max(purified_operator_set[op_domain], op_version)
