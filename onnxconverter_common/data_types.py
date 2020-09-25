@@ -16,6 +16,10 @@ class DataType(object):
     def to_onnx_type(self):
         raise NotImplementedError()
 
+    def __repr__(self):
+        return "{}(shape={})".format(
+            self.__class__.__name__, self.shape)
+
 
 class Int64Type(DataType):
     def __init__(self, doc_string=''):
@@ -29,7 +33,7 @@ class Int64Type(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "Int64Type()"
+        return "{}()".format(self.__class__.__name__)
 
 
 class FloatType(DataType):
@@ -44,7 +48,7 @@ class FloatType(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "FloatType()"
+        return "{}()".format(self.__class__.__name__)
 
 
 class StringType(DataType):
@@ -59,7 +63,7 @@ class StringType(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "StringType()"
+        return "{}()".format(self.__class__.__name__)
 
 
 class TensorType(DataType):
@@ -106,8 +110,21 @@ class Int32TensorType(TensorType):
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.INT32
 
-    def __repr__(self):
-        return "Int32TensorType(shape={0})".format(self.shape)
+
+class Int8TensorType(TensorType):
+    def __init__(self, shape=None, doc_string=''):
+        super(Int8TensorType, self).__init__(shape, doc_string)
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.INT8
+
+
+class UInt8TensorType(TensorType):
+    def __init__(self, shape=None, doc_string=''):
+        super(UInt8TensorType, self).__init__(shape, doc_string)
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.UINT8
 
 
 class Int64TensorType(TensorType):
@@ -117,9 +134,6 @@ class Int64TensorType(TensorType):
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.INT64
 
-    def __repr__(self):
-        return "Int64TensorType(shape={0})".format(self.shape)
-
 
 class BooleanTensorType(TensorType):
     def __init__(self, shape=None, doc_string=''):
@@ -127,9 +141,6 @@ class BooleanTensorType(TensorType):
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.BOOL
-
-    def __repr__(self):
-        return "BooleanTensorType(shape={0})".format(self.shape)
 
 
 class FloatTensorType(TensorType):
@@ -142,9 +153,6 @@ class FloatTensorType(TensorType):
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.FLOAT
 
-    def __repr__(self):
-        return "FloatTensorType(shape={0})".format(self.shape)
-
 
 class DoubleTensorType(TensorType):
     def __init__(self, shape=None, color_space=None, doc_string=''):
@@ -155,15 +163,30 @@ class DoubleTensorType(TensorType):
         return onnx_proto.TensorProto.DOUBLE
 
 
+class Complex64TensorType(TensorType):
+    def __init__(self, shape=None, color_space=None, doc_string=''):
+        super(Complex64TensorType, self).__init__(shape, doc_string)
+        self.color_space = color_space
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.COMPLEX64
+
+
+class Complex128TensorType(TensorType):
+    def __init__(self, shape=None, color_space=None, doc_string=''):
+        super(Complex128TensorType, self).__init__(shape, doc_string)
+        self.color_space = color_space
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.COMPLEX128
+
+
 class StringTensorType(TensorType):
     def __init__(self, shape=None, doc_string=''):
         super(StringTensorType, self).__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.STRING
-
-    def __repr__(self):
-        return "StringTensorType(shape={0})".format(self.shape)
 
 
 class DictionaryType(DataType):
@@ -211,6 +234,10 @@ class SequenceType(DataType):
             info = [onnx.__version__, str(onnx_type)]
             msg += "\n".join(info)
             raise RuntimeError(msg)
+        except TypeError:
+            raise RuntimeError(
+                "Unable to create SequenceType with "
+                "element_type=%r" % self.element_type)
         return onnx_type
 
     def __repr__(self):
@@ -223,11 +250,10 @@ def find_type_conversion(source_type, target_type):
     """
     if type(source_type) == type(target_type):
         return 'identity'
-    elif type(target_type) == FloatTensorType:
+    if type(target_type) == FloatTensorType:
         return 'imageToFloatTensor'
-    else:
-        raise ValueError('Unsupported type conversion from %s to %s' % (
-                         source_type, target_type))
+    raise ValueError('Unsupported type conversion from %s to %s' % (
+                     source_type, target_type))
 
 
 def onnx_built_with_ml():
