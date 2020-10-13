@@ -16,7 +16,8 @@ from .topology import Topology, convert_topology
 from .oopb import OnnxOperatorBuilder
 from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
 from .data_types import (DoubleTensorType, FloatTensorType,
-                         Int64TensorType, Int32TensorType, BooleanTensorType)
+                         Int64TensorType, Int32TensorType, BooleanTensorType,
+                         Complex64TensorType, Complex128TensorType)
 
 _logger = logging.getLogger(__name__)
 
@@ -27,12 +28,16 @@ class GraphFunctionType:
     I = Int64TensorType  # noqa: E741 ambiguous variable name 'I'
     B = BooleanTensorType
     I32 = Int32TensorType
+    C64 = Complex64TensorType
+    C128 = Complex128TensorType
 
     d = DoubleTensorType(shape=[])
     f = FloatTensorType(shape=[])
     i = Int64TensorType(shape=[])
     i32 = Int32TensorType(shape=[])
     b = BooleanTensorType(shape=[])
+    c64 = Complex64TensorType(shape=[])
+    c128 = Complex64TensorType(shape=[])
 
 
 def _get_python_function_arguments(f):
@@ -277,10 +282,11 @@ class Graph:
         oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
         for opset_import in oxml.opset_import:
             if opset_import.domain == '':
-                if Graph.opset != opset_import.version:
-                    raise RuntimeError("Graph opset and model opset mismatch: Graph opset = " + str(Graph.opset)
+                if Graph.opset < opset_import.version:
+                    raise RuntimeError("Graph opset < model opset: Graph opset = " + str(Graph.opset)
                                        + ", model opset = " + str(opset_import.version))
-                break
+                elif Graph.opset > opset_import.version:
+                    Graph._enforce_opset_version(oxml)
         g = Graph(name or oxml.graph.name)
         g._bind(oxml, inputs=inputs, outputs=outputs)
         return g

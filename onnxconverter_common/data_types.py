@@ -163,6 +163,24 @@ class DoubleTensorType(TensorType):
         return onnx_proto.TensorProto.DOUBLE
 
 
+class Complex64TensorType(TensorType):
+    def __init__(self, shape=None, color_space=None, doc_string=''):
+        super(Complex64TensorType, self).__init__(shape, doc_string)
+        self.color_space = color_space
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.COMPLEX64
+
+
+class Complex128TensorType(TensorType):
+    def __init__(self, shape=None, color_space=None, doc_string=''):
+        super(Complex128TensorType, self).__init__(shape, doc_string)
+        self.color_space = color_space
+
+    def _get_element_onnx_type(self):
+        return onnx_proto.TensorProto.COMPLEX128
+
+
 class StringTensorType(TensorType):
     def __init__(self, shape=None, doc_string=''):
         super(StringTensorType, self).__init__(shape, doc_string)
@@ -216,6 +234,10 @@ class SequenceType(DataType):
             info = [onnx.__version__, str(onnx_type)]
             msg += "\n".join(info)
             raise RuntimeError(msg)
+        except TypeError:
+            raise RuntimeError(
+                "Unable to create SequenceType with "
+                "element_type=%r" % self.element_type)
         return onnx_type
 
     def __repr__(self):
