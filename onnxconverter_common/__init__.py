@@ -26,5 +26,5 @@ from .tree_ensemble import *  # noqa F403
 from .utils import *  # noqa F403
 from .case_insensitive_dict import *  # noqa F403
 from .metadata_props import add_metadata_props, set_denotation
-from .float16 import convert_tensor_float_to_float16
+from .float16 import convert_tensor_float_to_float16, convert_float_to_float16
 from .optimizer import optimize_onnx, optimize_onnx_graph, optimize_onnx_model
