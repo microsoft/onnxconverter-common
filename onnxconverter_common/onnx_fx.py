@@ -17,7 +17,7 @@ from .oopb import OnnxOperatorBuilder
 from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
 from .data_types import (DoubleTensorType, FloatTensorType,
                          Int64TensorType, Int32TensorType, BooleanTensorType,
-                         Complex64TensorType, Complex128TensorType)
+                         Complex64TensorType, Complex128TensorType, StringTensorType)
 
 _logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class GraphFunctionType:
     I32 = Int32TensorType
     C64 = Complex64TensorType
     C128 = Complex128TensorType
+    S = StringTensorType
 
     d = DoubleTensorType(shape=[])
     f = FloatTensorType(shape=[])
@@ -38,6 +39,7 @@ class GraphFunctionType:
     b = BooleanTensorType(shape=[])
     c64 = Complex64TensorType(shape=[])
     c128 = Complex64TensorType(shape=[])
+    s = StringTensorType(shape=[])
 
 
 def _get_python_function_arguments(f):
