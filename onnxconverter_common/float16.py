@@ -73,7 +73,7 @@ def convert_tensor_float_to_float16(tensor, min_positive_val=1e-7, max_finite_va
     return tensor
 
 
-def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4):
+def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
@@ -121,6 +121,43 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4):
     if func_infer_shape is not None:
         model = func_infer_shape(model)
     queue.append(model)
+    name_mapping = {}
+    graph_io_to_skip = set()
+    io_casts = set()
+    if keep_io_types:
+        for i, n in enumerate(model.graph.input):
+            if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                output_name = 'graph_input_cast_' + str(i)
+                name_mapping[n.name] = output_name
+                graph_io_to_skip.add(n.name)
+
+                node_name = 'graph_input_cast' + str(i)
+                new_value_info = model.graph.value_info.add()
+                new_value_info.CopyFrom(n)
+                new_value_info.name = output_name
+                new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+                # add Cast node (from tensor(float) to tensor(float16) after graph input
+                new_node = [helper.make_node('Cast', [n.name], [output_name], to=10, name=node_name)]
+                model.graph.node.extend(new_node)
+                io_casts.add(node_name)
+
+        for i, n in enumerate(model.graph.output):
+            if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                input_name = 'graph_output_cast_' + str(i)
+                name_mapping[n.name] = input_name
+                graph_io_to_skip.add(n.name)
+
+                node_name = 'graph_output_cast' + str(i)
+                # add Cast node (from tensor(float16) to tensor(float) before graph output
+                new_value_info = model.graph.value_info.add()
+                new_value_info.CopyFrom(n)
+                new_value_info.name = input_name
+                new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+                new_node = [helper.make_node('Cast', [input_name], [n.name], to=1, name=node_name)]
+                model.graph.node.extend(new_node)
+                io_casts.add(node_name)
+
+
     while queue:
         next_level = []
         for q in queue:
@@ -132,6 +169,14 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4):
                 for n in q.node:
                     # if n is in the black list (doesn't support float16), no conversion for the node,
                     # and save the node for further processing
+                    if n.name in io_casts:
+                        continue
+                    for i in range(len(n.input)):
+                        if n.input[i] in name_mapping:
+                            n.input[i] = name_mapping[n.input[i]]
+                    for i in range(len(n.output)):
+                        if n.output[i] in name_mapping:
+                            n.output[i] = name_mapping[n.output[i]]
                     if n.op_type in op_black_list:
                         node_list.append(n)
                     else:
@@ -159,7 +204,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4):
                 # tensor(float16) except map and seq(map). And save them in value_info_list for further processing
                 for n in itertools.chain(q.input, q.output, q.value_info):
                     if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
-                        n.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+                        if n.name not in graph_io_to_skip:
+                            n.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
                         value_info_list.append(n)
         queue = next_level
 
