@@ -58,7 +58,7 @@ def convert_tensor_float_to_float16(tensor, min_positive_val=1e-7, max_finite_va
         tensor.data_type = onnx_proto.TensorProto.FLOAT16
         # convert float_data (float type) to float16 and write to int32_data
         if tensor.float_data:
-            float16_data = convert_np_to_float16(tensor.float_data, min_positive_val, max_finite_val)
+            float16_data = convert_np_to_float16(np.array(tensor.float_data), min_positive_val, max_finite_val)
             int_list = _npfloat16_to_int(float16_data)
             tensor.int32_data[:] = int_list
             tensor.float_data[:] = []
@@ -156,7 +156,6 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                 new_node = [helper.make_node('Cast', [input_name], [n.name], to=1, name=node_name)]
                 model.graph.node.extend(new_node)
                 io_casts.add(node_name)
-
 
     while queue:
         next_level = []
