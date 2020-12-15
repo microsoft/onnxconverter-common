@@ -6,7 +6,7 @@
 import itertools
 import numpy as np
 import onnx
-from onnx import helper
+from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 
 
@@ -73,6 +73,11 @@ def convert_tensor_float_to_float16(tensor, min_positive_val=1e-7, max_finite_va
     return tensor
 
 
+def make_value_info_from_tensor(tensor):
+    shape = numpy_helper.to_array(tensor).shape
+    return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
+
+
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
@@ -112,7 +117,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                      'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                      'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
                      'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize',
-                     'Range', 'CumSum']
+                     'Range', 'CumSum', 'Min', 'Max']
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -139,6 +144,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                 # add Cast node (from tensor(float) to tensor(float16) after graph input
                 new_node = [helper.make_node('Cast', [n.name], [output_name], to=10, name=node_name)]
                 model.graph.node.extend(new_node)
+                value_info_list.append(new_value_info)
                 io_casts.add(node_name)
 
         for i, n in enumerate(model.graph.output):
@@ -155,6 +161,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                 new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
                 new_node = [helper.make_node('Cast', [input_name], [n.name], to=1, name=node_name)]
                 model.graph.node.extend(new_node)
+                value_info_list.append(new_value_info)
                 io_casts.add(node_name)
 
     while queue:
@@ -198,14 +205,16 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
             # if q is graph, process graph.initializer(TensorProto), input, output and value_info (ValueInfoProto)
             if isinstance(q, onnx_proto.GraphProto):
                 for n in q.initializer:  # TensorProto type
-                    n = convert_tensor_float_to_float16(n, min_positive_val, max_finite_val)
+                    if n.data_type == onnx_proto.TensorProto.FLOAT:
+                        n = convert_tensor_float_to_float16(n, min_positive_val, max_finite_val)
+                        value_info_list.append(make_value_info_from_tensor(n))
                 # for all ValueInfoProto with tensor(float) type in input, output and value_info, convert them to
                 # tensor(float16) except map and seq(map). And save them in value_info_list for further processing
                 for n in itertools.chain(q.input, q.output, q.value_info):
                     if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
                         if n.name not in graph_io_to_skip:
                             n.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
-                        value_info_list.append(n)
+                            value_info_list.append(n)
         queue = next_level
 
     # process the nodes in black list that doesn't support tensor(float16)
@@ -229,7 +238,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                     model.graph.node.extend(new_node)
                     # change current node's input name
                     node.input[i] = output_name
-                    continue
+                    break
         # if output's name is in the value_info_list meaning output is tensor(float16) type, insert a float to
         # float16 Cast node after the node, change current node's output name and create new value_info for the new name
         for i in range(len(node.output)):
@@ -248,5 +257,5 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                     model.graph.node.extend(new_node)
                     # change current node's input name
                     node.output[i] = input_name
-                    continue
+                    break
     return model
