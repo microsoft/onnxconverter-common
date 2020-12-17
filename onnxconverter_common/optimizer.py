@@ -643,16 +643,14 @@ def _get_pad_from_Pad(node):
 
 
 def _get_axes_from_Squeeze_Unsqueeze(node):
-    if hasattr(node, 'axes'):
-        axes = node.get_attribute('axes')
-    elif len(node.origin.input) == 2:
-        axes_tensor = node.get_precedence_by_idx(1)
-        if axes_tensor is None:
-            axes = numpy_helper.to_array(node.initializers[0]).tolist()
-        else:
-            axes = numpy_helper.to_array(node.get_precedence_by_idx(1).tensors[0]).tolist()
-    else:
-        axes = None
+    axes = node.get_attribute('axes')
+    if axes is None:
+        if len(node.origin.input) == 2:
+            axes_tensor = node.get_precedence_by_idx(1)
+            if axes_tensor is None:
+                axes = numpy_helper.to_array(node.initializers[0]).tolist()
+            else:
+                axes = numpy_helper.to_array(node.get_precedence_by_idx(1).tensors[0]).tolist()
     return axes
 
 
