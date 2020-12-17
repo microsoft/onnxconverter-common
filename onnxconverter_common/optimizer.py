@@ -15,7 +15,7 @@ from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedd
 class LinkedNode(object):
     reserved_names_in_graph = frozenset()
 
-    def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None):
+    def __init__(self, node=None, in_n=None, out_n=None, tensors_n=None, target_opset=None):
         self.origin = node  # type: onnx_proto.NodeProto
         if in_n is None and node is not None:
             in_n = node.input
@@ -29,6 +29,7 @@ class LinkedNode(object):
         self.successor = []
         self.attributes = {}
         self.unique_name = self.origin.name if self.origin and self.origin.name else str(uuid4().hex)
+        self.target_opset = target_opset
 
     def __repr__(self):
         return "name: {}, node: <{}>".format(self.unique_name, str(self.origin) if self.origin else 'None')
@@ -283,11 +284,11 @@ class LinkedNode(object):
         assert tname in self.input.values() and tname in pre.output.values()
 
     @staticmethod
-    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None):
+    def build_from_onnx(onnx_nodes, nchw_inputs, inputs, outputs, initializers=None, target_opset=None):
         view = []
         var_map = {}
         for o_ in onnx_nodes:
-            ln = LinkedNode(o_)
+            ln = LinkedNode(o_, target_opset=target_opset)
             view.append(ln)
             for var_ in o_.output:
                 assert var_map.get(var_) is None
@@ -305,9 +306,10 @@ class LinkedNode(object):
                     assert var_ == '' or var_ in inputs
                     if initializer_map is not None and var_ in initializer_map:
                         target = LinkedNode(out_n=[var_],
-                                            tensors_n=[initializer_map[var_]])  # create an empty node as input
+                                            tensors_n=[initializer_map[var_]],
+                                            target_opset=target_opset)  # create an empty node as input
                     else:
-                        target = LinkedNode(out_n=[var_])
+                        target = LinkedNode(out_n=[var_], target_opset=target_opset)
                     new_output = var_ + '_nhwc'
                     if var_ in nchw_inputs:
                         nnode = LinkedNode(
@@ -316,7 +318,8 @@ class LinkedNode(object):
                                 [var_],
                                 [new_output],
                                 name='Transpose_nchw_' + str(count_nchw),
-                                perm=[0, 2, 3, 1]))
+                                perm=[0, 2, 3, 1]),
+                            target_opset=target_opset)
                         count_nchw = count_nchw + 1
                         var_map[new_output] = nnode
                         nnode.add_precedence(target, var_)
@@ -330,7 +333,7 @@ class LinkedNode(object):
         for n_ in view:  # add a dummy output node.
             for var_ in n_.origin.output:
                 if var_ in outputs:
-                    LinkedNode(in_n=[var_]).add_precedence(n_, var_)
+                    LinkedNode(in_n=[var_], target_opset=target_opset).add_precedence(n_, var_)
 
         return view + additional_nodes
 
@@ -1118,7 +1121,7 @@ def _process_transpose_pass_broadcast(node, node_list, node_transpose_pass_name,
     return node_list, cur_perm_map
 
 
-def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
+def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_map):
     if len(node.origin.input) == 1:
         pads_value = node.get_attribute('pads')
     else:
@@ -1147,7 +1150,7 @@ def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_m
     return cur_perm_map
 
 
-def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
+def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map):
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
     squeeze_axes = _get_axes_from_Squeeze_Unsqueeze(node)
     squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
@@ -1162,7 +1165,7 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
         temp_perm[idx_] = temp_perm[idx_] - sub_list[temp_perm[idx_]]
     target_perm = temp_perm
     new_node_name = node.origin.name + '_squeeze_' + str(PushTransposeSolution.transpose_number)
-    if target_opset < 13:
+    if node.target_opset < 13:
         attrs = {'axes': squeeze_axes}
         node.origin = helper.make_node('Squeeze', node.origin.input, node.origin.output, new_node_name, **attrs)
     else:
@@ -1179,11 +1182,11 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
     return cur_perm_map
 
 
-def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
+def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map):
     unsqueeze_axes = _get_axes_from_Squeeze_Unsqueeze(node)
     assert len(unsqueeze_axes) == 1
     new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
-    if target_opset < 13:
+    if node.target_opset < 13:
         attrs = {'axes': unsqueeze_axes}
         node.origin = helper.make_node('Unsqueeze', node.origin.input, node.origin.output, new_node_name, **attrs)
     else:
@@ -1206,7 +1209,7 @@ def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_
     return cur_perm_map
 
 
-def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
+def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm_map):
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
     add_initilizer = numpy_helper.from_array(np.asarray(cur_perm).astype(np.int64),
                                              name=node.origin.name + '_initializer_' + str(
@@ -1219,7 +1222,7 @@ def _process_transpose_slice(node, node_list, node_transpose_pass_name, cur_perm
     return cur_perm_map
 
 
-def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
+def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_perm_map):
     type_func_map = {'Pad': _process_transpose_pad, 'Squeeze': _process_transpose_squeeze,
                      'Unsqueeze': _process_transpose_unsqueeze,
                      'Slice': _process_transpose_slice}
@@ -1229,7 +1232,7 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
                                                                     cur_perm_map)
     elif node.origin.op_type in type_func_map:
         cur_perm_map = type_func_map[node.origin.op_type](node, node_list, node_transpose_pass_name,
-                                                          cur_perm_map, target_opset)
+                                                          cur_perm_map)
     else:
         for idx_ in range(len(node.precedence)):
             pred_name = node.get_precedence_by_idx(idx_).unique_name
@@ -1242,9 +1245,8 @@ def _process_transpose_pass_node(node, node_list, node_transpose_pass_name, cur_
 class PushTransposeSolution(Solution):
     transpose_number = 0
 
-    def __init__(self, begin, begin_n, end_p, end, target_opset):
+    def __init__(self, begin, begin_n, end_p, end):
         Solution.__init__(self, begin, begin_n, end_p, end)
-        self.target_opset = target_opset
 
     def apply(self, node_list):
         if self.begin_n.is_reserved:
@@ -1303,7 +1305,7 @@ class PushTransposeSolution(Solution):
         for node_pair_ in node_transpose_pass:
             (node, prev) = node_pair_
             node_list, cur_perm_map = _process_transpose_pass_node(node, node_list, node_transpose_pass_name,
-                                                                   cur_perm_map, self.target_opset)
+                                                                   cur_perm_map)
 
         for node_pair_ in node_transpose_no_pass:
             node = node_pair_[0]
@@ -1439,7 +1441,7 @@ class TransposeOptimizer(object):
         return solution
 
     @staticmethod
-    def find_push_down(node, target_opset):
+    def find_push_down(node):
         first_node_type = _nchw_input_node_type + _activation_node_type
         if node.origin.op_type in first_node_type and len(node.successor) == 1 and node.successor[0] is not None:
             pred_nchw = False
@@ -1451,23 +1453,23 @@ class TransposeOptimizer(object):
             if pred_nchw or node.origin.op_type in _nchw_input_node_type:
                 next = node.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Transpose':
-                    solution = PushTransposeSolution(node, next, next.successor, None, target_opset)
+                    solution = PushTransposeSolution(node, next, next.successor, None)
                     return solution
 
         if node.origin.op_type == 'Squeeze' and len(node.successor) == 1 and node.successor[0] is not None:
             if node.precedence[0].origin is not None and node.precedence[0].origin.op_type == 'LSTM':
                 next = node.successor[0]
                 if next.origin is not None and next.origin.op_type == 'Transpose':
-                    solution = PushTransposeSolution(node, next, next.successor, None, target_opset)
+                    solution = PushTransposeSolution(node, next, next.successor, None)
                     return solution
 
         return None
 
     @staticmethod
-    def find(node, target_opset):
+    def find(node):
         solution = TransposeOptimizer.find_local(node)
         if solution is None:
-            solution = TransposeOptimizer.find_push_down(node, target_opset)
+            solution = TransposeOptimizer.find_push_down(node)
         return solution
 
 
@@ -1718,7 +1720,7 @@ def _process_optimization(node_list, target_opset=None):
                 for node_ in node_list:
                     if node_ in blockout:
                         continue
-                    solution = optm.find(node_, target_opset) if optm == TransposeOptimizer else optm.find(node_)
+                    solution = optm.find(node_)
                     if solution is not None:
                         temp_list, success = _apply_optimization(solution, node_list)
                         if success:
@@ -1802,7 +1804,8 @@ def optimize_onnx(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None, targe
     node_list = LinkedNode.build_from_onnx(onnx_nodelist,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if inputs is None else [i_.name for i_ in inputs],
-                                           [] if outputs is None else [o_.name for o_ in outputs])
+                                           [] if outputs is None else [o_.name for o_ in outputs],
+                                           target_opset=target_opset)
     node_list = _process_optimization(node_list, target_opset)
 
     if target_opset is None or target_opset < 9:
@@ -1866,7 +1869,8 @@ def optimize_onnx_graph(onnx_nodes, nchw_inputs=None, inputs=None, outputs=None,
                                            nchw_inputs if nchw_inputs else [],
                                            [] if in_inputs is None else [i_.name for i_ in in_inputs],
                                            [] if outputs is None else [o_.name for o_ in outputs],
-                                           initializers)
+                                           initializers,
+                                           target_opset=target_opset)
 
     node_list = _process_optimization(node_list, target_opset)
     node_list = [n_ for n_ in node_list if n_.origin is not None]
