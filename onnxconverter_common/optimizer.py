@@ -642,8 +642,8 @@ def _get_pad_from_Pad(node):
     return pads
 
 
-def _get_axes_from_Squeeze_Unsqueeze(node, target_opset):
-    if target_opset < 13:
+def _get_axes_from_Squeeze_Unsqueeze(node):
+    if hasattr(node, 'axes'):
         axes = node.get_attribute('axes')
     elif len(node.origin.input) == 2:
         axes_tensor = node.get_precedence_by_idx(1)
@@ -980,14 +980,14 @@ class MergeCastOptimizer(object):
 
 class MergeSqueezeUnsqueezeOptimizer(object):
     @staticmethod
-    def find(node, target_opset):
+    def find(node):
         if node.origin.op_type == 'Squeeze' and len(node.successor) == 1:
-            axes_0 = _get_axes_from_Squeeze_Unsqueeze(node, target_opset)
+            axes_0 = _get_axes_from_Squeeze_Unsqueeze(node)
             next = node.successor[0]
             flag = next.origin is not None and axes_0 is not None \
                 and next.origin.op_type == 'Unsqueeze' and len(next.successor) == 1
             if flag:
-                axes_1 = _get_axes_from_Squeeze_Unsqueeze(next, target_opset)
+                axes_1 = _get_axes_from_Squeeze_Unsqueeze(next)
                 if axes_1 is not None and axes_0 == axes_1:
                     solution = Solution(node.get_precedence_by_idx(0), node, next, next.successor[0])
                     return solution
@@ -1008,6 +1008,10 @@ def _transpose_pass(node):
 
     if node.element_wise:
         return True
+
+    if node.origin.op_type in ['Squeeze', 'Unsqueeze']:
+        axes = _get_axes_from_Squeeze_Unsqueeze(node)
+        return axes is not None
 
     if node.origin.op_type in _transpose_pass_type_set:
         return True
@@ -1147,7 +1151,7 @@ def _process_transpose_pad(node, node_list, node_transpose_pass_name, cur_perm_m
 
 def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
     cur_perm = cur_perm_map[node.get_precedence_by_idx(0).unique_name]
-    squeeze_axes = _get_axes_from_Squeeze_Unsqueeze(node, target_opset)
+    squeeze_axes = _get_axes_from_Squeeze_Unsqueeze(node)
     squeeze_axes = [cur_perm[idx_] for idx_ in squeeze_axes]
     temp_perm = cur_perm.copy()
     sub_list = [0] * len(cur_perm)
@@ -1178,7 +1182,7 @@ def _process_transpose_squeeze(node, node_list, node_transpose_pass_name, cur_pe
 
 
 def _process_transpose_unsqueeze(node, node_list, node_transpose_pass_name, cur_perm_map, target_opset):
-    unsqueeze_axes = _get_axes_from_Squeeze_Unsqueeze(node, target_opset)
+    unsqueeze_axes = _get_axes_from_Squeeze_Unsqueeze(node)
     assert len(unsqueeze_axes) == 1
     new_node_name = node.origin.name + '_unsqueeze_' + str(PushTransposeSolution.transpose_number)
     if target_opset < 13:
@@ -1276,7 +1280,7 @@ class PushTransposeSolution(Solution):
                 if not success:
                     return None, False
             elif node.origin.op_type == 'Unsqueeze':
-                unsqueeze_axes = _get_axes_from_Squeeze_Unsqueeze(node, self.target_opset)
+                unsqueeze_axes = _get_axes_from_Squeeze_Unsqueeze(node)
                 if unsqueeze_axes and len(unsqueeze_axes) > 1:
                     return None, False
 
@@ -1716,13 +1720,7 @@ def _process_optimization(node_list, target_opset=None):
                 for node_ in node_list:
                     if node_ in blockout:
                         continue
-                    if optm in [MergeSqueezeUnsqueezeOptimizer, TransposeOptimizer]:
-                        if target_opset is None:
-                            continue
-                        else:
-                            solution = optm.find(node_, target_opset)
-                    else:
-                        solution = optm.find(node_)
+                    solution = optm.find(node_, target_opset) if optm == TransposeOptimizer else optm.find(node_)
                     if solution is not None:
                         temp_list, success = _apply_optimization(solution, node_list)
                         if success:
