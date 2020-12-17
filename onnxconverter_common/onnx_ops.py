@@ -765,8 +765,10 @@ def apply_reciprocal(scope, input_name, output_name, container, operator_name=No
     _apply_unary_operation(scope, 'Reciprocal', input_name, output_name, container, operator_name=operator_name)
 
 
-def apply_reducesum(scope, input_name, output_name, container, operator_name=None, axes=None, keepdims=None, rank=0):
+def apply_reducesum(scope, input_name, output_name, container, operator_name=None, axes=None, keepdims=1, rank=0):
     name = _create_name_or_use_existing_one(scope, 'ReduceSum', operator_name)
+    if axes is None:
+        axes = []
     if container.target_opset < 13:
         if container.target_opset < 11:
             op_version = 1
