@@ -773,17 +773,23 @@ def apply_reducesum(scope, input_name, output_name, container, operator_name=Non
             axes = [axis if axis >= 0 else axis + rank + 1 for axis in axes]
         else:
             op_version = 11
-        container.add_node('ReduceSum', input_name, output_name, name=name, op_version=op_version, axes=axes, keepdims=keepdims)
+        container.add_node('ReduceSum', input_name, output_name, name=name,
+                           op_version=op_version, axes=axes, keepdims=keepdims)
     else:
+        if not isinstance(input_name, list):
+            input_name = [input_name]
         op_version = 13
         if isinstance(axes, str):
-            container.add_node('ReduceSum', input_name + [axes], output_name, op_version=op_version, name=name, keepdims=keepdims)
+            container.add_node('ReduceSum', input_name + [axes], output_name,
+                               op_version=op_version, name=name, keepdims=keepdims)
         elif axes is None or len(axes) == 0:
-            container.add_node('ReduceSum', input_name, output_name, op_version=op_version, name=name, keepdims=keepdims)
+            container.add_node('ReduceSum', input_name, output_name,
+                               op_version=op_version, name=name, keepdims=keepdims)
         else:
             axes_name = scope.get_unique_variable_name(name + '_reducesum')
             container.add_initializer(axes_name, onnx_proto.TensorProto.INT64, [len(axes)], axes)
-            container.add_node('ReduceSum', [input_name, axes_name], output_name, op_version=op_version, name=name, keepdims=keepdims)
+            container.add_node('ReduceSum', input_name + [axes_name], output_name,
+                               op_version=op_version, name=name, keepdims=keepdims)
 
 
 def apply_relu(scope, input_name, output_name, container, operator_name=None):
@@ -1002,12 +1008,14 @@ def apply_split(scope, input_name, output_names, container, operator_name=None, 
         if container.target_opset < 13:
             attrs['split'] = split
         else:
+            if not isinstance(input_name, list):
+                input_name = [input_name]
             if isinstance(split, str):
-                input_name = input_name + [split]
+                split_name = split
             else:
                 split_name = scope.get_unique_variable_name(name + '_split')
                 container.add_initializer(split_name, onnx_proto.TensorProto.INT64, [len(split)], split)
-                input_name = [input_name, split_name]
+            input_name = input_name + [split_name]
 
     if axis is not None:
         attrs['axis'] = axis
@@ -1031,6 +1039,8 @@ def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_
         container.add_node(squeeze_str, input_name, output_name, name=name, op_version=op_version, axes=axes)
     else:
         op_version = 13
+        if not isinstance(input_name, list):
+            input_name = [input_name]
         if isinstance(axes, str):
             container.add_node(squeeze_str, input_name + [axes], output_name, op_version=op_version, name=name)
         elif len(axes) == 0:
@@ -1038,7 +1048,7 @@ def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_
         else:
             axes_name = scope.get_unique_variable_name(name + '_axes')
             container.add_initializer(axes_name, onnx_proto.TensorProto.INT64, [len(axes)], axes)
-            container.add_node(squeeze_str, [input_name, axes_name], output_name, op_version=op_version, name=name)
+            container.add_node(squeeze_str, input_name + [axes_name], output_name, op_version=op_version, name=name)
 
 
 def apply_squeeze(scope, input_name, output_name, container, operator_name=None, axes=None, rank=0):

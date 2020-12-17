@@ -150,7 +150,10 @@ class OnnxGraphContext:
         return [np.subtract(inputs[0], inputs[1])]
 
     def _OnUnsqueeze(self, node, inputs):
-        axes = OnnxGraphContext.get_attribute(node, 'axes')
+        if hasattr(node, 'axes'):
+            axes = OnnxGraphContext.get_attribute(node, 'axes')
+        else:
+            axes = inputs[1]
         shape_in = inputs[0].shape
         dims_out = len(shape_in) + len(axes)
         shape_in = iter(shape_in)
