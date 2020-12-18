@@ -772,7 +772,7 @@ def apply_reducesum(scope, input_name, output_name, container, operator_name=Non
     if container.target_opset < 13:
         if container.target_opset < 11:
             op_version = 1
-            axes = [axis if axis >= 0 else axis + rank + 1 for axis in axes]
+            axes = [axis if axis >= 0 else axis + rank for axis in axes]
         else:
             op_version = 11
         container.add_node('ReduceSum', input_name, output_name, name=name,
@@ -1035,7 +1035,7 @@ def _apply_squeeze_unsqueeze(scope, input_name, output_name, container, squeeze_
     if container.target_opset < 13:
         if container.target_opset < 11:
             op_version = 1
-            axes = [axis if axis >= 0 else axis + rank + 1 for axis in axes]
+            axes = [axis if axis >= 0 else axis + rank for axis in axes]
         else:
             op_version = 11
         container.add_node(squeeze_str, input_name, output_name, name=name, op_version=op_version, axes=axes)
