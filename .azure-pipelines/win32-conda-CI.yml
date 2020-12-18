@@ -25,9 +25,13 @@ jobs:
         python.version: '3.7'
         ONNX_PATH: onnx==1.6.0
 
-      Python38:
+      Python381:
         python.version: '3.8'
         ONNX_PATH: onnx==1.7.0
+
+      Python382:
+        python.version: '3.8'
+        ONNX_PATH: onnx==1.8.0
 
     maxParallel: 4
 
