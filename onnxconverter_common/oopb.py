@@ -274,7 +274,7 @@ class OnnxOperatorBuilder:
     def inverse(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_inverse, inputs, name, outputs)
 
-    def leaky_relu(self, inputs, name=None, outputs=None, alpha=None):
+    def leaky_relu(self, inputs, name=None, outputs=None, alpha=0.01):
         return self.apply_op(onnx_ops.apply_leaky_relu, inputs, name, outputs, alpha=alpha)
 
     def less(self, inputs, name=None, outputs=None):
@@ -329,6 +329,9 @@ class OnnxOperatorBuilder:
     def reciprocal(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_reciprocal, inputs, name, outputs)
 
+    def reducesum(self, inputs, name=None, outputs=None, axes=None, keepdims=1, rank=0):
+        return self.apply_op(onnx_ops.apply_reducesum, inputs, name, outputs, axes=axes, keepdims=keepdims, rank=rank)
+
     def relu(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_relu, inputs, name, outputs)
 
@@ -358,7 +361,7 @@ class OnnxOperatorBuilder:
     def selu(self, inputs, name=None, outputs=None, alpha=1.673263, gamma=1.050701):
         return self.apply_op(onnx_ops.apply_selu, inputs, name, outputs, alpha=alpha, gamma=gamma)
 
-    def softmax(self, inputs, name=None, outputs=None, axis=1):
+    def softmax(self, inputs, name=None, outputs=None, axis=None):
         return self.apply_op(onnx_ops.apply_softmax, inputs, name, outputs, axis=axis)
 
     def scaled_tanh(self, inputs, name=None, outputs=None, alpha=None, beta=None):
