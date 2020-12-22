@@ -5,17 +5,19 @@
 
 import numpy as np
 
-def indent(s):
-    return "\n".join("    " + l for l in s.split("\n"))
 
-"""
-Used by onnx2py to mock a module like numpy or onnx.helper and record calls on that module
-Ex:
-    np = TracingObject("np")
-    x = np.array(np.product([1, 2, 3]), np.int32)
-    assert repr(x) == "np.array(np.product([1, 2, 3]), np.int32)"
-"""
+def indent(s):
+    return "\n".join("    " + line for line in s.split("\n"))
+
+
 class TracingObject:
+    """
+    Used by onnx2py to mock a module like numpy or onnx.helper and record calls on that module
+    Ex:
+        np = TracingObject("np")
+        x = np.array(np.product([1, 2, 3]), np.int32)
+        assert repr(x) == "np.array(np.product([1, 2, 3]), np.int32)"
+    """
     def __init__(self, trace):
         self._trace = trace
 

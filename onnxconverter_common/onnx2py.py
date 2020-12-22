@@ -15,8 +15,6 @@ python -m onnxconverter_common.onnx2py my_model.onnx my_model.py
 import sys
 import onnx
 import collections
-import google.protobuf as pb
-from collections import OrderedDict
 from onnx import helper, numpy_helper, TensorProto
 import numpy as np
 import os
@@ -32,12 +30,16 @@ helper_traced = TracingObject("helper")
 numpy_helper_traced = TracingObject("numpy_helper")
 TensorProtoTraced = TracingObject("TensorProto")
 
+
 def convert_tensor_type(i):
     return getattr(TensorProtoTraced, TensorProto.DataType.Name(i))
 
+
 def convert_field(field):
     global needed_types
-    if isinstance(field, onnx.GraphProto):
+    if isinstance(field, (int, str, float, bytes)):
+        return field
+    elif isinstance(field, onnx.GraphProto):
         return convert_graph(field)
     elif isinstance(field, onnx.ModelProto):
         return convert_model(field)
@@ -49,24 +51,19 @@ def convert_field(field):
         return convert_value_info(field)
     elif isinstance(field, onnx.OperatorSetIdProto):
         return convert_operatorsetid(field)
-    elif isinstance(field, pb.internal.containers.RepeatedCompositeFieldContainer):
+    elif isinstance(field, collections.abc.Iterable):
         return list(convert_field(x) for x in field)
-    elif isinstance(field, pb.internal.containers.RepeatedScalarFieldContainer):
-        return list(convert_field(x) for x in field)
-    elif isinstance(field, list):
-        return list(convert_field(x) for x in field)
-    elif isinstance(field, (int, str, float, bytes)):
-        return field
     else:
         # Missing handler needs to be added
         t = str(type(field))
         needed_types.add(t)
         return field
 
+
 def convert_value_info(val_info):
     name = val_info.name
     elem_type = convert_tensor_type(val_info.type.tensor_type.elem_type)
-    kwargs = OrderedDict()
+    kwargs = collections.OrderedDict()
 
     def convert_shape_dim(d):
         if d.HasField("dim_value"):
@@ -89,10 +86,12 @@ def convert_value_info(val_info):
 
     return helper_traced.make_tensor_value_info(name, elem_type, **kwargs)
 
+
 def convert_operatorsetid(opsetid):
     domain = opsetid.domain
     version = opsetid.version
     return helper_traced.make_operatorsetid(domain, version)
+
 
 def convert_tensor(tensor):
     global const_dir, const_counter
@@ -110,6 +109,7 @@ def convert_tensor(tensor):
     const_counter += 1
     return numpy_helper_traced.from_array(np_traced.load(const_path), name=tensor.name)
 
+
 def convert_node(node):
     fields = {f[0].name: f[1] for f in node.ListFields()}
     attributes = fields.pop("attribute", [])
@@ -122,6 +122,7 @@ def convert_node(node):
     outputs = fields.pop("output", [])
     return helper_traced.make_node(op_type, inputs=inputs, outputs=outputs, **fields, **attrs)
 
+
 def convert_graph(graph):
     fields = {f[0].name: convert_field(f[1]) for f in graph.ListFields()}
     nodes = fields.pop("node", [])
@@ -130,11 +131,13 @@ def convert_graph(graph):
     outputs = fields.pop("output", [])
     return helper_traced.make_graph(nodes, name=name, inputs=inputs, outputs=outputs, **fields)
 
+
 def convert_model(model):
     fields = {f[0].name: convert_field(f[1]) for f in model.ListFields()}
     graph = fields.pop("graph")
     opset_imports = fields.pop("opset_import", [])
     return helper_traced.make_model(graph, opset_imports=opset_imports, **fields)
+
 
 def clear_directory(path):
     for f in os.listdir(path):
@@ -146,8 +149,10 @@ def clear_directory(path):
     except OSError:
         pass
 
+
 class MissingHandlerException(Exception):
     pass
+
 
 def convert(model, out_path):
     global needed_types, const_dir, const_counter
@@ -168,6 +173,7 @@ def convert(model, out_path):
     if needed_types:
         raise MissingHandlerException("Missing handler for types: %s" % list(needed_types))
 
+
 def main():
     _, in_path, out_path = sys.argv
     if not out_path.endswith(".py"):
@@ -180,6 +186,7 @@ def main():
         print("ERROR:", e)
 
     print("Model saved to", out_path)
+
 
 if __name__ == '__main__':
     main()
