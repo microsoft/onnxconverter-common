@@ -15,6 +15,7 @@ python -m onnxconverter_common.onnx2py my_model.onnx my_model.py
 import sys
 import onnx
 import collections
+from collections import OrderedDict
 from onnx import helper, numpy_helper, TensorProto
 import numpy as np
 import os
@@ -29,6 +30,7 @@ np_traced = TracingObject("np")
 helper_traced = TracingObject("helper")
 numpy_helper_traced = TracingObject("numpy_helper")
 TensorProtoTraced = TracingObject("TensorProto")
+os_traced = TracingObject("os")
 
 
 def convert_tensor_type(i):
@@ -63,7 +65,7 @@ def convert_field(field):
 def convert_value_info(val_info):
     name = val_info.name
     elem_type = convert_tensor_type(val_info.type.tensor_type.elem_type)
-    kwargs = collections.OrderedDict()
+    kwargs = OrderedDict()
 
     def convert_shape_dim(d):
         if d.HasField("dim_value"):
@@ -106,15 +108,16 @@ def convert_tensor(tensor):
         name = name.replace(c, '_')
     const_path = "%s/%s.npy" % (const_dir, name)
     np.save(const_path, np_data)
+    rel_path = TracingObject("os.path.join(DATA_DIR, '%s.npy')" % name)
     const_counter += 1
-    return numpy_helper_traced.from_array(np_traced.load(const_path), name=tensor.name)
+    return numpy_helper_traced.from_array(np_traced.load(rel_path), name=tensor.name)
 
 
 def convert_node(node):
-    fields = {f[0].name: f[1] for f in node.ListFields()}
+    fields = OrderedDict((f[0].name, f[1]) for f in node.ListFields())
     attributes = fields.pop("attribute", [])
-    attrs = {a.name: convert_field(helper.get_attribute_value(a)) for a in attributes}
-    fields = {f: convert_field(v) for f, v in fields.items()}
+    attrs = OrderedDict((a.name, convert_field(helper.get_attribute_value(a))) for a in attributes)
+    fields = OrderedDict((f, convert_field(v)) for f, v in fields.items())
     op_type = fields.pop("op_type")
     if op_type == "Cast" and "to" in attrs:
         attrs["to"] = convert_tensor_type(attrs["to"])
@@ -124,19 +127,19 @@ def convert_node(node):
 
 
 def convert_graph(graph):
-    fields = {f[0].name: convert_field(f[1]) for f in graph.ListFields()}
+    fields = OrderedDict((f[0].name, convert_field(f[1])) for f in graph.ListFields())
     nodes = fields.pop("node", [])
     name = fields.pop("name")
     inputs = fields.pop("input", [])
     outputs = fields.pop("output", [])
-    return helper_traced.make_graph(nodes, name=name, inputs=inputs, outputs=outputs, **fields)
+    return helper_traced.make_graph(name=name, inputs=inputs, outputs=outputs, **fields, nodes=nodes)
 
 
 def convert_model(model):
-    fields = {f[0].name: convert_field(f[1]) for f in model.ListFields()}
+    fields = OrderedDict((f[0].name, convert_field(f[1])) for f in model.ListFields())
     graph = fields.pop("graph")
     opset_imports = fields.pop("opset_import", [])
-    return helper_traced.make_model(graph, opset_imports=opset_imports, **fields)
+    return helper_traced.make_model(opset_imports=opset_imports, **fields, graph=graph)
 
 
 def clear_directory(path):
@@ -162,12 +165,21 @@ def convert(model, out_path):
     if os.path.exists(out_path):
         clear_directory(out_path)
     const_dir = out_path
+    const_dir_name = os.path.basename(out_path)
     const_counter = 0
 
     model_trace = convert_model(model)
     code = "from onnx import helper, numpy_helper, TensorProto\n"
+    code += "import onnx\n"
     code += "import numpy as np\n"
+    code += "import sys\n"
+    if os.path.exists(const_dir):
+        code += "import os\n"
+        code += "\nDATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), %r)\n" % const_dir_name
     code += "\n" + "model = " + repr(model_trace) + "\n"
+    code += "\nif __name__ == '__main__' and len(sys.argv) == 2:\n"
+    code += "    _, out_path = sys.argv\n"
+    code += "    onnx.save(model, out_path)\n"
     with open(out_path + ".py", "wt") as file:
         file.write(code)
     if needed_types:
@@ -186,6 +198,8 @@ def main():
         print("ERROR:", e)
 
     print("Model saved to", out_path)
+    print("Run '%s output.onnx' to generate ONNX file" % out_path)
+    print("Import the model with 'from %s import model'" % os.path.basename(out_path[:-3]))
 
 
 if __name__ == '__main__':

@@ -34,11 +34,10 @@ class Oonnx2PyTests(unittest.TestCase):
         out_path = os.path.join(tmp_path, model_name + '.py')
         convert(onnx_model, out_path)
         self.assertTrue(os.path.exists(out_path))
-        local_map = {}
-        with open(out_path, "rt") as f:
-            # Creates model called 'model'
-            exec(f.read(), None, local_map)
-        model = local_map["model"]
+
+        sys.path.append(tmp_path)
+        from test_model_1_no_opt import model
+
         sess2 = _ort.InferenceSession(model.SerializeToString())
         actual = sess2.run(["conv1d_1"], {"input_1": data})
 
