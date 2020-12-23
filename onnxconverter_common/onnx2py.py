@@ -110,7 +110,9 @@ def convert_tensor(tensor):
     np.save(const_path, np_data)
     rel_path = TracingObject("os.path.join(DATA_DIR, '%s.npy')" % name)
     const_counter += 1
-    return numpy_helper_traced.from_array(np_traced.load(rel_path), name=tensor.name)
+    np_dtype = getattr(np_traced, str(np_data.dtype))
+    np_shape = list(np_data.shape)
+    return numpy_helper_traced.from_array(np_traced.load(rel_path).astype(np_dtype).reshape(np_shape), name=tensor.name)
 
 
 def convert_node(node):
