@@ -6,7 +6,7 @@
 """
 Converts onnx model into model.py file for easy editing. Resulting model.py file uses onnx.helper library to
 recreate the original onnx model. Constant tensors with more than 10 elements are saved into .npy
-files in location model/cont#.npy
+files in location model/const#_tensor_name.npy
 
 Example usage:
 python -m onnxconverter_common.onnx2py my_model.onnx my_model.py
@@ -19,7 +19,7 @@ from onnx import helper, numpy_helper, TensorProto
 import numpy as np
 import os
 
-from onnxconverter_common.pytracing import TracingObject
+from .pytracing import TracingObject
 
 needed_types = set()
 const_dir = None
