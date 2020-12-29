@@ -5,14 +5,13 @@ import onnx
 import onnxruntime as _ort
 import sys
 
-from onnxconverter_common.onnx2py import convert, clear_directory
-
 working_path = os.path.abspath(os.path.dirname(__file__))
 tmp_path = os.path.join(working_path, 'temp')
 data_path = os.path.join(working_path, 'data')
 
 class Oonnx2PyTests(unittest.TestCase):
     def tearDown(self):
+        from onnxconverter_common.onnx2py import clear_directory
         for f in os.listdir(tmp_path):
             if f.endswith(".py"):
                 os.remove(os.path.join(tmp_path, f))
@@ -22,7 +21,7 @@ class Oonnx2PyTests(unittest.TestCase):
 
     @unittest.skipIf(sys.version_info < (3, 6), "Requires onnx > 1.3.0")
     def test_onnx2py(self):
-        global model
+        from onnxconverter_common.onnx2py import convert
         model_name = 'test_model_1_no_opt'
         onnx_model = onnx.load(os.path.join(data_path, model_name + '.onnx'))
         sess1 = _ort.InferenceSession(onnx_model.SerializeToString())
