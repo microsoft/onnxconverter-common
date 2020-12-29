@@ -40,7 +40,6 @@ def clear_field(proto, field):
     proto.ClearField(field)
     return proto
 
-
 def make_external_tensor(name, data_type, dims, raw_data=None, **kwargs):
     tensor = TensorProto()
     tensor.data_type = data_type
