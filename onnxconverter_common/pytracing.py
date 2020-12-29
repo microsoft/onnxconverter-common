@@ -20,6 +20,15 @@ class TracingObject:
     """
     def __init__(self, trace):
         self._trace = trace
+        self._cnt = 0
+
+    @staticmethod
+    def reset_cnt(o):
+        o._cnt = 0
+
+    @staticmethod
+    def get_cnt(o):
+        return o._cnt
 
     @staticmethod
     def from_repr(o):
@@ -38,9 +47,11 @@ class TracingObject:
         return "[\n" + "".join(indent(s) + ",\n" for s in ls) + "]"
 
     def __getattr__(self, attr):
+        self._cnt += 1
         return TracingObject(self._trace + "." + attr)
 
     def __call__(self, *args, **kwargs):
+        self._cnt += 1
         arg_s = [TracingObject.get_repr(o) for o in args]
         arg_s += [k + "=" + TracingObject.get_repr(o) for k, o in kwargs.items()]
         trace = self._trace + "(" + ", ".join(arg_s) + ")"
