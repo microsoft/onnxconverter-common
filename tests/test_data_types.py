@@ -15,6 +15,7 @@ from onnxconverter_common.data_types import (
     Int8TensorType,
     FloatType,
     FloatTensorType,
+    Float16TensorType,
     SequenceType,
     StringType,
     StringTensorType,
@@ -40,6 +41,7 @@ class TestDataTypes(unittest.TestCase):
             Int64TensorType,
             Int8TensorType,
             FloatTensorType,
+            Float16TensorType,
             StringTensorType,
             UInt8TensorType,
         ]
