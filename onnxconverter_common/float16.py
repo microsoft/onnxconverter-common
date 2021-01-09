@@ -78,7 +78,8 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
-def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False, disable_shape_infer=False):
+def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
+                             keep_io_types=False, disable_shape_infer=False):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
@@ -261,15 +262,14 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                     break
     return model
 
-def convert_float_to_float16_model_path(model_path, shape_infer_model_path=None, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
+
+def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
     '''
     Convert tensor float type in the ONNX Model to tensor float16.
-    *It is to fix an issue that infer_shapes func cannot be used to infer >2GB models. 
+    *It is to fix an issue that infer_shapes func cannot be used to infer >2GB models.
     *But this function can be applied to all model sizes.
-    
     :param model_path: ONNX Model path
     :return: converted ONNX ModelProto object
-    
     Examples
     ::
         #Convert to ONNX ModelProto object and save model binary file:
@@ -284,14 +284,16 @@ def convert_float_to_float16_model_path(model_path, shape_infer_model_path=None,
         try:
             # infer_shapes_path can be applied to all model sizes
             from onnx.shape_inference import infer_shapes_path
-            if shape_infer_model_path is None:
-                infer_shapes_path(model_path)
-            else:
+            import tempfile
+            import os
+            # shape_infer_model_path should be in the same folder of model_path
+            with tempfile.NamedTemporaryFile(dir=os.path.dirname(model_path)) as tmpfile:
+                shape_infer_model_path = tmpfile.name
                 infer_shapes_path(model_path, shape_infer_model_path)
-                model_path = shape_infer_model_path
-            disable_shape_infer = True
+                model = onnx.load(shape_infer_model_path)
+                disable_shape_infer = True
         finally:
             pass
-    model = onnx.load(model_path)
+    if not disable_shape_infer:
+        model = onnx.load(model_path)
     return convert_float_to_float16(model, min_positive_val, max_finite_val, keep_io_types, disable_shape_infer)
-
