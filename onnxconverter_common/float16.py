@@ -84,6 +84,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
     :param model: ONNX ModelProto object
+    :param disable_shape_infer: Type/shape information is needed for conversion to work.
+                                Set to True only if the model already has type/shape information for all tensors.
     :return: converted ONNX ModelProto object
 
     Examples:
@@ -103,13 +105,12 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
 
     '''
     func_infer_shape = None
-    if not disable_shape_infer:
-        if onnx.__version__ >= '1.2':
-            try:
-                from onnx.shape_inference import infer_shapes
-                func_infer_shape = infer_shapes
-            finally:
-                pass
+    if not disable_shape_infer and onnx.__version__ >= '1.2':
+        try:
+            from onnx.shape_inference import infer_shapes
+            func_infer_shape = infer_shapes
+        finally:
+            pass
 
     if not isinstance(model, onnx_proto.ModelProto):
         raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
@@ -274,9 +275,8 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
     ::
         #Convert to ONNX ModelProto object and save model binary file:
         from onnxmltools.utils.float16_converter import convert_float_to_float16_model_path
-        from onnxmltools.utils import save_model
         new_onnx_model = convert_float_to_float16_model_path('model.onnx')
-        save_model(new_onnx_model, 'new_model.onnx')
+        onnx.save(new_onnx_model, 'new_model.onnx')
     '''
 
     disable_shape_infer = False
