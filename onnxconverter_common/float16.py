@@ -78,11 +78,14 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
-def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
+def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
+                             keep_io_types=False, disable_shape_infer=False):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
     :param model: ONNX ModelProto object
+    :param disable_shape_infer: Type/shape information is needed for conversion to work.
+                                Set to True only if the model already has type/shape information for all tensors.
     :return: converted ONNX ModelProto object
 
     Examples:
@@ -102,7 +105,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
 
     '''
     func_infer_shape = None
-    if onnx.__version__ >= '1.2':
+    if not disable_shape_infer and onnx.__version__ >= '1.2':
         try:
             from onnx.shape_inference import infer_shapes
             func_infer_shape = infer_shapes
@@ -259,3 +262,38 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                     node.output[i] = input_name
                     break
     return model
+
+
+def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
+    '''
+    Convert tensor float type in the ONNX Model to tensor float16.
+    *It is to fix an issue that infer_shapes func cannot be used to infer >2GB models.
+    *But this function can be applied to all model sizes.
+    :param model_path: ONNX Model path
+    :return: converted ONNX ModelProto object
+    Examples
+    ::
+        #Convert to ONNX ModelProto object and save model binary file:
+        from onnxmltools.utils.float16_converter import convert_float_to_float16_model_path
+        new_onnx_model = convert_float_to_float16_model_path('model.onnx')
+        onnx.save(new_onnx_model, 'new_model.onnx')
+    '''
+
+    disable_shape_infer = False
+    if onnx.__version__ >= '1.7':
+        try:
+            # infer_shapes_path can be applied to all model sizes
+            from onnx.shape_inference import infer_shapes_path
+            import tempfile
+            import os
+            # shape_infer_model_path should be in the same folder of model_path
+            with tempfile.NamedTemporaryFile(dir=os.path.dirname(model_path)) as tmpfile:
+                shape_infer_model_path = tmpfile.name
+                infer_shapes_path(model_path, shape_infer_model_path)
+                model = onnx.load(shape_infer_model_path)
+                disable_shape_infer = True
+        finally:
+            pass
+    if not disable_shape_infer:
+        model = onnx.load(model_path)
+    return convert_float_to_float16(model, min_positive_val, max_finite_val, keep_io_types, disable_shape_infer)
