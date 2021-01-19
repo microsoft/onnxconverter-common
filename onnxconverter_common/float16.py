@@ -280,7 +280,7 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
     '''
 
     disable_shape_infer = False
-    if onnx.__version__ >= '1.7':
+    if onnx.__version__ >= '1.8':
         try:
             # infer_shapes_path can be applied to all model sizes
             from onnx.shape_inference import infer_shapes_path
