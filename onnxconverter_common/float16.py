@@ -78,7 +78,7 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
-def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
+def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False, op_black_list="DEFAULT", node_black_list=None, output_black_list=None):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
@@ -113,11 +113,25 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
         raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
 
     # create black list
-    op_black_list = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
-                     'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
-                     'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
-                     'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize',
-                     'Range', 'CumSum', 'Min', 'Max']
+    if op_black_list == "DEFAULT":
+        op_black_list = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
+                        'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
+                        'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
+                        'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize',
+                        'Range', 'CumSum', 'Min', 'Max']
+    elif op_black_list is None:
+        op_black_list = []
+
+    if node_black_list is None:
+        node_black_list = set()
+    else:
+        node_black_list = set(node_black_list)
+
+    if output_black_list is None:
+        output_black_list = set()
+    else:
+        output_black_list = set(output_black_list)
+    
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -183,7 +197,9 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4, k
                     for i in range(len(n.output)):
                         if n.output[i] in name_mapping:
                             n.output[i] = name_mapping[n.output[i]]
-                    if n.op_type in op_black_list:
+                    has_out_in_blacklist = any(out in output_black_list for out in n.output)
+                    has_out_in_blacklist = has_out_in_blacklist or any(inp in output_black_list for inp in n.input)
+                    if (n.op_type in op_black_list or n.name in node_black_list or has_out_in_blacklist) and n.op_type not in ["Loop", "If"]:
                         node_list.append(n)
                     else:
                         if n.op_type == 'Cast':
