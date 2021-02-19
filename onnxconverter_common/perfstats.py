@@ -4,32 +4,46 @@
 ###########################################################################
 
 """
-Script for parsing profiling results from onnxruntime. Outputs to console or CSV. 
+Script for parsing profiling results from onnxruntime. Outputs to console or CSV.
 Prints total durations grouped by node (-n), optype (-t), or step (-s)
+Script is standalone and can be downloaded and run as prefstats.py
 
-Ex: 
+Ex:
     python -m onnxconvert_common.perfstats -t -l 5 trace.json   # List durations by optype
+    (or python perfstats.py -t -l 5 trace.json)
 
 Result:
-    op_type               duration    percent     count     
+    op_type               duration    percent     count
     --------------------  ----------  ----------  ----------
     MemcpyFromHost        3388472     66.0656981  193
     Conv                  1205958     23.5127978  5
     Loop                  451989      8.81251751  5
-    Add                   23115       0.45067765  3482      
+    Add                   23115       0.45067765  3482
     Concat                14228       0.27740608  323
 
 Get a trace file from onnxruntime first with:
 
     import onnxruntime as ort
-    options = ort.SessionOptions()
-    options.enable_profiling = True
-    sess_profile = ort.InferenceSession(onnx_model_str, options)
+    sess_options = ort.SessionOptions()
+    sess_options.enable_profiling = True
+    sess_profile = ort.InferenceSession(onnx_model_str, sess_options)
     ...
     sess.run(None, feed_dict)
     prof_file = sess_profile.end_profiling()
     print(prof_file)
+
+If you see non-onnx ops like MemcpyFromHost, these are inserted into the graph by ORT
+Get a new graph with all inserted ops with:
+
+    sess_options.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+    sess_options.optimized_model_filepath = "optimized_graph.onnx"
 """
+
+import json
+import argparse
+import shutil
+import csv
+from collections import namedtuple, defaultdict
 
 _HELP_TEXT = """
 Usage Examples:
@@ -40,13 +54,6 @@ python -m onnxconvert_common.perfstats -n trace.json -q t=Conv   # List conv nod
 python -m onnxconvert_common.perfstats -n trace.json -q t!=Conv   # List non-conv nodes
 python -m onnxconvert_common.perfstats -n trace.json -q t=Conv;n!=NAME   # List conv nodes except NAME
 """
-
-import sys
-import json
-import argparse
-import shutil
-import csv
-from collections import namedtuple, defaultdict
 
 
 raw_entry_headers = \
