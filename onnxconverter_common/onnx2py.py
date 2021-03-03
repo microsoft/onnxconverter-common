@@ -171,6 +171,9 @@ def convert_tensor(tensor):
     np_data = numpy_helper.to_array(tensor)
     if np.product(np_data.shape) <= 10:
         return numpy_helper_traced.from_array(np_data, name=tensor.name)
+    dtype = np_data.dtype
+    if dtype == np.object:
+        np_data = np_data.astype(np.str)
     os.makedirs(const_dir, exist_ok=True)
     name = "const" + str(const_counter)
     if tensor.name:
@@ -181,7 +184,7 @@ def convert_tensor(tensor):
     np.save(const_path, np_data)
     data_path = os_traced.path.join(DATA_DIR_TRACED, name + '.npy')
     const_counter += 1
-    np_dtype = getattr(np_traced, str(np_data.dtype))
+    np_dtype = getattr(np_traced, str(dtype))
     np_shape = list(np_data.shape)
     np_array = np_traced.load(data_path).astype(np_dtype).reshape(np_shape)
     return numpy_helper_traced.from_array(np_array, name=tensor.name)
@@ -280,7 +283,7 @@ def convert(model, out_path):
         code += "        f.write(model.SerializeToString())\n"
     else:
         code += "    onnx.save(model, out_path)\n"
-    with open(out_path + ".py", "wt") as file:
+    with open(out_path + ".py", "wt", encoding='utf8') as file:
         file.write(code)
     if needed_types:
         raise MissingHandlerException("Missing handler for types: %s" % list(needed_types))
