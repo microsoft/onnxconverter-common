@@ -1611,6 +1611,9 @@ class MergeCommonSequenceOptimizer(object):
         if node_0.origin.attribute != node_1.origin.attribute:
             return False
 
+        if node_0.attributes != node_1.attributes:
+            return False
+
         if len(node_0.origin.input) != len(node_1.origin.input):
             return False
 
