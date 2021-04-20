@@ -51,9 +51,10 @@ def make_external_tensor(name, data_type, dims, raw_data=None, **kwargs):
     tensor.data_type = data_type
     tensor.name = name
     tensor.dims.extend(dims)
-    if raw_data is not None:
-        tensor.raw_data = raw_data
+    tensor.raw_data = raw_data if raw_data is not None else b''
     external_data_helper.set_external_data(tensor, **kwargs)
+    if raw_data is None:
+        tensor.ClearField("raw_data")
     order_repeated_field(tensor.external_data, 'key', kwargs.keys())
     return tensor
 
