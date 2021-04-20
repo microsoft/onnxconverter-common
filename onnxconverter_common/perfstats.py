@@ -182,7 +182,7 @@ class QueryClause:
         self.patterns = set(clause_string.split(','))
 
     def match(self, entry):
-        if isinstance(entry, NodeEntry) and self.match_name and entry.name in self.patterns:
+        if isinstance(entry, (NodeEntry, RawEntry)) and self.match_name and entry.name in self.patterns:
             return self.rule_type
         if self.match_type and entry.op_type in self.patterns:
             return self.rule_type
