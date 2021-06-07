@@ -293,7 +293,7 @@ def check_input_and_output_numbers(operator, input_count_range=None, output_coun
 
     if max_input_count is not None and len(operator.inputs) > max_input_count:
         raise RuntimeError(
-            'For operator %s (type: %s), at most %s input(s) is(are) supported but we got %s output(s) which are %s'
+            'For operator %s (type: %s), at most %s input(s) is(are) supported but we got %s input(s) which are %s'
             % (operator.full_name, operator.type, max_input_count, len(operator.inputs), operator.input_full_names))
 
     if min_output_count is not None and len(operator.outputs) < min_output_count:
