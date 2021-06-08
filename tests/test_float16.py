@@ -19,7 +19,7 @@ Graph.inference_runtime = _ort_inference
 Graph.opset = 9
 onnx_function = Graph.trace
 
-
+@unittest.skipIf(_ort.__version__ == '1.8.0', "see https://github.com/microsoft/onnxruntime/issues/7981")
 @unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 class ONNXFloat16Test(unittest.TestCase):
     def test_float16(self):
