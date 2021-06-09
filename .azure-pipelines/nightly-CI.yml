@@ -47,7 +47,7 @@ jobs:
       # install ORT dependencies
       pip install onnxruntime
       # replace with ort-nightly
-      pip uninstall onnxruntime
+      pip uninstall -y onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install $(ONNX_PATH)
       pip install pytest
@@ -113,7 +113,7 @@ jobs:
       # install ORT dependencies
       pip install onnxruntime
       # replace with ort-nightly
-      pip uninstall onnxruntime
+      pip uninstall -y onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install %ONNX_PATH%
       pip install pytest
