@@ -5,15 +5,11 @@
 
 jobs:
 
-- job: 'linux_conda_CI_nightly'
+- job: 'Linux'
   pool:
     vmImage: 'Ubuntu-16.04'
   strategy:
     matrix:
-      Python35:
-        python.version: '3.5'
-        ONNX_PATH: onnx==1.3.0
-
       Python36:
         python.version: '3.6'
         ONNX_PATH: onnx==1.5.0
@@ -48,6 +44,10 @@ jobs:
       conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
       pip install -r requirements.txt
+      # install ORT dependencies
+      pip install onnxruntime
+      # replace with ort-nightly
+      pip uninstall onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install $(ONNX_PATH)
       pip install pytest
@@ -70,15 +70,11 @@ jobs:
       testRunTitle: 'Python $(python.version)'
     condition: succeededOrFailed()
 
-- job: 'win32_conda_CI_nightly'
+- job: 'Win32'
   pool:
     vmImage: 'vs2017-win2016'
   strategy:
     matrix:
-      Python35:
-        python.version: '3.5'
-        ONNX_PATH: onnx==1.3.0
-
       Python36:
         python.version: '3.6'
         ONNX_PATH: onnx==1.5.0
@@ -114,6 +110,10 @@ jobs:
       python -m pip install --upgrade pip numpy
       echo Test numpy installation... && python -c "import numpy"
       pip install -r requirements.txt
+      # install ORT dependencies
+      pip install onnxruntime
+      # replace with ort-nightly
+      pip uninstall onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install %ONNX_PATH%
       pip install pytest
