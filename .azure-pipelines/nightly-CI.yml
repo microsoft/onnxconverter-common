@@ -5,7 +5,7 @@
 
 jobs:
 
-- job: 'linux-conda-CI nightly test'
+- job: 'linux_conda_CI_nightly'
   pool:
     vmImage: 'Ubuntu-16.04'
   strategy:
@@ -70,7 +70,7 @@ jobs:
       testRunTitle: 'Python $(python.version)'
     condition: succeededOrFailed()
 
-- job: 'win32-conda-CI nightly test'
+- job: 'win32_conda_CI_nightly'
   pool:
     vmImage: 'vs2017-win2016'
   strategy:
