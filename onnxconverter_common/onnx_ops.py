@@ -525,7 +525,7 @@ def apply_gru(scope, input_names, output_names, container, operator_name=None, o
         if container.target_opset <= 5:
             attrs['output_sequence'] = 1 if output_seq else 0
             op_version = 3
-        elif container.target_opset <= 7:
+        elif container.target_opset <= 13:
             op_version = 7
         else:
             op_version = 14
@@ -590,7 +590,7 @@ def apply_lstm(scope, input_names, output_names, container, operator_name=None, 
     if container.target_opset <= 6:
         attrs['output_sequence'] = 1 if output_seq else 0
         op_version = 1
-    elif container.target_opset <= 7:
+    elif container.target_opset <= 13:
         op_version = 7
     else:
         op_version = 14
@@ -870,7 +870,7 @@ def apply_rnn(scope, input_names, output_names, container, operator_name=None, o
     if container.target_opset <= 6:
         attrs['output_sequence'] = 1 if output_seq else 0
         op_version = 1
-    elif container.target_opset <= 7:
+    elif container.target_opset <= 13:
         op_version = 7
     else:
         op_version = 14
