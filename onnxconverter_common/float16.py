@@ -77,11 +77,13 @@ def make_value_info_from_tensor(tensor):
     shape = numpy_helper.to_array(tensor).shape
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
+
 DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
                          'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                          'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler',
                          'TreeEnsembleClassifier', 'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK',
                          'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+
 
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                              keep_io_types=False, disable_shape_infer=False,
