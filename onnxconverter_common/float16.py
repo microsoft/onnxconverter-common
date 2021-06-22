@@ -78,8 +78,16 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
+DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
+                         'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
+                         'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler',
+                         'TreeEnsembleClassifier', 'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK',
+                         'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+
+
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
-                             keep_io_types=False, disable_shape_infer=False):
+                             keep_io_types=False, disable_shape_infer=False,
+                             op_block_list=None):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
@@ -115,12 +123,9 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     if not isinstance(model, onnx_proto.ModelProto):
         raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
 
-    # create black list
-    op_black_list = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
-                     'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
-                     'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler', 'TreeEnsembleClassifier',
-                     'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK', 'RoiAlign', 'Resize',
-                     'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+    # create blocklist
+    if op_block_list is None:
+        op_block_list = DEFAULT_OP_BLOCK_LIST
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -176,7 +181,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
             # if q is model.graph, push q.node.attribute (AttributeProto)
             if isinstance(q, onnx_proto.GraphProto):
                 for n in q.node:
-                    # if n is in the black list (doesn't support float16), no conversion for the node,
+                    # if n is in the block list (doesn't support float16), no conversion for the node,
                     # and save the node for further processing
                     if n.name in io_casts:
                         continue
@@ -186,7 +191,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     for i in range(len(n.output)):
                         if n.output[i] in name_mapping:
                             n.output[i] = name_mapping[n.output[i]]
-                    if n.op_type in op_black_list:
+                    if n.op_type in op_block_list:
                         node_list.append(n)
                     else:
                         if n.op_type == 'Cast':
@@ -220,7 +225,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                             value_info_list.append(n)
         queue = next_level
 
-    # process the nodes in black list that doesn't support tensor(float16)
+    # process the nodes in block list that doesn't support tensor(float16)
     for node in node_list:
         # if input's name is in the value_info_list meaning input is tensor(float16) type,
         # insert a float16 to float Cast node before the node,
