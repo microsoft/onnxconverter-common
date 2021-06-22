@@ -87,7 +87,7 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
 
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                              keep_io_types=False, disable_shape_infer=False,
-                             op_block_list=None):
+                             op_block_list=None, node_block_list=None):
     '''
     Convert tensor float type in the ONNX ModelProto input to tensor float16.
 
@@ -123,9 +123,13 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     if not isinstance(model, onnx_proto.ModelProto):
         raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
 
-    # create blocklist
+    # create blocklists
     if op_block_list is None:
         op_block_list = DEFAULT_OP_BLOCK_LIST
+    if node_block_list is None:
+        node_block_list = []
+    op_block_list = set(op_block_list)
+    node_block_list = set(node_block_list)
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -191,7 +195,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     for i in range(len(n.output)):
                         if n.output[i] in name_mapping:
                             n.output[i] = name_mapping[n.output[i]]
-                    if n.op_type in op_block_list:
+                    if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
                     else:
                         if n.op_type == 'Cast':
