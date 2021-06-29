@@ -177,7 +177,8 @@ def convert_tensor(tensor):
         np_data = np_data.astype(np.str)
     os.makedirs(const_dir, exist_ok=True)
     name = "const" + str(const_counter)
-    if tensor.name:
+    if tensor.name and len(tensor.name) < 100:
+        # Avoid path length limit on windows
         name = name + "_" + tensor.name
     for c in '~"#%&*:<>?/\\{|}':
         name = name.replace(c, '_')
