@@ -1,16 +1,18 @@
-import onnxruntime as ort
-import onnx
-import numpy as np
-from onnxconverter_common import float16
-from onnx import helper, mapping
-import copy
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+###########################################################################
 
+"""
+This tool converts converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
+a certain accuracy.
 
-def main():
-    # Fill in this template to convert a model, or call auto_convert_mixed_precision from another script
-    model_path = "<model path here>"
+Example usage:
+
+    from onnxconverter_common import auto_mixed_precision
+    import onnx
+
     model = onnx.load(model_path)
-    test_data = {"<input1 name>": np.array(), "<input2 name>": np.array()}
 
     # Could also use rtol/atol attributes directly instead of this
     def validate(res1, res2):
@@ -20,7 +22,16 @@ def main():
         return True
 
     model_fp16 = auto_convert_mixed_precision(model, test_data, validate, keep_io_types=True)
-    onnx.save(model_fp16, "<model output path>")
+    onnx.save(model_fp16, "ouptut_path")
+
+"""
+
+import onnxruntime as ort
+import onnx
+import numpy as np
+from onnxconverter_common import float16
+from onnx import helper, mapping
+import copy
 
 
 def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, atol=None, keep_io_types=False):
@@ -194,7 +205,3 @@ class NodeSegment:
         if self.bad:
             return "(" + str(self.size) + ")"
         return str(self.size)
-
-
-if __name__ == "__main__":
-    main()
