@@ -7,33 +7,49 @@ import copy
 
 
 def main():
-    # Fill in this template to convert a model, or call auto_convert_float_to_float16 from another script
+    # Fill in this template to convert a model, or call auto_convert_mixed_precision from another script
     model_path = "<model path here>"
     model = onnx.load(model_path)
     test_data = {"<input1 name>": np.array(), "<input2 name>": np.array()}
 
+    # Could also use rtol/atol attributes directly instead of this
     def validate(res1, res2):
         for r1, r2 in zip(res1, res2):
             if not np.allclose(r1, r2, rtol=0.01, atol=0.001):
                 return False
         return True
 
-    model_fp16 = auto_convert_float_to_float16(model, test_data, validate, keep_io_types=True)
+    model_fp16 = auto_convert_mixed_precision(model, test_data, validate, keep_io_types=True)
     onnx.save(model_fp16, "<model output path>")
 
 
-def auto_convert_float_to_float16(model, feed_dict, validate_fn, keep_io_types=False):
+def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, atol=None, keep_io_types=False):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
-    ensure valudate_fn returns True
+    ensure valudate_fn returns True and/or results are equal according to rtol/atol
     """
+    if rtol is None and atol is not None:
+        rtol = 1e-5
+
+    if atol is None and rtol is not None:
+        atol = 1e-8
+
+    def validate(res1, res2):
+        if validate_fn is not None and not validate_fn(res1, res2):
+            return False
+        if rtol is not None:
+            for r1, r2 in zip(res1, res2):
+                if not np.allclose(r1, r2, rtol, atol):
+                    return False
+        return True
+
     model0 = onnx.shape_inference.infer_shapes(model)
     model0 = add_missing_dtypes_using_ort(model0, feed_dict)
     res0 = get_tensor_values_using_ort(model0, feed_dict)
     if not keep_io_types:
         feed_dict = {k: v.astype(np.float16) if v.dtype == np.float32 else v for k, v in feed_dict.items()}
-    if not validate_fn(res0, res0):
-        raise ValueError("validate_fn returned false for original fp32 model")
+    if not validate(res0, res0):
+        raise ValueError("validation failed for original fp32 model")
     node_names = [n.name for n in model0.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
 
     def run_attempt(node_block_list, return_model=False):
@@ -42,14 +58,14 @@ def auto_convert_float_to_float16(model, feed_dict, validate_fn, keep_io_types=F
                                                  keep_io_types=keep_io_types, disable_shape_infer=True)
         res1 = get_tensor_values_using_ort(model, feed_dict)
         if return_model:
-            return validate_fn(res0, res1), model
+            return validate(res0, res1), model
         else:
-            valid = validate_fn(res0, res1)
+            valid = validate(res0, res1)
             print(valid)
             return valid
 
     if not run_attempt(node_names):
-        raise ValueError("validate_fn returned false for model with all nodes in node_block_list")
+        raise ValueError("validation failed for model with all nodes in node_block_list")
     print("Sanity checks passed. Starting autoconvert.")
     segments = SegmentList(node_names)
     i = 0
@@ -71,7 +87,7 @@ def auto_convert_float_to_float16(model, feed_dict, validate_fn, keep_io_types=F
     print("Done:", segments.get_nodes())
     valid, model = run_attempt(segments.get_nodes(), return_model=True)
     if not valid:
-        raise ValueError("validate_fn returned false for final fp16 model")
+        raise ValueError("validation failed for final fp16 model")
     print("Final model validated successfully.")
     return model
 
