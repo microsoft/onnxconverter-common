@@ -14,7 +14,7 @@ class TracingTests(unittest.TestCase):
         tracer = TracingObject("helper")
         x = np.array([1, 2, 3], dtype=np.int32)
         actual = repr(tracer.from_numpy(x))
-        expected = "helper.from_numpy(np.array([1, 2, 3], dtype=np.int32))"
+        expected = "helper.from_numpy(np.array([1, 2, 3], dtype='int32'))"
         self.assertEqual(actual, expected)
 
 if __name__ == '__main__':
