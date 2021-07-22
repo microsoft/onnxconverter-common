@@ -4,6 +4,7 @@
 ###########################################################################
 
 from collections import OrderedDict
+import math
 import numpy as np
 
 
@@ -44,7 +45,9 @@ class TracingObject:
     @staticmethod
     def get_repr(x):
         if isinstance(x, np.ndarray):
-            return "np.array(%r, dtype=np.%s)" % (x.tolist(), x.dtype)
+            return "np.array(%s, dtype='%s')" % (TracingObject.get_repr(x.tolist()), x.dtype)
+        if isinstance(x, float) and not math.isfinite(x):
+            return "float('%r')" % x   # handle nan/inf/-inf
         if not isinstance(x, list):
             return repr(x)
         ls = [TracingObject.get_repr(o) for o in x]

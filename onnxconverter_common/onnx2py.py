@@ -117,7 +117,12 @@ def convert_field(field):
 
 def convert_value_info(val_info):
     name = val_info.name
-    elem_type = convert_tensor_type(val_info.type.tensor_type.elem_type)
+    is_sequence_type = val_info.type.HasField('sequence_type')
+    if is_sequence_type:
+        tensor_type = val_info.type.sequence_type.elem_type.tensor_type
+    else:
+        tensor_type = val_info.type.tensor_type
+    elem_type = convert_tensor_type(tensor_type.elem_type)
     kwargs = OrderedDict()
 
     def convert_shape_dim(d):
@@ -132,18 +137,20 @@ def convert_value_info(val_info):
             return d.denotation
         return None
 
-    if val_info.type.tensor_type.HasField("shape"):
-        kwargs["shape"] = [convert_shape_dim(d) for d in val_info.type.tensor_type.shape.dim]
+    if tensor_type.HasField("shape"):
+        kwargs["shape"] = [convert_shape_dim(d) for d in tensor_type.shape.dim]
     else:
         kwargs["shape"] = None
-    if any(d.HasField("denotation") for d in val_info.type.tensor_type.shape.dim):
-        kwargs["shape_denotation"] = [convert_shape_denotation(d) for d in val_info.type.tensor_type.shape.dim]
+    if any(d.HasField("denotation") for d in tensor_type.shape.dim):
+        kwargs["shape_denotation"] = [convert_shape_denotation(d) for d in tensor_type.shape.dim]
 
     if val_info.HasField("doc_string"):
         kwargs["doc_string"].doc_string
 
-    helper.make_tensor_value_info
-    return helper_traced.make_tensor_value_info(name, elem_type, **kwargs)
+    if is_sequence_type:
+        return helper_traced.make_sequence_value_info(name, elem_type, **kwargs)
+    else:
+        return helper_traced.make_tensor_value_info(name, elem_type, **kwargs)
 
 
 def convert_operatorsetid(opsetid):
@@ -173,8 +180,8 @@ def convert_tensor(tensor):
     if np.product(np_data.shape) <= 10:
         return numpy_helper_traced.from_array(np_data, name=tensor.name)
     dtype = np_data.dtype
-    if dtype == np.object:
-        np_data = np_data.astype(np.str)
+    if dtype == object:
+        np_data = np_data.astype(str)
     os.makedirs(const_dir, exist_ok=True)
     name = "const" + str(const_counter)
     if tensor.name and len(tensor.name) < 100:
@@ -186,7 +193,7 @@ def convert_tensor(tensor):
     np.save(const_path, np_data)
     data_path = os_traced.path.join(DATA_DIR_TRACED, name + '.npy')
     const_counter += 1
-    np_dtype = getattr(np_traced, str(dtype))
+    np_dtype = str(dtype)
     np_shape = list(np_data.shape)
     np_array = np_traced.load(data_path).astype(np_dtype).reshape(np_shape)
     return numpy_helper_traced.from_array(np_array, name=tensor.name)
