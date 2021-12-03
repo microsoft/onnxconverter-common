@@ -51,6 +51,10 @@ jobs:
       conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
       pip install -r requirements.txt
+      # install ORT dependencies
+      pip install onnxruntime
+      # replace with ort-nightly
+      pip uninstall -y onnxruntime
       pip install -i https://test.pypi.org/simple/ ort-nightly==1.10.0.dev20211130002
       pip install $(ONNX_PATH)
       pip install pytest
