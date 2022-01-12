@@ -45,6 +45,9 @@ def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, 
     if atol is None and rtol is not None:
         atol = 1e-8
 
+    if rtol is None and validate_fn is None:
+        raise ValueError("Argument `validate_fn` and `rtol` cannot both be `None`.")
+
     def validate(res1, res2):
         if validate_fn is not None and not validate_fn(res1, res2):
             return False
@@ -125,7 +128,7 @@ def add_missing_dtypes_using_ort(model, feed_dict, outputs_per_iter=100):
 
 def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_options=None):
     if output_names is None:
-        sess = ort.InferenceSession(model.SerializeToString(), sess_options)
+        sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
         return sess.run(None, input_feed)
     original_outputs = list(model.graph.output)
     while len(model.graph.output) > 0:
@@ -133,7 +136,7 @@ def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_optio
     for n in output_names:
         out = model.graph.output.add()
         out.name = n
-    sess = ort.InferenceSession(model.SerializeToString(), sess_options)
+    sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
     try:
         return sess.run(output_names, input_feed)
     finally:
