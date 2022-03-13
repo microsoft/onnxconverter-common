@@ -29,10 +29,6 @@ jobs:
         python.version: '3.9'
         ONNX_PATH: onnx==1.9.0
 
-      Python310:
-        python.version: '3.10'
-        ONNX_PATH: onnx==1.10.0
-
     maxParallel: 4
 
   steps:
