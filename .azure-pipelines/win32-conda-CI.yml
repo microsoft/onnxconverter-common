@@ -13,14 +13,6 @@ jobs:
     vmImage: 'windows-latest'
   strategy:
     matrix:
-      Python35:
-        python.version: '3.5'
-        ONNX_PATH: onnx==1.3.0
-
-      Python36:
-        python.version: '3.6'
-        ONNX_PATH: onnx==1.5.0
-
       Python37:
         python.version: '3.7'
         ONNX_PATH: onnx==1.6.0
