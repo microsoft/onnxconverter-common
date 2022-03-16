@@ -227,6 +227,11 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                         if n.name not in graph_io_to_skip:
                             n.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
                             value_info_list.append(n)
+                    if n.type.HasField('sequence_type'):
+                        if n.type.sequence_type.elem_type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                            if n.name not in graph_io_to_skip:
+                                n.type.sequence_type.elem_type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+                                value_info_list.append(n)
         queue = next_level
 
     # process the nodes in block list that doesn't support tensor(float16)
