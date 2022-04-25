@@ -85,8 +85,9 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
                          'RoiAlign', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
 
 
+# find all the constant input for specified op_type and index of input
 KEEP_ORIGINAL_DATA_TYPE_LIST = {
-    "Resize": 2,    # Resize operator, input[2] keep original type (tensor float)
+    "Resize": 2,    # usage: the key:value means Resize operator, input[2]
 }
 
 
@@ -102,7 +103,7 @@ def get_nodes_to_keep_data_type(model):
                 prev_node_output_name = node.input[input_index]
                 inputs_constant.append(prev_node_output_name)
 
-    # walk through graph again to get the constant node by name
+    # go through graph again to get all constant nodes by name
     constant_input_nodes = []
     for node in model.graph.node:
         if (node.output[0] in inputs_constant):
