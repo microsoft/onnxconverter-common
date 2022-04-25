@@ -78,11 +78,43 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
+# e.g. for the Resize op, its input[2] need tensor(float) isstead of tensor(float16)
+def convert_to_specified_data_type(nodes, target_data_type):
+    for node in nodes:
+        node.attribute[0].t.data_type = target_data_type
+
+
 DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
                          'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                          'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler',
                          'TreeEnsembleClassifier', 'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK',
-                         'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+                         'RoiAlign', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+
+
+KEEP_ORIGINAL_DATA_TYPE_LIST = {
+    "Resize": 2,    # Resize operator, input[2] keep original type (tensor float)
+}
+
+
+# find all the constant input for specified op_type
+# e.g. search_node_input(model, "Resize", 2) will return all Resize.input[2] nodes
+def generate_attribute_blocklist(model):
+    inputs_constant = []
+    for op_type, input_index in KEEP_ORIGINAL_DATA_TYPE_LIST.items():
+        # find all the constant input[index] of operator by specified op_type 
+        for node in model.graph.node:
+            if (node.op_type == op_type):
+                if len(node.input) > input_index:
+                    prev_node_output_name = node.input[input_index]
+                    inputs_constant.append(prev_node_output_name)
+
+    # walk through graph again to get the constant node by name
+    constant_input_nodes = []
+    for node in model.graph.node:
+        if (node.output[0] in inputs_constant):
+            constant_input_nodes.append(node.name)
+
+    return constant_input_nodes
 
 
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
@@ -130,6 +162,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
         node_block_list = []
     op_block_list = set(op_block_list)
     node_block_list = set(node_block_list)
+    attribute_block_list = generate_attribute_blocklist(model)
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -195,6 +228,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     for i in range(len(n.output)):
                         if n.output[i] in name_mapping:
                             n.output[i] = name_mapping[n.output[i]]
+                    if n.name in attribute_block_list:
+                        continue
                     if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
                     else:
@@ -270,6 +305,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # change current node's input name
                     node.output[i] = input_name
                     break
+
     return model
 
 
