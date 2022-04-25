@@ -95,7 +95,7 @@ KEEP_ORIGINAL_DATA_TYPE_LIST = {
 def generate_attribute_blocklist(model):
     inputs_constant = []
     for op_type, input_index in KEEP_ORIGINAL_DATA_TYPE_LIST.items():
-        # find all the constant input[index] of operator by specified op_type 
+        # find all the constant input[index] of operator by specified op_type
         for node in model.graph.node:
             if (node.op_type == op_type):
                 if len(node.input) > input_index:
