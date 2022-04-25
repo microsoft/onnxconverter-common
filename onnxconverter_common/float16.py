@@ -78,12 +78,6 @@ def make_value_info_from_tensor(tensor):
     return helper.make_tensor_value_info(tensor.name, tensor.data_type, shape)
 
 
-# e.g. for the Resize op, its input[2] need tensor(float) isstead of tensor(float16)
-def convert_to_specified_data_type(nodes, target_data_type):
-    for node in nodes:
-        node.attribute[0].t.data_type = target_data_type
-
-
 DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'CategoryMapper', 'DictVectorizer',
                          'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                          'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler',
