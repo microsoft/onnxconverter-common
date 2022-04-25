@@ -91,16 +91,16 @@ KEEP_ORIGINAL_DATA_TYPE_LIST = {
 
 
 # find all the constant input for specified op_type
-# e.g. search_node_input(model, "Resize", 2) will return all Resize.input[2] nodes
-def generate_attribute_blocklist(model):
+def get_nodes_to_keep_data_type(model):
     inputs_constant = []
     for op_type, input_index in KEEP_ORIGINAL_DATA_TYPE_LIST.items():
         # find all the constant input[index] of operator by specified op_type
         for node in model.graph.node:
             if (node.op_type == op_type):
-                if len(node.input) > input_index:
-                    prev_node_output_name = node.input[input_index]
-                    inputs_constant.append(prev_node_output_name)
+                if len(node.input) <= input_index:
+                    raise ValueError('The input_index is larger than the total inputs count: %s' % op_type)
+                prev_node_output_name = node.input[input_index]
+                inputs_constant.append(prev_node_output_name)
 
     # walk through graph again to get the constant node by name
     constant_input_nodes = []
@@ -156,7 +156,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
         node_block_list = []
     op_block_list = set(op_block_list)
     node_block_list = set(node_block_list)
-    attribute_block_list = generate_attribute_blocklist(model)
+    node_keep_data_type_list = get_nodes_to_keep_data_type(model)
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -222,7 +222,9 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     for i in range(len(n.output)):
                         if n.output[i] in name_mapping:
                             n.output[i] = name_mapping[n.output[i]]
-                    if n.name in attribute_block_list:
+                    # don't add the attr into next_level for the node in node_keep_data_type_list
+                    # so it will not be converted to float16
+                    if n.name in node_keep_data_type_list:
                         continue
                     if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
