@@ -52,6 +52,7 @@ jobs:
       conda install -c conda-forge numpy
       pip install -r requirements.txt
       pip install onnxruntime
+      pip install onnxmltools
       pip install $(ONNX_PATH)
       pip install pytest
       pip install -e .

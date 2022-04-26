@@ -1,7 +1,9 @@
 import unittest
+import os
+import copy
 import numpy as np
 import onnxruntime as _ort
-import copy
+import onnxmltools
 from distutils.version import StrictVersion
 from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
@@ -86,6 +88,19 @@ class ONNXFloat16Test(unittest.TestCase):
         for expected, actual2 in zip(expected_res, actual_res2):
             self.assertTrue(np.allclose(expected, actual2))
             self.assertTrue(actual2.dtype == np.float32)
+
+    def test_convert_to_float16(self):
+        model32_name = "image_classifier32.onnx"
+        working_path = os.path.abspath(os.path.dirname(__file__))
+        data_path = os.path.join(working_path, 'data')
+        model_path = os.path.join(data_path, model32_name)
+        onnx_model32 = onnxmltools.utils.load_model(model_path)
+        input_x = np.random.rand(1, 3, 32, 32).astype(np.float32)
+        output_32 = _ort_inference(onnx_model32, {'modelInput': input_x})
+
+        onnx_model16 = convert_float_to_float16(onnx_model32)
+        output_16 = _ort_inference(onnx_model16, {'modelInput': input_x.astype(np.float16)})
+        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
 
 if __name__ == '__main__':
