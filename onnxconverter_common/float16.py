@@ -105,9 +105,10 @@ def get_nodes_to_keep_data_type(model):
 
     # go through graph again to get all constant nodes by name
     constant_input_nodes = []
-    for node in model.graph.node:
-        if (node.output[0] in inputs_constant):
-            constant_input_nodes.append(node.name)
+    if len(inputs_constant) > 0:
+        for node in model.graph.node:
+            if (node.output[0] in inputs_constant):
+                constant_input_nodes.append(node.name)
 
     return constant_input_nodes
 
