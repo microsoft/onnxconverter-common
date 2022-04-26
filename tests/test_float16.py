@@ -1,9 +1,9 @@
 import unittest
+import os
+import copy
 import numpy as np
 import onnxruntime as _ort
 import onnxmltools
-import os
-import copy
 from distutils.version import StrictVersion
 from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
