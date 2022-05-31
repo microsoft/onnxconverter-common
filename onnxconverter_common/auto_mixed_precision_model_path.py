@@ -34,7 +34,9 @@ from onnx import shape_inference
 import copy
 
 
-def auto_convert_mixed_precision_model_path(source_model_path, input_feed, validate_fn=None, rtol=None, atol=None, keep_io_types=False, providers=None):
+def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
+                                            validate_fn=None, rtol=None, atol=None,
+                                            keep_io_types=False, providers=None):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
     ensure valudate_fn returns True and/or results are equal according to rtol/atol
@@ -78,7 +80,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed, valid
         print(node_block_list)
         model = float16.convert_float_to_float16(copy.deepcopy(model0), node_block_list=node_block_list,
                                                  keep_io_types=keep_io_types, disable_shape_infer=True)
-        
+
         # need to save model to model_path here.....
         print("******** save model 000 ********")
         onnx.save(model, model_path, save_as_external_data=True)
@@ -151,7 +153,8 @@ def add_missing_dtypes_using_ort_model_path(model_path, model, input_feed, outpu
 
 
 # need input both model_path (for big model inference) and model (Proto, in memory, for manipulation)
-def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output_names=None, sess_options=None, providers=None):
+def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output_names=None,
+                                           sess_options=None, providers=None):
     if output_names is None:
         sess = ort.InferenceSession(model_path, sess_options, providers=providers)
         return sess.run(None, input_feed)
@@ -182,7 +185,7 @@ def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output
             out = model.graph.output.add()
             out.CopyFrom(orig_out)
             need_to_save_model = True
-        
+
         # if model changed, need to save model to model_path here.....
         if need_to_save_model:
             print("******** save model 333********")
