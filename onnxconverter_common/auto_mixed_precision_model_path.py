@@ -74,13 +74,15 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed, valid
     node_names = [n.name for n in model0.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
 
     def run_attempt(node_block_list, return_model=False):
+        print("node block list")
         print(node_block_list)
         model = float16.convert_float_to_float16(copy.deepcopy(model0), node_block_list=node_block_list,
                                                  keep_io_types=keep_io_types, disable_shape_infer=True)
         
         # need to save model to model_path here.....
-        print("******** save model ********")
-        onnx.save(model, model_path)
+        print("******** save model 000 ********")
+        onnx.save(model, model_path, save_as_external_data=True)
+        print("******** save complete ********")
 
         res1 = get_tensor_values_using_ort_model_path(model_path, model, input_feed, providers=providers)
         if return_model:
@@ -109,6 +111,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed, valid
                 seg.bad = True
             else:
                 seg.split()
+        print("segments=")
         print(segments)
     print("Done:", segments.get_nodes())
     valid, model = run_attempt(segments.get_nodes(), return_model=True)
@@ -140,8 +143,9 @@ def add_missing_dtypes_using_ort_model_path(model_path, model, input_feed, outpu
 
     # if model changed, need to save model to model_path here.....
     if need_to_save_model:
-        print("******** save model ********")
-        onnx.save(model, model_path)
+        print("******** save model 111********")
+        onnx.save(model, model_path, save_as_external_data=True)
+        print("******** save complete ********")
 
     return model
 
@@ -163,8 +167,9 @@ def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output
 
     # if model changed, need to save model to model_path here.....
     if need_to_save_model:
-        print("******** save model ********")
-        onnx.save(model, model_path)
+        print("******** save model 222********")
+        onnx.save(model, model_path, save_as_external_data=True)
+        print("******** save complete ********")
 
     sess = ort.InferenceSession(model_path, sess_options, providers=providers)
     try:
@@ -180,8 +185,9 @@ def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output
         
         # if model changed, need to save model to model_path here.....
         if need_to_save_model:
-            print("******** save model ********")
-            onnx.save(model, model_path)
+            print("******** save model 333********")
+            onnx.save(model, model_path, save_as_external_data=True)
+            print("******** save complete ********")
 
 
 class SegmentList:
