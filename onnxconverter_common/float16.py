@@ -88,7 +88,7 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
 
 # find all the constant input for specified op_type and index of input
 KEEP_ORIGINAL_DATA_TYPE_LIST = {
-#    "Resize": 2,    # usage: the key:value means Resize operator, input[2]
+    # "Resize": 2,    # usage: the key:value means Resize operator, input[2]
 }
 
 
