@@ -32,7 +32,7 @@ from onnxconverter_common import float16
 from onnx import helper, mapping
 from onnx import ModelProto
 from onnx import shape_inference
-from auto_mixed_precision import SegmentList, NodeSegment
+from auto_mixed_precision import SegmentList
 
 
 def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
