@@ -24,6 +24,7 @@ Example usage:
 
 """
 
+import copy
 import onnxruntime as ort
 import onnx
 import numpy as np
@@ -31,7 +32,7 @@ from onnxconverter_common import float16
 from onnx import helper, mapping
 from onnx import ModelProto
 from onnx import shape_inference
-import copy
+from auto_mixed_precision import SegmentList, NodeSegment
 
 
 def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
@@ -191,66 +192,3 @@ def get_tensor_values_using_ort_model_path(model_path, model, input_feed, output
             print("******** save model 333********")
             onnx.save(model, model_path, save_as_external_data=True)
             print("******** save complete ********")
-
-
-class SegmentList:
-    def __init__(self, node_names):
-        self.node_names = node_names
-        self.first = NodeSegment(len(node_names))
-
-    def get_largest(self, adjacent_to_good=False):
-        adjacent_to_good = False
-        largest = None
-        current = self.first
-        prev_good = False
-        while current is not None:
-            can_use = not current.good and not current.bad
-            if adjacent_to_good:
-                next_good = current.next is not None and current.next.good
-                can_use = can_use and (prev_good or next_good)
-            if can_use and (largest is None or current.size > largest.size):
-                largest = current
-            prev_good = current.good
-            current = current.next
-        return largest
-
-    def get_nodes(self, node_segment=None):
-        i = 0
-        current = self.first
-        nodes = []
-        while current is not None:
-            if current is not node_segment and not current.good:
-                nodes.extend(self.node_names[i:i + current.size])
-            i += current.size
-            current = current.next
-        return nodes
-
-    def __repr__(self):
-        res = []
-        current = self.first
-        while current is not None:
-            res.append(current)
-            current = current.next
-        return repr(res)
-
-
-class NodeSegment:
-    def __init__(self, size):
-        self.size = size
-        self.next = None
-        self.good = False
-        self.bad = False
-
-    def split(self):
-        new_size = self.size // 2
-        new_segment = NodeSegment(self.size - new_size)
-        new_segment.next = self.next
-        self.next = new_segment
-        self.size = new_size
-
-    def __repr__(self):
-        if self.good:
-            return "*" + str(self.size) + "*"
-        if self.bad:
-            return "(" + str(self.size) + ")"
-        return str(self.size)
