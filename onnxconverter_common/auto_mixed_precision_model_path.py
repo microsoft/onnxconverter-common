@@ -85,12 +85,11 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         "providers": providers
         }
 
-    print("**** copy source model to temp folder, change to external data, then check ****")
+    print("copy source model to temp folder, change to external data, then check.")
     model_32, output_32 = copy_fp32_model(**kwargs)
 
-    print("**** convert to initial fp16 model, then check ****")
+    print("convert to initial fp16 model, then check.")
     node_names = [n.name for n in model_32.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
-    print_node_block_list(node_names)
     kwargs["model_32"] = model_32
     kwargs["res1"] = output_32
     kwargs["node_block_list"] = node_names
@@ -100,7 +99,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     print("Sanity checks passed. Starting autoconvert.")
     final_nodes = try_to_convert_to_valid_fp16_model(**kwargs)
 
-    print("**** final convert ****")
+    print(".final convert.")
     kwargs["node_block_list"] = final_nodes
     kwargs["return_model"] = True
     valid, model = run_attempt(**kwargs)
@@ -112,7 +111,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
 
 def try_to_convert_to_valid_fp16_model(**kwargs):
-    print(" **** try_to_convert_to_valid_fp16_mode ****")
     node_names = kwargs.get('node_block_list')
 
     segments = SegmentList(node_names)
@@ -133,7 +131,7 @@ def try_to_convert_to_valid_fp16_model(**kwargs):
             else:
                 seg.split()
         print("segments=", segments)
-    print("**** Done! these nodes will keep float32 type:", segments.get_nodes())
+    print("Done! these nodes will keep float32 type:", segments.get_nodes())
 
     return segments.get_nodes()
 
@@ -148,8 +146,6 @@ def generate_temp_filename(target_model_path):
 
 
 def copy_fp32_model(**kwargs):
-    print("****copy_fp32_model****")
-
     source_model_path = kwargs.get('source_model_path')
     input_feed = kwargs.get('input_feed')
     providers = kwargs.get('providers')
@@ -157,15 +153,13 @@ def copy_fp32_model(**kwargs):
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
 
     model_32 = onnx.load(source_model_path)
-    save_model(True, model_32, tmp_model32_path, location=tmp_model32_tensor_name)
+    save_model(model_32, tmp_model32_path, location=tmp_model32_tensor_name)
 
     print("infer_shape_path for", tmp_model32_path, tmp_model32_tensor_name)
     shape_inference.infer_shapes_path(tmp_model32_path)
     model_32 = onnx.load(tmp_model32_path)
 
-    print("**** run fp32 inference")
     output_32 = inference(tmp_model32_path, input_feed, providers=providers)
-    print("****", output_32)
 
     kwargs["res1"] = output_32
     kwargs["res2"] = output_32
@@ -176,12 +170,11 @@ def copy_fp32_model(**kwargs):
 
 
 def validate(**kwargs):
-    print("****validate****")
-
     validate_fn = kwargs.get("validate_fn")
     rtol = kwargs.get("rtol")
     res1 = kwargs.get("res1")
     res2 = kwargs.get("res2")
+
     if validate_fn is not None and not validate_fn(res1, res2):
         return False
     if rtol is not None:
@@ -192,8 +185,6 @@ def validate(**kwargs):
 
 
 def run_attempt(**kwargs):
-    print("****run_attempt****")
-
     model_32 = kwargs.get("model_32")
     keep_io_types = kwargs.get("keep_io_types")
     return_model = kwargs.get("return_model")
@@ -213,7 +204,7 @@ def run_attempt(**kwargs):
         location = tmp_model32_tensor_name
     else:
         location = kwargs.get("location")  # using the speficified external data file name
-    save_model(True, model_16, target_model_path, location=location)
+    save_model(model_16, target_model_path, location=location)
     # inference
     output_16 = inference(target_model_path, input_feed, providers=providers)
     kwargs["res2"] = output_16
@@ -226,17 +217,13 @@ def run_attempt(**kwargs):
 
 
 def inference(model_path, input_feed, providers=None):
-    print(" **** inference ****")
     sess = ort.InferenceSession(model_path, None, providers=providers)
     output = sess.run(None, input_feed)
     return output
 
 
-def save_model(need_to_save_model, model, model_path, location=None):
-    if need_to_save_model:
-        print(" **** save model: model path is: %s external file name is: %s****", model_path, location)
-        onnx.save_model(model, model_path, save_as_external_data=True, location=location)
-        print("**** save model complete ****")
+def save_model(model, model_path, location=None):
+    onnx.save_model(model, model_path, save_as_external_data=True, location=location)
 
 
 def print_node_block_list(node_block_list, max_len=128):
@@ -251,6 +238,7 @@ def print_node_block_list(node_block_list, max_len=128):
 def clean_output_folder(**kwargs):
     tmp_model32_path = kwargs.get("tmp_model32_path")
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
+
     os.remove(tmp_model32_path)
     tensor_path = os.path.join(os.path.dirname(tmp_model32_path), tmp_model32_tensor_name)
     os.remove(tensor_path)
