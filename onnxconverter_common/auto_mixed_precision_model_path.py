@@ -110,8 +110,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
     clean_output_folder(**kwargs)
 
-    return model
-
 
 def try_to_convert_to_valid_fp16_model(**kwargs):
     print(" **** try_to_convert_to_valid_fp16_mode ****")
@@ -237,7 +235,7 @@ def inference(model_path, input_feed, providers=None):
 def save_model(need_to_save_model, model, model_path, location=None):
     if need_to_save_model:
         print(" **** save model: model path is: %s external file name is: %s****", model_path, location)
-        onnx.save(model, model_path, save_as_external_data=True, location=location)
+        onnx.save_model(model, model_path, save_as_external_data=True, location=location)
         print("**** save model complete ****")
 
 
