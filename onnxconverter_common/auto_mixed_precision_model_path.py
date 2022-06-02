@@ -21,11 +21,11 @@ Example usage:
         return True
 
     auto_convert_mixed_precision_model_path(
-        source_model_path, test_data, 
+        source_model_path, test_data,
         target_model_path, location=None,
         validate_fn=None, rtol=None, atol=None,
         keep_io_types=False, providers=None)
-    
+
     The target fp16 model will be saved as %target_model_path.
     It is better to specify a unique output folder.
 
@@ -36,7 +36,6 @@ import numpy as np
 import onnxruntime as ort
 import onnx
 import os
-import shutil
 import uuid
 from onnxconverter_common import float16
 from onnx import helper, mapping
@@ -54,9 +53,9 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     ensure valudate_fn returns True and/or results are equal according to rtol/atol
     this version support model_path as input, which the model could > 2GB
     """
-    
+
     print("**** source %s, target %s, location %s" %(source_model_path, target_model_path, location))
-    
+
     if isinstance(source_model_path, ModelProto):
         raise TypeError('auto_convert_mixed_precision_model_path only accepts model Path (String),'
                         'you can use auto_convert_mixed_precision for the ModelProto.')
@@ -69,10 +68,10 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
     if rtol is None and validate_fn is None:
         raise ValueError("Argument `validate_fn` and `rtol` cannot both be `None`.")
-    
+
     if location is None:
         location = "fp16_tensor.data"
-    
+
     tmp_model32_path, tmp_model32_tensor_name = generate_temp_filename(target_model_path)
 
     kwargs = {
@@ -89,7 +88,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         "providers": providers
         }
 
-    print("**** copy source model to temp folder, change to external data, then check ****")  
+    print("**** copy source model to temp folder, change to external data, then check ****")
     model_32, output_32 = copy_fp32_model(**kwargs)
 
     print("**** convert to initial fp16 model, then check ****")
@@ -111,16 +110,16 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     if not valid:
         raise ValueError("validation failed for final fp16 model")
     print("Final model validated successfully.")
-    
+
     clean_output_folder(**kwargs)
-    
+
     return model
 
 
 def try_to_convert_to_valid_fp16_model(**kwargs):
     print(" **** try_to_convert_to_valid_fp16_mode ****")
     node_names = kwargs.get('node_block_list')
-    
+
     segments = SegmentList(node_names)
     i = 0
     while segments.get_largest() is not None:
@@ -140,7 +139,7 @@ def try_to_convert_to_valid_fp16_model(**kwargs):
                 seg.split()
         print("segments=", segments)
     print("**** Done! these nodes will keep float32 type:", segments.get_nodes())
-    
+
     return segments.get_nodes()
 
 
@@ -164,7 +163,7 @@ def copy_fp32_model(**kwargs):
 
     model_32 = onnx.load(source_model_path)
     save_model(True, model_32, tmp_model32_path, location=tmp_model32_tensor_name)
-    
+
     print("infer_shape_path for", tmp_model32_path, tmp_model32_tensor_name)
     shape_inference.infer_shapes_path(tmp_model32_path)
     model_32 = onnx.load(tmp_model32_path)
@@ -176,9 +175,10 @@ def copy_fp32_model(**kwargs):
     kwargs["res1"] = output_32
     kwargs["res2"] = output_32
     if not validate(**kwargs):
-      raise ValueError("validation failed for fp32 model")
+        raise ValueError("validation failed for fp32 model")
 
     return model_32, output_32
+
 
 def validate(**kwargs):
     print("****validate****")
@@ -218,7 +218,7 @@ def run_attempt(**kwargs):
         location = tmp_model32_tensor_name
     else:
         location = kwargs.get("location")  # using the speficified external data file name
-    save_model(True, model_16, target_model_path, location=location)     
+    save_model(True, model_16, target_model_path, location=location)
     # inference
     output_16 = inference(target_model_path, input_feed, providers=providers)
     kwargs["res2"] = output_16
@@ -245,12 +245,12 @@ def save_model(need_to_save_model, model, model_path, location=None):
 
 
 def print_node_block_list(node_block_list, max_len=128):
-        print("node block list =")
-        if (len(node_block_list) < max_len):
-            print(node_block_list)
-        else:
-            tmp_list = node_block_list[0:64] + ['......'] + node_block_list[-64:]
-            print(tmp_list)
+    print("node block list =")
+    if (len(node_block_list) < max_len):
+        print(node_block_list)
+    else:
+        tmp_list = node_block_list[0:64] + ['......'] + node_block_list[-64:]
+        print(tmp_list)
 
 
 def clean_output_folder(**kwargs):
@@ -259,63 +259,3 @@ def clean_output_folder(**kwargs):
     os.remove(tmp_model32_path)
     tensor_path = os.path.join(os.path.dirname(tmp_model32_path), tmp_model32_tensor_name)
     os.remove(tensor_path)
-
-
-def add_missing_dtypes_using_ort_model_path(source_model_path, model, input_feed, 
-                                            outputs_per_iter=100, providers=None):
-    outputs = [out for node in model.graph.node for out in node.output]
-    graph_io = [inp.name for inp in model.graph.input] + [out.name for out in model.graph.output]
-    value_info_names = [info.name for info in model.graph.value_info]
-    skip = set(graph_io + value_info_names)
-    outputs = [out for out in outputs if out not in skip]
-    print("Adding missing dtypes for %s outputs" % len(outputs))
-    out_to_dtype = {}
-    i = 0
-    while i < len(outputs):
-        outs = outputs[i:i + outputs_per_iter]
-        vals = get_tensor_values_using_ort_model_path(source_model_path, model, input_feed, outs, providers=providers, location=location)
-        for out, val in zip(outs, vals):
-            out_to_dtype[out] = mapping.NP_TYPE_TO_TENSOR_TYPE[val.dtype]
-        i += outputs_per_iter
-    need_to_save_model = False
-    for out, dtype in out_to_dtype.items():
-        model.graph.value_info.append(helper.make_tensor_value_info(out, dtype, shape=None))
-        need_to_save_model = True
-
-    return model, need_to_save_model
-
-
-# need input both model_path (for big model inference) and model (Proto, in memory, for manipulation)
-def get_tensor_values_using_ort_model_path(target_model_path, model, input_feed, output_names=None,
-                                           sess_options=None, providers=None, location=None):
-    print("Inference Model : ", target_model_path)
-    if output_names is None:
-        sess = ort.InferenceSession(target_model_path, sess_options, providers=providers)
-        return sess.run(None, input_feed)
-
-    need_to_save_model = False
-    original_outputs = list(model.graph.output)
-    while len(model.graph.output) > 0:
-        model.graph.output.pop()
-    for n in output_names:
-        out = model.graph.output.add()
-        out.name = n
-        need_to_save_model = True
-
-    # if model changed, need to save model to model_path here.....
-    save_model(need_to_save_model, model, target_model_path, location)
-
-    sess = ort.InferenceSession(target_model_path, sess_options, providers=providers)
-    try:
-        return sess.run(output_names, input_feed)
-    finally:
-        need_to_save_model = False
-        while len(model.graph.output) > 0:
-            model.graph.output.pop()
-        for orig_out in original_outputs:
-            out = model.graph.output.add()
-            out.CopyFrom(orig_out)
-            need_to_save_model = True
-
-        # if model changed, need to save model to model_path here.....
-        save_model(need_to_save_model, model, target_model_path, location)
