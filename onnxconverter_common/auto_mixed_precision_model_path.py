@@ -38,7 +38,6 @@ import onnx
 import os
 import uuid
 from onnxconverter_common import float16
-from onnx import helper, mapping
 from onnx import ModelProto
 from onnx import shape_inference
 from .auto_mixed_precision import SegmentList
@@ -53,8 +52,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     ensure valudate_fn returns True and/or results are equal according to rtol/atol
     this version support model_path as input, which the model could > 2GB
     """
-
-    print("**** source %s, target %s, location %s" %(source_model_path, target_model_path, location))
 
     if isinstance(source_model_path, ModelProto):
         raise TypeError('auto_convert_mixed_precision_model_path only accepts model Path (String),'
