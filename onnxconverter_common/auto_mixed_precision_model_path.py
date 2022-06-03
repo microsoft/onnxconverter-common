@@ -32,6 +32,7 @@ Example usage:
         validate_fn=None, rtol=None, atol=None,
         keep_io_types=True, providers=None)
 
+You don't need to call onnx.save_model() in the customer code.
 The target fp16 model and its external data will be saved as %target_model_path and %location.
 Please note that keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
 
