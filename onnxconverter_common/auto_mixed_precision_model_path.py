@@ -44,7 +44,6 @@ import onnx
 import os
 import uuid
 from onnxconverter_common import float16
-from onnx import ModelProto
 from onnx import shape_inference
 from .auto_mixed_precision import SegmentList
 
