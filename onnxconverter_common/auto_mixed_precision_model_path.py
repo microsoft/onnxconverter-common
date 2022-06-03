@@ -10,8 +10,14 @@ a certain accuracy.
 
 Example usage:
 
-    from onnxconverter_common import auto_mixed_precision
-    import onnx
+    from onnxconverter_common import auto_mixed_precision_model_path
+    import numpy as np
+    import time
+
+    source_model_path = "/home/user/onnx/mymodel/model/8_fp32/graph.onnx"
+    target_model_path = '/home/user/onnx/mymodel/output/fp16.onnx'  # better to specify an %output% folder
+    location = "fp16_tensor.data"
+
 
     # Could also use rtol/atol attributes directly instead of this
     def validate(res1, res2):
@@ -24,16 +30,10 @@ Example usage:
         source_model_path, test_data,
         target_model_path, location=None,
         validate_fn=None, rtol=None, atol=None,
-        keep_io_types=False, providers=None)
+        keep_io_types=True, providers=None)
 
-    the best pratice is call it as:
-
-    (sample code):
-    source_model_path = "/home/user/onnx/mymodel/model/8_fp32/graph.onnx"
-    target_model_path = '/home/user/onnx/mymodel/output/fp16.onnx'  # better to specify an %output% folder
-    location = "fp16_tensor.data"
-
-    The target fp16 model and its external data will be saved as %target_model_path and %location
+The target fp16 model and its external data will be saved as %target_model_path and %location.
+Please note that keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
 
 """
 
