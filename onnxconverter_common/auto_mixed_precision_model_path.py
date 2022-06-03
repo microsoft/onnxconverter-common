@@ -5,7 +5,7 @@
 ###########################################################################
 
 """
-This tool converts converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
+This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
 a certain accuracy.
 
 Example usage:
@@ -26,8 +26,14 @@ Example usage:
         validate_fn=None, rtol=None, atol=None,
         keep_io_types=False, providers=None)
 
-    The target fp16 model will be saved as %target_model_path.
-    It is better to specify a unique output folder.
+    the best pratice is call it as:
+
+    (sample code):
+    source_model_path = "/home/user/onnx/mymodel/model/8_fp32/graph.onnx"
+    target_model_path = '/home/user/onnx/mymodel/output/fp16.onnx'  # better to specify an %output% folder
+    location = "fp16_tensor.data"
+
+    The target fp16 model and its external data will be saved as %target_model_path and %location
 
 """
 
@@ -53,7 +59,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     this version support model_path as input, which the model could > 2GB
     """
 
-    if isinstance(source_model_path, ModelProto):
+    if not isinstance(source_model_path, str):
         raise TypeError('auto_convert_mixed_precision_model_path only accepts model Path (String),'
                         'you can use auto_convert_mixed_precision for the ModelProto.')
 
