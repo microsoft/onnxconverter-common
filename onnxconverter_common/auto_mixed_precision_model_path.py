@@ -92,7 +92,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         }
 
     print("copy source model to temp folder, change to external data, then check.")
-    model_32, output_32 = copy_fp32_model(**kwargs)
+    model_32, output_32 = _copy_fp32_model(**kwargs)
 
     print("convert to initial fp16 model, then check.")
     node_names = [n.name for n in model_32.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
@@ -100,23 +100,23 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     kwargs["res1"] = output_32
     kwargs["node_block_list"] = node_names
     kwargs["return_model"] = False
-    run_attempt(**kwargs)
+    _convert_and_check_inference_result(**kwargs)
 
     print("Sanity checks passed. Starting autoconvert.")
-    final_nodes = try_to_convert_to_valid_fp16_model(**kwargs)
+    final_nodes = _try_to_convert_to_valid_fp16_model(**kwargs)
 
     print(".final convert.")
     kwargs["node_block_list"] = final_nodes
     kwargs["return_model"] = True
-    valid, model = run_attempt(**kwargs)
+    valid, model = _convert_and_check_inference_result(**kwargs)
     if not valid:
         raise ValueError("validation failed for final fp16 model")
     print("Final model validated successfully.")
 
-    clean_output_folder(**kwargs)
+    _clean_output_folder(**kwargs)
 
 
-def try_to_convert_to_valid_fp16_model(**kwargs):
+def _try_to_convert_to_valid_fp16_model(**kwargs):
     node_names = kwargs.get('node_block_list')
 
     segments = SegmentList(node_names)
@@ -127,7 +127,7 @@ def try_to_convert_to_valid_fp16_model(**kwargs):
         i += 1
         print("Running attempt %d excluding conversion of %s nodes" % (i, len(nodes_to_try)))
         kwargs["node_block_list"] = nodes_to_try
-        if run_attempt(**kwargs):
+        if _convert_and_check_inference_result(**kwargs):
             seg.good = True
             print("Attempt succeeded.")
         else:
@@ -151,7 +151,7 @@ def generate_temp_filename(target_model_path):
     return onnx_filename, tensor_filename + ".data"
 
 
-def copy_fp32_model(**kwargs):
+def _copy_fp32_model(**kwargs):
     source_model_path = kwargs.get('source_model_path')
     input_feed = kwargs.get('input_feed')
     providers = kwargs.get('providers')
@@ -169,13 +169,13 @@ def copy_fp32_model(**kwargs):
 
     kwargs["res1"] = output_32
     kwargs["res2"] = output_32
-    if not validate(**kwargs):
+    if not _validate_result(**kwargs):
         raise ValueError("validation failed for fp32 model")
 
     return model_32, output_32
 
 
-def validate(**kwargs):
+def _validate_result(**kwargs):
     validate_fn = kwargs.get("validate_fn")
     rtol = kwargs.get("rtol")
     res1 = kwargs.get("res1")
@@ -190,7 +190,7 @@ def validate(**kwargs):
     return True
 
 
-def run_attempt(**kwargs):
+def _convert_and_check_inference_result(**kwargs):
     model_32 = kwargs.get("model_32")
     keep_io_types = kwargs.get("keep_io_types")
     return_model = kwargs.get("return_model")
@@ -200,7 +200,7 @@ def run_attempt(**kwargs):
     providers = kwargs.get("providers")
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
 
-    print_node_block_list(node_block_list)
+    _print_node_block_list(node_block_list)
     # convert to fp16
     model_16 = float16.convert_float_to_float16(
         copy.deepcopy(model_32), node_block_list=node_block_list,
@@ -214,7 +214,7 @@ def run_attempt(**kwargs):
     # inference
     output_16 = inference(target_model_path, input_feed, providers=providers)
     kwargs["res2"] = output_16
-    result = validate(**kwargs)
+    result = _validate_result(**kwargs)
     print("validate result = ", result)
     if return_model:
         return result, model_16
@@ -232,7 +232,7 @@ def save_model(model, model_path, location=None):
     onnx.save_model(model, model_path, save_as_external_data=True, location=location)
 
 
-def print_node_block_list(node_block_list, max_len=128):
+def _print_node_block_list(node_block_list, max_len=128):
     print("node block list =")
     if (len(node_block_list) < max_len):
         print(node_block_list)
@@ -241,7 +241,7 @@ def print_node_block_list(node_block_list, max_len=128):
         print(tmp_list)
 
 
-def clean_output_folder(**kwargs):
+def _clean_output_folder(**kwargs):
     tmp_model32_path = kwargs.get("tmp_model32_path")
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
 
