@@ -6,6 +6,7 @@
 import itertools
 import numpy as np
 import onnx
+from distutils.version import StrictVersion
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 
@@ -82,35 +83,7 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
                          'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                          'Normalizer', 'OneHotEncoder', 'SVMClassifier', 'SVMRegressor', 'Scaler',
                          'TreeEnsembleClassifier', 'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK',
-                         'RoiAlign', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
-
-
-# find all the constant input for specified op_type and index of input
-KEEP_ORIGINAL_DATA_TYPE_LIST = {
-    "Resize": 2,    # usage: the key:value means Resize operator, input[2]
-}
-
-
-# find all the constant input for specified op_type
-def get_nodes_to_keep_data_type(model):
-    inputs_constant = []
-    for op_type, input_index in KEEP_ORIGINAL_DATA_TYPE_LIST.items():
-        # find all the constant input[index] of operator by specified op_type
-        for node in model.graph.node:
-            if (node.op_type == op_type):
-                if len(node.input) <= input_index:
-                    raise ValueError('The input_index is larger than the total inputs count: %s' % op_type)
-                prev_node_output_name = node.input[input_index]
-                inputs_constant.append(prev_node_output_name)
-
-    # go through graph again to get all constant nodes by name
-    constant_input_nodes = []
-    if len(inputs_constant) > 0:
-        for node in model.graph.node:
-            if (node.output[0] in inputs_constant):
-                constant_input_nodes.append(node.name)
-
-    return constant_input_nodes
+                         'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
 
 
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
@@ -141,7 +114,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
 
     '''
     func_infer_shape = None
-    if not disable_shape_infer and onnx.__version__ >= '1.2':
+    if not disable_shape_infer and StrictVersion(onnx.__version__) >= StrictVersion('1.2'):
         try:
             from onnx.shape_inference import infer_shapes
             func_infer_shape = infer_shapes
@@ -158,7 +131,6 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
         node_block_list = []
     op_block_list = set(op_block_list)
     node_block_list = set(node_block_list)
-    node_keep_data_type_list = get_nodes_to_keep_data_type(model)
     # create a queue for BFS
     queue = []
     value_info_list = []
@@ -226,8 +198,6 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                             n.output[i] = name_mapping[n.output[i]]
                     # don't add the attr into next_level for the node in node_keep_data_type_list
                     # so it will not be converted to float16
-                    if n.name in node_keep_data_type_list:
-                        continue
                     if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
                     else:
@@ -323,7 +293,7 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
     '''
 
     disable_shape_infer = False
-    if onnx.__version__ >= '1.8':
+    if StrictVersion(onnx.__version__) >= StrictVersion('1.8'):
         try:
             # infer_shapes_path can be applied to all model sizes
             from onnx.shape_inference import infer_shapes_path
