@@ -99,7 +99,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     kwargs["model_32"] = model_32
     kwargs["res1"] = output_32
     kwargs["node_block_list"] = node_names
-    kwargs["return_model"] = False
+    kwargs["is_final_model"] = False
     _convert_and_check_inference_result(**kwargs)
 
     print("Sanity checks passed. Starting autoconvert.")
@@ -107,8 +107,8 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
     print(".final convert.")
     kwargs["node_block_list"] = final_nodes
-    kwargs["return_model"] = True
-    valid, model = _convert_and_check_inference_result(**kwargs)
+    kwargs["is_final_model"] = True
+    valid = _convert_and_check_inference_result(**kwargs)
     if not valid:
         raise ValueError("validation failed for final fp16 model")
     print("Final model validated successfully.")
@@ -193,7 +193,7 @@ def _validate_result(**kwargs):
 def _convert_and_check_inference_result(**kwargs):
     model_32 = kwargs.get("model_32")
     keep_io_types = kwargs.get("keep_io_types")
-    return_model = kwargs.get("return_model")
+    is_final_model = kwargs.get("is_final_model")
     target_model_path = kwargs.get("target_model_path")
     node_block_list = kwargs.get("node_block_list")
     input_feed = kwargs.get("input_feed")
@@ -206,8 +206,8 @@ def _convert_and_check_inference_result(**kwargs):
         copy.deepcopy(model_32), node_block_list=node_block_list,
         keep_io_types=keep_io_types, disable_shape_infer=True)
     # need to save model to model_path here.....
-    if not return_model:
-        location = tmp_model32_tensor_name
+    if not is_final_model:
+        location = tmp_model32_tensor_name  # using temporary file name
     else:
         location = kwargs.get("location")  # using the speficified external data file name
     save_model(model_16, target_model_path, location=location)
@@ -216,10 +216,7 @@ def _convert_and_check_inference_result(**kwargs):
     kwargs["res2"] = output_16
     result = _validate_result(**kwargs)
     print("validate result = ", result)
-    if return_model:
-        return result, model_16
-    else:
-        return result
+    return result
 
 
 def inference(model_path, input_feed, providers=None):
