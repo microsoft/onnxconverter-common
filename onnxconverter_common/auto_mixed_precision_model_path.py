@@ -170,7 +170,6 @@ def _adjust_and_inference_source_model(**kwargs):
     model_32 = onnx.load(source_model_path)
     save_model(model_32, tmp_model32_path, location=tmp_model32_tensor_name)
 
-    # print("infer_shape_path for", tmp_model32_path, tmp_model32_tensor_name)
     shape_inference.infer_shapes_path(tmp_model32_path)
     model_32 = onnx.load(tmp_model32_path)
 
