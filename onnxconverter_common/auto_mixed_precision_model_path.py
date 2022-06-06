@@ -56,8 +56,9 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                                             keep_io_types=True, providers=None, verbose=False):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
-    ensure valudate_fn returns True and/or results are equal according to rtol/atol
-    this version support model_path as input, which the model could > 2GB
+    ensure customized_validate_func returns True and/or results are equal according to rtol/atol and saves
+    the converted model on the disk. This function requires the source model's path as an input (source_model_path),
+    so it still works well when the model's size > 2G.
     """
 
     print("Step 0: checking input parameters...")
