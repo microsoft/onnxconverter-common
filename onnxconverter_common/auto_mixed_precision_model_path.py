@@ -84,7 +84,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         location = "fp16_tensor.data"
 
     if not os.path.exists(source_model_path):
-        raise ValueError("source_model_path not exist.")
+        raise ValueError("source_model_path does not exist: %s" %source_model_path)
 
     try:
         print("Step 1: copy source model to working folder, then do basic checking...")
@@ -127,7 +127,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
             raise ValueError("Validation failed for final fp16 model.")
 
         print("Complete!")
-        print("Your fp16 model is here %s and the external data file is here %s %(target_model_path, location)")
+        print("Your fp16 model is here %s and the external data file is here %s" %(target_model_path, location))
 
     finally:
         _clean_output_folder(**kwargs)
