@@ -89,7 +89,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     if not os.path.exists(source_model_path):
         raise ValueError("source_model_path does not exist: %s" % source_model_path)
 
-    if provider == "['CUDAExecutionProvider']" or provider == "['CPUExecutionProvider']":
+    if provider == ['CUDAExecutionProvider'] or provider == ['CPUExecutionProvider']:
         pass
     else:
         raise ValueError("provider can only be ['CUDAExecutionProvider'] or ['CPUExecutionProvider']")
