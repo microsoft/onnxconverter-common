@@ -6,7 +6,7 @@
 
 """
 This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
-a certain accuracy. After the conversion, the model will be saved on the disk under given path. 
+a certain accuracy. After the conversion, the model will be saved on the disk under given path.
 A model with a size > 2G should leverage this.
 
 Example usage:
@@ -125,7 +125,8 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         if not valid:
             raise ValueError("Validation failed for final fp16 model.")
 
-        print("Complete! Your fp16 model is here %s and the external data file is here %s %(target_model_path, location)")
+        print("Complete!")
+        print("Your fp16 model is here %s and the external data file is here %s %(target_model_path, location)")
 
     finally:
         _clean_output_folder(**kwargs)
@@ -235,7 +236,7 @@ def _convert_and_check_inference_result(**kwargs):
     if is_final_model:
         location = kwargs.get("location")  # using the speficified external data file name
     else:
-        location = tmp_model32_tensor_name  # using temporary file name        
+        location = tmp_model32_tensor_name  # using temporary file name
     save_model(model_16, target_model_path, location=location)
 
     output_16 = inference(target_model_path, input_feed, providers=providers)
