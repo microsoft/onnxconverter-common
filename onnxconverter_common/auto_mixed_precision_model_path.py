@@ -6,7 +6,8 @@
 
 """
 This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
-a certain accuracy.
+a certain accuracy. After the conversion, the model will be saved on the disk under given path. 
+A model with a size > 2G should leverage this.
 
 Example usage:
 
@@ -29,7 +30,7 @@ Example usage:
     auto_convert_mixed_precision_model_path(
         source_model_path, test_data,
         target_model_path, location=None,
-        validate_fn=None, rtol=None, atol=None,
+        customized_validate_func=None, rtol=None, atol=None,
         keep_io_types=True, providers=None)
 
 You don't need to call onnx.save_model() in the customer code.
@@ -51,95 +52,83 @@ from .auto_mixed_precision import SegmentList
 
 def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                                             target_model_path, location=None,
-                                            validate_fn=None, rtol=None, atol=None,
-                                            keep_io_types=False, providers=None):
+                                            customized_validate_func=None, rtol=None, atol=None,
+                                            keep_io_types=True, providers=None, verbose=False):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
     ensure valudate_fn returns True and/or results are equal according to rtol/atol
     this version support model_path as input, which the model could > 2GB
     """
 
+    print("Step 0: checking input parameters...")
+
     if not isinstance(source_model_path, str):
         raise TypeError('auto_convert_mixed_precision_model_path only accepts model Path (String),'
                         'you can use auto_convert_mixed_precision for the ModelProto.')
 
-    if rtol is None and atol is not None:
-        rtol = 1e-5
+    if not isinstance(input_feed, dict):
+        raise ValueError("input_feed should be a dictionary such as {'modelInput': input_x.astype(np.float32)}")
 
-    if atol is None and rtol is not None:
-        atol = 1e-8
+    if rtol is None and customized_validate_func is None:
+        raise ValueError("Argument `customized_validate_func` and `rtol` cannot both be `None`.")
 
-    if rtol is None and validate_fn is None:
-        raise ValueError("Argument `validate_fn` and `rtol` cannot both be `None`.")
+    if rtol is None:
+        rtol = 1e-3
+
+    if atol is None:
+        atol = 1e-5
 
     if location is None:
+        print("Setting location as 'fp16_tensor.data'.")
         location = "fp16_tensor.data"
 
-    tmp_model32_path, tmp_model32_tensor_name = generate_temp_filename(target_model_path)
+    if not os.path.exists(source_model_path):
+        raise ValueError("source_model_path not exist.")
 
-    kwargs = {
-        "tmp_model32_path": tmp_model32_path,
-        "tmp_model32_tensor_name": tmp_model32_tensor_name,
-        "source_model_path": source_model_path,
-        "input_feed": input_feed,
-        "target_model_path": target_model_path,
-        "location": location,
-        "validate_fn": validate_fn,
-        "rtol": rtol,
-        "atol": atol,
-        "keep_io_types": keep_io_types,
-        "providers": providers
-        }
+    try:
+        print("Step 1: copy source model to working folder, then do basic checking...")
 
-    print("copy source model to temp folder, change to external data, then check.")
-    model_32, output_32 = _copy_fp32_model(**kwargs)
+        tmp_model32_path, tmp_model32_tensor_name = generate_temp_filename(target_model_path)
+        kwargs = {
+            "tmp_model32_path": tmp_model32_path,
+            "tmp_model32_tensor_name": tmp_model32_tensor_name,
+            "source_model_path": source_model_path,
+            "input_feed": input_feed,
+            "target_model_path": target_model_path,
+            "location": location,
+            "customized_validate_func": customized_validate_func,
+            "rtol": rtol,
+            "atol": atol,
+            "keep_io_types": keep_io_types,
+            "providers": providers,
+            "verbose": verbose
+            }
+        model_32, output_32 = _adjust_and_inference_source_model(**kwargs)
 
-    print("convert to initial fp16 model, then check.")
-    node_names = [n.name for n in model_32.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
-    kwargs["model_32"] = model_32
-    kwargs["res1"] = output_32
-    kwargs["node_block_list"] = node_names
-    kwargs["is_final_model"] = False
-    _convert_and_check_inference_result(**kwargs)
+        print("Step 2: try to convert to fp16 model iteratively...")
 
-    print("Sanity checks passed. Starting autoconvert.")
-    final_nodes = _try_to_convert_to_valid_fp16_model(**kwargs)
+        node_names = [n.name for n in model_32.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
+        kwargs["model_32"] = model_32
+        kwargs["res1"] = output_32
+        kwargs["node_block_list"] = node_names
+        kwargs["is_final_model"] = False
+        result = _convert_and_check_inference_result(**kwargs)
+        if not result:
+            raise ValueError("Validation failed for model with nothing converted to fp16.")
 
-    print(".final convert.")
-    kwargs["node_block_list"] = final_nodes
-    kwargs["is_final_model"] = True
-    valid = _convert_and_check_inference_result(**kwargs)
-    if not valid:
-        raise ValueError("validation failed for final fp16 model")
-    print("Final model validated successfully.")
+        final_block_list = _find_nodes_blocking_fp16(**kwargs)
 
-    _clean_output_folder(**kwargs)
+        print("Step 3: Final converting...")
+        kwargs["node_block_list"] = final_block_list
+        kwargs["is_final_model"] = True
+        valid = _convert_and_check_inference_result(**kwargs)
+        if not valid:
+            raise ValueError("Validation failed for final fp16 model.")
 
+        print("Complete! Your fp16 model is here %s and the external data file is here %s %(target_model_path, location)")
 
-def _try_to_convert_to_valid_fp16_model(**kwargs):
-    node_names = kwargs.get('node_block_list')
-
-    segments = SegmentList(node_names)
-    i = 0
-    while segments.get_largest() is not None:
-        seg = segments.get_largest()
-        nodes_to_try = segments.get_nodes(seg)
-        i += 1
-        print("Running attempt %d excluding conversion of %s nodes" % (i, len(nodes_to_try)))
-        kwargs["node_block_list"] = nodes_to_try
-        if _convert_and_check_inference_result(**kwargs):
-            seg.good = True
-            print("Attempt succeeded.")
-        else:
-            print("Attempt failed.")
-            if seg.size == 1:
-                seg.bad = True
-            else:
-                seg.split()
-        print("segments=", segments)
-    print("Done! these nodes will keep float32 type:", segments.get_nodes())
-
-    return segments.get_nodes()
+    finally:
+        _clean_output_folder(**kwargs)
 
 
 def generate_temp_filename(target_model_path):
@@ -151,7 +140,27 @@ def generate_temp_filename(target_model_path):
     return onnx_filename, tensor_filename + ".data"
 
 
-def _copy_fp32_model(**kwargs):
+def _validate_result(**kwargs):
+    customized_validate_func = kwargs.get("customized_validate_func")
+    rtol = kwargs.get("rtol")
+    res1 = kwargs.get("res1")
+    res2 = kwargs.get("res2")
+
+    if customized_validate_func is not None:
+        return customized_validate_func(res1, res2)
+    else:
+        return _default_validate_result(rtol, res1, res2)
+
+
+def _default_validate_result(rtol, res1, res2):
+    if rtol is not None:
+        for r1, r2 in zip(res1, res2):
+            if not np.allclose(r1, r2, rtol):
+                return False
+    return True
+
+
+def _adjust_and_inference_source_model(**kwargs):
     source_model_path = kwargs.get('source_model_path')
     input_feed = kwargs.get('input_feed')
     providers = kwargs.get('providers')
@@ -161,7 +170,7 @@ def _copy_fp32_model(**kwargs):
     model_32 = onnx.load(source_model_path)
     save_model(model_32, tmp_model32_path, location=tmp_model32_tensor_name)
 
-    print("infer_shape_path for", tmp_model32_path, tmp_model32_tensor_name)
+    # print("infer_shape_path for", tmp_model32_path, tmp_model32_tensor_name)
     shape_inference.infer_shapes_path(tmp_model32_path)
     model_32 = onnx.load(tmp_model32_path)
 
@@ -175,19 +184,35 @@ def _copy_fp32_model(**kwargs):
     return model_32, output_32
 
 
-def _validate_result(**kwargs):
-    validate_fn = kwargs.get("validate_fn")
-    rtol = kwargs.get("rtol")
-    res1 = kwargs.get("res1")
-    res2 = kwargs.get("res2")
+def _find_nodes_blocking_fp16(**kwargs):
+    node_names = kwargs.get('node_block_list')
+    verbose = kwargs.get("verbose")
 
-    if validate_fn is not None and not validate_fn(res1, res2):
-        return False
-    if rtol is not None:
-        for r1, r2 in zip(res1, res2):
-            if not np.allclose(r1, r2, rtol):
-                return False
-    return True
+    segments = SegmentList(node_names)
+    i = 0
+    while segments.get_largest() is not None:
+        seg = segments.get_largest()
+        nodes_to_try = segments.get_nodes(seg)
+        i += 1
+        print("Running attempt %d excluding conversion of %s nodes" % (i, len(nodes_to_try)))
+        kwargs["node_block_list"] = nodes_to_try
+        if _convert_and_check_inference_result(**kwargs):
+            seg.good = True
+            if verbose:
+                print("Attempt succeeded.")
+        else:
+            if verbose:
+                print("Attempt failed.")
+            if seg.size == 1:
+                seg.bad = True
+            else:
+                seg.split()
+        if verbose:
+            print("segments=", segments)
+    if verbose:
+        print("Done! these nodes will keep float32 type:", segments.get_nodes())
+
+    return segments.get_nodes()
 
 
 def _convert_and_check_inference_result(**kwargs):
@@ -199,23 +224,26 @@ def _convert_and_check_inference_result(**kwargs):
     input_feed = kwargs.get("input_feed")
     providers = kwargs.get("providers")
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
+    verbose = kwargs.get("verbose")
 
-    _print_node_block_list(node_block_list)
-    # convert to fp16
+    if verbose:
+        print("convert to float 16...")
+        _print_node_block_list(node_block_list)
     model_16 = float16.convert_float_to_float16(
         copy.deepcopy(model_32), node_block_list=node_block_list,
         keep_io_types=keep_io_types, disable_shape_infer=True)
-    # need to save model to model_path here.....
-    if not is_final_model:
-        location = tmp_model32_tensor_name  # using temporary file name
-    else:
+
+    if is_final_model:
         location = kwargs.get("location")  # using the speficified external data file name
+    else:
+        location = tmp_model32_tensor_name  # using temporary file name        
     save_model(model_16, target_model_path, location=location)
-    # inference
+
     output_16 = inference(target_model_path, input_feed, providers=providers)
     kwargs["res2"] = output_16
     result = _validate_result(**kwargs)
-    print("validate result = ", result)
+    if verbose:
+        print("validate result = ", result)
     return result
 
 
@@ -242,6 +270,8 @@ def _clean_output_folder(**kwargs):
     tmp_model32_path = kwargs.get("tmp_model32_path")
     tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
 
-    os.remove(tmp_model32_path)
-    tensor_path = os.path.join(os.path.dirname(tmp_model32_path), tmp_model32_tensor_name)
-    os.remove(tensor_path)
+    if os.path.exists(tmp_model32_path):
+        os.remove(tmp_model32_path)
+    tmp_tensor_path = os.path.join(os.path.dirname(tmp_model32_path), tmp_model32_tensor_name)
+    if os.path.exists(tmp_tensor_path):
+        os.remove(tmp_tensor_path)
