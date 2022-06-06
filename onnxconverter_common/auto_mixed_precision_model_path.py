@@ -38,7 +38,7 @@ The target fp16 model and its external data will be saved as %target_model_path 
 Please note that:
 1. keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
 2. about the 'provider', when you want to inference on CPU machine, you must set it to ['CPUExecutionProvider'],
-   when you want to do inference on GPU machine, sey to ['CUDAExecutionProvider'].
+   when you want to do inference on GPU machine, set to ['CUDAExecutionProvider'].
 
 """
 
