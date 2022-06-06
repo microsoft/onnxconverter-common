@@ -31,11 +31,14 @@ Example usage:
         source_model_path, test_data,
         target_model_path, location=None,
         customized_validate_func=None, rtol=None, atol=None,
-        keep_io_types=True, providers=None)
+        keep_io_types=True, provider=None, verbose=False)
 
 You don't need to call onnx.save_model() in the customer code.
 The target fp16 model and its external data will be saved as %target_model_path and %location.
-Please note that keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
+Please note that:
+1. keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
+2. provider, it is best to set to ['CPUExecutionProvider'] when you want to do inference on CPU machine,
+   or set to ['CUDAExecutionProvider'] when you want to do inference on GPU machine.
 
 """
 
@@ -53,7 +56,7 @@ from .auto_mixed_precision import SegmentList
 def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                                             target_model_path, location=None,
                                             customized_validate_func=None, rtol=None, atol=None,
-                                            keep_io_types=True, providers=None, verbose=False):
+                                            keep_io_types=True, provider=None, verbose=False):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
     ensure customized_validate_func returns True and/or results are equal according to rtol/atol and saves
@@ -86,6 +89,11 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
     if not os.path.exists(source_model_path):
         raise ValueError("source_model_path does not exist: %s" % source_model_path)
 
+    if provider == "['CUDAExecutionProvider']" or provider == "['CPUExecutionProvider']":
+        pass
+    else:
+        raise ValueError("provider can only be ['CUDAExecutionProvider'] or ['CPUExecutionProvider']")
+
     try:
         print("Step 1: copy source model to working folder, then do basic checking...")
 
@@ -101,7 +109,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
             "rtol": rtol,
             "atol": atol,
             "keep_io_types": keep_io_types,
-            "providers": providers,
+            "providers": provider,
             "verbose": verbose
             }
         model_32, output_32 = _adjust_and_inference_source_model(**kwargs)
