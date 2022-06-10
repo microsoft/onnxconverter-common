@@ -39,6 +39,9 @@ Please note that:
 1. keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
 2. about the 'provider', when you want to inference on CPU machine, you must set it to ['CPUExecutionProvider'],
    when you want to do inference on GPU machine, set to ['CUDAExecutionProvider'].
+3. the default value of rtol will be 1e-3 if it is None.
+4. the default value of atol will be 1e-5 if it is None.
+5. if customized_validate_func is None, will use np.allcose(r1,r2,rtol=1e-3,atol=1e-5) to do validation.
 
 """
 
@@ -72,9 +75,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
     if not isinstance(input_feed, dict):
         raise ValueError("input_feed should be a dictionary such as {'modelInput': input_x.astype(np.float32)}")
-
-    if rtol is None and customized_validate_func is None:
-        raise ValueError("Argument `customized_validate_func` and `rtol` cannot both be `None`.")
 
     if rtol is None:
         rtol = 1e-3
@@ -148,21 +148,17 @@ def generate_temp_filename(target_model_path):
 def _validate_result(**kwargs):
     customized_validate_func = kwargs.get("customized_validate_func")
     rtol = kwargs.get("rtol")
+    atol = kwargs.get("atol")
     res1 = kwargs.get("res1")
     res2 = kwargs.get("res2")
 
     if customized_validate_func is not None:
         return customized_validate_func(res1, res2)
     else:
-        return _default_validate_result(rtol, res1, res2)
-
-
-def _default_validate_result(rtol, res1, res2):
-    if rtol is not None:
         for r1, r2 in zip(res1, res2):
-            if not np.allclose(r1, r2, rtol):
+            if not np.allclose(r1, r2, rtol=rtol, atol=atol):
                 return False
-    return True
+        return True
 
 
 def _adjust_and_inference_source_model(**kwargs):
