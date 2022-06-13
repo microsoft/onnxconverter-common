@@ -62,7 +62,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                 or ['CUDAExecutionProvider'] when you want to inference on CUDA machine finally.
     - location: the external data will be saved as %target_model_path/%location.
     - customized_validate_func: define customized validate function, must return True or False.
-                                if customized_validate_func is None, will use np.allcose(r1,r2,rtol=1e-3,atol=1e-5).                               
+                                if customized_validate_func is None, will use np.allcose(r1,r2,rtol=1e-3,atol=1e-5).
     - rtol/atol: the relative or absolute tolerance to do validation.
     - keep_io_types: set to True, so the input_feed can be used for both fp32 and fp16 models during the conversion.
     - verbose: set to True to show more information during the convertion.
