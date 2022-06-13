@@ -3,43 +3,11 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###########################################################################
-
 """
-This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
-a certain accuracy. After the conversion, the model will be saved on the disk under given path.
-A model with a size > 2G should leverage this.
-
-Example usage:
-
-    from onnxconverter_common import auto_mixed_precision_model_path
-    import numpy as np
-    import time
-
-    source_model_path = "/home/user/onnx/mymodel/model/8_fp32/graph.onnx"
-    target_model_path = '/home/user/onnx/mymodel/output/fp16.onnx'  # better to specify an %output% folder
-    location = "fp16_tensor.data"
-
-
-    # Could also use rtol/atol attributes directly instead of this
-    def validate(res1, res2):
-        for r1, r2 in zip(res1, res2):
-            if not np.allclose(r1, r2, rtol=0.01, atol=0.001):
-                return False
-        return True
-
-    auto_convert_mixed_precision_model_path(
-        source_model_path, test_data,
-        target_model_path, location=None,
-        customized_validate_func=None, rtol=None, atol=None,
-        keep_io_types=True, provider=None, verbose=False)
-
-You don't need to call onnx.save_model() in the customer code.
-The target fp16 model and its external data will be saved as %target_model_path and %location.
-Please note that:
-1. keep_io_types=True, so the test_data can be used for both fp32 and fp16 models during the convertion.
-2. about the 'provider', when you want to inference on CPU machine, you must set it to ['CPUExecutionProvider'],
-   when you want to do inference on GPU machine, set to ['CUDAExecutionProvider'].
-
+Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
+ensure customized_validate_func returns True and/or results are equal according to rtol/atol and saves
+the converted model on the disk. This function requires the source model's path as an input (source_model_path),
+so it still works well when the model's size > 2G.
 """
 
 import copy
@@ -58,10 +26,48 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                                             customized_validate_func=None, rtol=None, atol=None,
                                             keep_io_types=True, verbose=False):
     """
-    Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
-    ensure customized_validate_func returns True and/or results are equal according to rtol/atol and saves
-    the converted model on the disk. This function requires the source model's path as an input (source_model_path),
-    so it still works well when the model's size > 2G.
+    This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
+    a certain accuracy. After the conversion, the model will be saved on the disk under given path.
+    A model with a size > 2G should leverage this.
+
+    Example usage:
+
+        from onnxconverter_common import auto_mixed_precision_model_path
+        import numpy as np
+        import time
+
+        source_model_path = "/home/user/onnx/mymodel/model/8_fp32/graph.onnx"
+        target_model_path = '/home/user/onnx/mymodel/output/fp16.onnx'  # better to specify an %output% folder
+        location = "fp16_tensor.data"
+
+        # Could also use rtol/atol attributes directly instead of this
+        def validate(res1, res2):
+            for r1, r2 in zip(res1, res2):
+                if not np.allclose(r1, r2, rtol=0.01, atol=0.001):
+                    return False
+            return True
+
+        auto_convert_mixed_precision_model_path(
+            source_model_path, test_data,
+            target_model_path, location=None,
+            customized_validate_func=None, rtol=None, atol=None,
+            keep_io_types=True, provider=None, verbose=False)
+
+    Parameters:
+
+    - source_mode_path: the full or relative path of fp32 model.
+    - input_feed: this function will use this input_feed to do inference/validation during the convertion.
+    - target_model_path: the full or relative path where the fp16 model will be saved. make sure the volume is enough.
+    - provider: should be ['CPUExecutionProvider'] when you want to inference on CPU machine finally,
+                or ['CUDAExecutionProvider'] when you want to inference on CUDA machine finally.
+    - location: the external data will be saved as %target_model_path/%location.
+    - customized_validate_func: define customized validate function, must return True or False.
+                                if customized_validate_func is None, will use np.allcose(r1,r2,rtol=1e-3,atol=1e-5).
+    - rtol/atol: the relative or absolute tolerance to do validation.
+    - keep_io_types: set to True, so the input_feed can be used for both fp32 and fp16 models during the conversion.
+    - verbose: set to True to show more information during the convertion.
+
+    You don't need to call onnx.save_model() after this function call in your code.
     """
 
     print("Step 0: checking input parameters...")
@@ -72,9 +78,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
 
     if not isinstance(input_feed, dict):
         raise ValueError("input_feed should be a dictionary such as {'modelInput': input_x.astype(np.float32)}")
-
-    if rtol is None and customized_validate_func is None:
-        raise ValueError("Argument `customized_validate_func` and `rtol` cannot both be `None`.")
 
     if rtol is None:
         rtol = 1e-3
@@ -148,21 +151,17 @@ def generate_temp_filename(target_model_path):
 def _validate_result(**kwargs):
     customized_validate_func = kwargs.get("customized_validate_func")
     rtol = kwargs.get("rtol")
+    atol = kwargs.get("atol")
     res1 = kwargs.get("res1")
     res2 = kwargs.get("res2")
 
     if customized_validate_func is not None:
         return customized_validate_func(res1, res2)
     else:
-        return _default_validate_result(rtol, res1, res2)
-
-
-def _default_validate_result(rtol, res1, res2):
-    if rtol is not None:
         for r1, r2 in zip(res1, res2):
-            if not np.allclose(r1, r2, rtol):
+            if not np.allclose(r1, r2, rtol=rtol, atol=atol):
                 return False
-    return True
+        return True
 
 
 def _adjust_and_inference_source_model(**kwargs):
