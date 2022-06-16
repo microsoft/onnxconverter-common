@@ -3,7 +3,7 @@ import numpy as np
 import onnxruntime as _ort
 import onnx
 import os
-from distutils.version import StrictVersion
+from verlib import NormalizedVersion as V
 from onnxconverter_common.onnx_fx import Graph
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.auto_mixed_precision_model_path import auto_convert_mixed_precision_model_path
@@ -18,7 +18,7 @@ Graph.inference_runtime = _ort_inference
 Graph.opset = 9
 onnx_function = Graph.trace
 
-@unittest.skipIf(StrictVersion(onnx.__version__) <= StrictVersion('1.8.0'), "test for ONNX 1.8 and above")
+@unittest.skipIf(V(onnx.__version__) <= V('1.8.0'), "test for ONNX 1.8 and above")
 @unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 @unittest.skipIf(not hasattr(onnx, "shape_inference"), "shape inference is required")
 class AutoFloat16Test(unittest.TestCase):

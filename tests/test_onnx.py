@@ -1,7 +1,7 @@
 import os
 import onnx
 import unittest
-from distutils.version import StrictVersion
+from verlib import NormalizedVersion as V
 from onnxconverter_common.data_types import FloatTensorType
 from onnxconverter_common import set_denotation
 
@@ -19,7 +19,7 @@ class TestTypes(unittest.TestCase):
         o = onx.sequence_type
         assert str(o) == ""
 
-    @unittest.skipIf(StrictVersion(onnx.__version__) < StrictVersion('1.2.1'),
+    @unittest.skipIf(V(onnx.__version__) < V('1.2.1'),
                      "not supported in this ONNX version")
     def test_set_denotation(self):
         this = os.path.dirname(__file__)
