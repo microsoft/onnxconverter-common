@@ -6,7 +6,7 @@
 import itertools
 import numpy as np
 import onnx
-from verlib import NormalizedVersion as V
+from distutils.version import LooseVersion as V
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 

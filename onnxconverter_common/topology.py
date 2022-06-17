@@ -7,7 +7,7 @@
 import re
 import onnx
 import warnings
-from verlib import NormalizedVersion as V
+from distutils.version import LooseVersion as V
 from onnx import helper
 from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType

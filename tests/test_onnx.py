@@ -1,7 +1,7 @@
 import os
 import onnx
 import unittest
-from verlib import NormalizedVersion as V
+from distutils.version import LooseVersion as V
 from onnxconverter_common.data_types import FloatTensorType
 from onnxconverter_common import set_denotation
 

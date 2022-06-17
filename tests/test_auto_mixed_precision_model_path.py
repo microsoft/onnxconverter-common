@@ -3,7 +3,7 @@ import numpy as np
 import onnxruntime as _ort
 import onnx
 import os
-from verlib import NormalizedVersion as V
+from distutils.version import LooseVersion as V
 from onnxconverter_common.onnx_fx import Graph
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.auto_mixed_precision_model_path import auto_convert_mixed_precision_model_path

@@ -5,7 +5,7 @@ import numpy as np
 import onnx
 import onnxruntime as _ort
 import onnxmltools
-from verlib import NormalizedVersion as V
+from distutils.version import LooseVersion as V
 from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
