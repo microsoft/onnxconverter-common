@@ -5,7 +5,7 @@ import numpy as np
 import onnx
 import onnxruntime as _ort
 import onnxmltools
-from distutils.version import LooseVersion as V
+import packaging.version as pv
 from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
@@ -22,7 +22,7 @@ Graph.inference_runtime = _ort_inference
 Graph.opset = 9
 onnx_function = Graph.trace
 
-@unittest.skipIf(V(onnx.__version__) <= V('1.8.0'), "test for ONNX 1.8 and above")
+@unittest.skipIf(pv.Version(onnx.__version__) <= pv.Version('1.8.0'), "test for ONNX 1.8 and above")
 @unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 class ONNXFloat16Test(unittest.TestCase):
     def test_float16(self):

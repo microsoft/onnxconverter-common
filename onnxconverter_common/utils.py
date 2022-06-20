@@ -6,7 +6,7 @@
 import numbers
 import numpy as np
 import warnings
-from distutils.version import LooseVersion
+import packaging.version as pv
 
 
 def sparkml_installed():
@@ -125,8 +125,8 @@ def xgboost_installed():
         # You need to install xgboost from github and not from pypi.
         return False
     from xgboost import __version__
-    vers = LooseVersion(__version__)
-    allowed = LooseVersion('0.7')
+    vers = pv.Version(__version__)
+    allowed = pv.Version('0.7')
     if vers < allowed:
         warnings.warn('The converter works for xgboost >= 0.7. Earlier versions might not.')
     return True

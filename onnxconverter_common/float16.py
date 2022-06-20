@@ -6,7 +6,7 @@
 import itertools
 import numpy as np
 import onnx
-from distutils.version import LooseVersion as V
+import packaging.version as pv
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 
@@ -114,7 +114,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
 
     '''
     func_infer_shape = None
-    if not disable_shape_infer and V(onnx.__version__) >= V('1.2'):
+    if not disable_shape_infer and pv.Version(onnx.__version__) >= pv.Version('1.2'):
         try:
             from onnx.shape_inference import infer_shapes
             func_infer_shape = infer_shapes
@@ -293,7 +293,7 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
     '''
 
     disable_shape_infer = False
-    if V(onnx.__version__) >= V('1.8'):
+    if pv.Version(onnx.__version__) >= pv.Version('1.8'):
         try:
             # infer_shapes_path can be applied to all model sizes
             from onnx.shape_inference import infer_shapes_path
