@@ -35,8 +35,9 @@ class AutoFloat16Test(unittest.TestCase):
         model16_path = os.path.join(data_path, model16_name)
         auto_convert_mixed_precision_model_path(
             model32_path, {'modelInput': input_x},
-            model16_path, ['CPUExecutionProvider'], location="tmp.data",
-            rtol=1e-2, keep_io_types=True, verbose=True)
+            model16_path, ['CPUExecutionProvider'],
+            rtol=1e-2, 
+            keep_io_types=True)
         actual = _ort_inference(model16_path, {'modelInput': input_x.astype(np.float32)})
         self.assertTrue(np.allclose(expected, actual, rtol=0.01))
 
