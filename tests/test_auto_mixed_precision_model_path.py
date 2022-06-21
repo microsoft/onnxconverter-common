@@ -3,7 +3,7 @@ import numpy as np
 import onnxruntime as _ort
 import onnx
 import os
-from distutils.version import LooseVersion as V
+import packaging.version as pv
 from onnxconverter_common.onnx_fx import Graph
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.auto_mixed_precision_model_path import auto_convert_mixed_precision_model_path
@@ -18,7 +18,7 @@ Graph.inference_runtime = _ort_inference
 Graph.opset = 9
 onnx_function = Graph.trace
 
-@unittest.skipIf(V(onnx.__version__) <= V('1.8.0'), "test for ONNX 1.8 and above")
+@unittest.skipIf(pv.Version(onnx.__version__) <= pv.Version('1.8.0'), "test for ONNX 1.8 and above")
 @unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 @unittest.skipIf(not hasattr(onnx, "shape_inference"), "shape inference is required")
 class AutoFloat16Test(unittest.TestCase):
@@ -35,8 +35,9 @@ class AutoFloat16Test(unittest.TestCase):
         model16_path = os.path.join(data_path, model16_name)
         auto_convert_mixed_precision_model_path(
             model32_path, {'modelInput': input_x},
-            model16_path, ['CPUExecutionProvider'], location="tmp.data",
-            rtol=1e-2, keep_io_types=True, verbose=True)
+            model16_path, ['CPUExecutionProvider'],
+            rtol=1e-2, 
+            keep_io_types=True)
         actual = _ort_inference(model16_path, {'modelInput': input_x.astype(np.float32)})
         self.assertTrue(np.allclose(expected, actual, rtol=0.01))
 

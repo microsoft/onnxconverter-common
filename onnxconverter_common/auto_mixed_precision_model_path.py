@@ -47,12 +47,6 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
                     return False
             return True
 
-        auto_convert_mixed_precision_model_path(
-            source_model_path, test_data,
-            target_model_path, location=None,
-            customized_validate_func=None, rtol=None, atol=None,
-            keep_io_types=True, provider=None, verbose=False)
-
     Parameters:
 
     - source_mode_path: the full or relative path of fp32 model.

@@ -33,6 +33,11 @@ jobs:
         python.version: '3.9'
         ONNX_PATH: onnx==1.10.2
 
+      Python393:
+        python.version: '3.9'
+        ONNX_PATH: onnx==1.12.0
+
+
     maxParallel: 4
 
   steps:
