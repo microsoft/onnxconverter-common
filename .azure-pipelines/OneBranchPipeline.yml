@@ -52,11 +52,11 @@ extends:
         exclusionsFile: '$(REPOROOT)\.config\policheck_exclusions.xml'
 
     stages:
-    - stage: first_stage
+    - stage: firststage
       jobs:
-      - job: 'Test'
+      - job: Testjob
         pool:
-          type: linux
+          type: windows
         variables:
           ob_outputDirectory: '$(REPOROOT)\out'
           ob_sdl_binskim_break: true 
