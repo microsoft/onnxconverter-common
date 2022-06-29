@@ -56,7 +56,7 @@ extends:
       jobs:
       - job: 'Test'
         pool:
-          vmImage: 'Ubuntu-18.04'
+          type: linux
         strategy:
           matrix:
 
