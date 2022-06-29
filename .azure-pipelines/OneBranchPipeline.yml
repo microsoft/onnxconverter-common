@@ -61,15 +61,6 @@ extends:
           ob_outputDirectory: '$(REPOROOT)\out'
           ob_sdl_binskim_break: true 
 
-        strategy:
-          matrix:
-
-            Python393:
-              python.version: '3.9'
-              ONNX_PATH: onnx==1.12.0
-
-          maxParallel: 4
-
         steps:
         - script: sudo install -d -m 0777 /home/vsts/.conda/envs
           displayName: Fix Conda permissions
@@ -77,8 +68,8 @@ extends:
         - task: CondaEnvironment@1
           inputs:
             createCustomEnvironment: true
-            environmentName: 'py$(python.version)'
-            packageSpecs: 'python=$(python.version)'
+            environmentName: 'py3.9'
+            packageSpecs: 'python=3.9'
 
         - script: |
             python -m pip install --upgrade pip
@@ -88,7 +79,7 @@ extends:
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install $(ONNX_PATH)
+            pip install onnx=-1.12.0
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
@@ -106,5 +97,5 @@ extends:
         - task: PublishTestResults@2
           inputs:
             testResultsFiles: '**/test-results.xml'
-            testRunTitle: 'Python $(python.version)'
+            testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
