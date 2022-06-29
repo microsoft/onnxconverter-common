@@ -1,0 +1,106 @@
+#################################################################################
+#                         OneBranch Pipelines - Official                        #
+# This pipeline was created by EasyStart from a sample located at:              #
+#   https://aka.ms/obpipelines/easystart/samples                                #
+# Documentation:  https://aka.ms/obpipelines                                    #
+# Yaml Schema:    https://aka.ms/obpipelines/yaml/schema                        #
+# Retail Tasks:   https://aka.ms/obpipelines/tasks                              #
+# Support:        https://aka.ms/onebranchsup                                   #
+#################################################################################
+
+trigger: none 
+
+parameters: # parameters are shown up in ADO UI in a build queue time
+- name: 'debug'
+  displayName: 'Enable debug output'
+  type: boolean
+  default: false
+
+variables:
+  CDP_DEFINITION_BUILD_COUNT: $[counter('', 0)] 
+  system.debug: ${{ parameters.debug }}
+  ENABLE_PRS_DELAYSIGN: 1
+  ROOT: $(Build.SourcesDirectory)
+  REPOROOT: $(Build.SourcesDirectory)
+  OUTPUTROOT: $(REPOROOT)\out
+  NUGET_XMLDOC_MODE: none
+  CIBW_BUILD: "cp3{8,9}-*amd64"
+  DEBIAN_FRONTEND: noninteractive
+
+resources:
+  repositories: 
+    - repository: templates
+      type: git
+      name: OneBranch.Pipelines/GovernedTemplates
+      ref: refs/heads/main
+
+extends:
+  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
+  parameters:
+    cloudvault:
+      enabled: false
+    globalSdl:
+      tsa:
+        enabled: true
+      binskim:
+        break: true # always break the build on binskim issues in addition to TSA upload
+      codeql:
+        python:
+          enabled: true
+      policheck:
+        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+        exclusionsFile: '$(REPOROOT)\.config\policheck_exclusions.xml'
+
+    stages:
+    - stage: first_stage
+      jobs:
+      - job: 'Test'
+        pool:
+          vmImage: 'Ubuntu-18.04'
+        strategy:
+          matrix:
+
+            Python393:
+              python.version: '3.9'
+              ONNX_PATH: onnx==1.12.0
+
+          maxParallel: 4
+
+        steps:
+        - script: sudo install -d -m 0777 /home/vsts/.conda/envs
+          displayName: Fix Conda permissions
+
+        - task: CondaEnvironment@1
+          inputs:
+            createCustomEnvironment: true
+            environmentName: 'py$(python.version)'
+            packageSpecs: 'python=$(python.version)'
+
+        - script: |
+            python -m pip install --upgrade pip
+            conda config --set always_yes yes --set changeps1 no
+            conda install -c conda-forge protobuf
+            conda install -c conda-forge numpy
+            pip install -r requirements.txt
+            pip install onnxruntime
+            pip install onnxmltools
+            pip install $(ONNX_PATH)
+            pip install pytest
+            pip install -e .
+          displayName: 'Install dependencies'
+
+        - script: |
+            pip install flake8
+            python -m flake8 onnxconverter_common
+          displayName: 'run flake8 check'
+
+        - script: |
+            python -c "import onnxconverter_common"
+            pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
+          displayName: 'pytest - onnxutils'
+
+        - task: PublishTestResults@2
+          inputs:
+            testResultsFiles: '**/test-results.xml'
+            testRunTitle: 'Python $(python.version)'
+          condition: succeededOrFailed()
