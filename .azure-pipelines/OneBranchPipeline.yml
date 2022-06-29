@@ -57,6 +57,10 @@ extends:
       - job: 'Test'
         pool:
           type: linux
+        variables:
+          ob_outputDirectory: '$(REPOROOT)\out'
+          ob_sdl_binskim_break: true 
+
         strategy:
           matrix:
 
