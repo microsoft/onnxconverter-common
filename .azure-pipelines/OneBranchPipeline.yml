@@ -47,7 +47,7 @@ extends:
       jobs:
       - job: Testjob
         pool:
-          type: windows
+          type: linux
         variables:
           ob_outputDirectory: '$(REPOROOT)\out'
           ob_sdl_binskim_break: true 
