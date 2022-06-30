@@ -84,3 +84,10 @@ extends:
             testResultsFiles: 'junit/test-results.xml'
             testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
+
+        - task: CopyFiles@2
+          displayName: 'Copy Files to ob_outputDirectory'
+          inputs:
+            SourceFolder: junit/
+            Contents: '**/*.xml'
+            TargetFolder: $(REPOROOT)/out
