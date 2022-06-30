@@ -15,6 +15,9 @@ variables:
   DEBIAN_FRONTEND: noninteractive
   LinuxContainerImage: 'onebranch.azurecr.io/linux/ubuntu-2004:latest'
   WindowsContainerImage: 'cdpxwin1809.azurecr.io/global/vse2019:latest'
+  ROOT: $(Build.SourcesDirectory)
+  REPOROOT: $(Build.SourcesDirectory)
+  OUTPUTROOT: $(REPOROOT)\out
 
 resources:
   repositories: 
@@ -40,7 +43,7 @@ extends:
         pool:
           type: linux
         variables:
-          ob_outputDirectory: '$(Build.SourcesDirectory)\out'
+          ob_outputDirectory: '$(REPOROOT)\out'
           ob_sdl_binskim_break: true 
 
         steps:
@@ -73,11 +76,11 @@ extends:
 
         - script: |
             python -c "import onnxconverter_common"
-            pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
+            pytest tests --doctest-modules --junitxml=junit/test-results.xml
           displayName: 'pytest - onnxutils'
 
         - task: PublishTestResults@2
           inputs:
-            testResultsFiles: '**/test-results.xml'
+            testResultsFiles: 'junit/test-results.xml'
             testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
