@@ -37,19 +37,19 @@ resources:
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates
   parameters:
-    cloudvault:
-      enabled: false
+    #cloudvault:
+    #  enabled: false
     globalSdl:
-      tsa:
-        enabled: true
-      binskim:
-        break: true # always break the build on binskim issues in addition to TSA upload
+    #  tsa:
+    #    enabled: true
+    #  binskim:
+    #    break: true # always break the build on binskim issues in addition to TSA upload
       codeql:
         python:
           enabled: true
-      policheck:
-        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
-        exclusionsFile: '$(REPOROOT)\.config\policheck_exclusions.xml'
+    #  policheck:
+    #    break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+    #    exclusionsFile: '$(REPOROOT)\.config\policheck_exclusions.xml'
 
     stages:
     - stage: firststage
