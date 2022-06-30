@@ -40,7 +40,7 @@ extends:
         pool:
           type: linux
         variables:
-          ob_outputDirectory: '$(REPOROOT)\out'
+          ob_outputDirectory: '$(Build.SourcesDirectory)\out'
           ob_sdl_binskim_break: true 
 
         steps:
@@ -61,7 +61,7 @@ extends:
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install onnx=-1.12.0
+            pip install onnx==1.12.0
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
