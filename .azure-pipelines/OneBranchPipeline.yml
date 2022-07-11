@@ -8,13 +8,12 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
-trigger: none
+trigger: master
 
 variables:
   CDP_DEFINITION_BUILD_COUNT: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
   DEBIAN_FRONTEND: noninteractive
   LinuxContainerImage: 'onebranch.azurecr.io/linux/ubuntu-2004:latest'
-  WindowsContainerImage: 'cdpxwin1809.azurecr.io/global/vse2019:latest'
   ROOT: $(Build.SourcesDirectory)
   REPOROOT: $(Build.SourcesDirectory)
   OUTPUTROOT: $(REPOROOT)\out
@@ -27,7 +26,7 @@ resources:
       ref: refs/heads/main
 
 extends:
-  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
+  template: v2/OneBranch.Official.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
   parameters:
     globalSdl: # https://aka.ms/obpipelines/sdl
       policheck:
