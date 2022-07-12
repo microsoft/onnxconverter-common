@@ -31,7 +31,7 @@ extends:
   parameters:
     globalSdl: # https://aka.ms/obpipelines/sdl
       policheck:
-        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
+        break: true # always break the build on policheck issues.
       codeql:
         python:
           enabled: true
