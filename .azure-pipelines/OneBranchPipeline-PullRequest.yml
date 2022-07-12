@@ -1,5 +1,5 @@
 #################################################################################
-#                         OneBranch Pipelines - Official                        #
+#                               OneBranch Pipelines                             #
 # This pipeline was created by EasyStart from a sample located at:              #
 #   https://aka.ms/obpipelines/easystart/samples                                #
 # Documentation:  https://aka.ms/obpipelines                                    #
@@ -8,24 +8,16 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
-trigger: none 
-
-parameters: # parameters are shown up in ADO UI in a build queue time
-- name: 'debug'
-  displayName: 'Enable debug output'
-  type: boolean
-  default: false
+trigger: 
+- master
 
 variables:
-  CDP_DEFINITION_BUILD_COUNT: $[counter('', 0)] 
-  system.debug: ${{ parameters.debug }}
-  ENABLE_PRS_DELAYSIGN: 1
+  CDP_DEFINITION_BUILD_COUNT: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
+  DEBIAN_FRONTEND: noninteractive
+  LinuxContainerImage: 'onebranch.azurecr.io/linux/ubuntu-2004:latest'
   ROOT: $(Build.SourcesDirectory)
   REPOROOT: $(Build.SourcesDirectory)
   OUTPUTROOT: $(REPOROOT)\out
-  NUGET_XMLDOC_MODE: none
-  CIBW_BUILD: "cp3{8,9}-*amd64"
-  DEBIAN_FRONTEND: noninteractive
 
 resources:
   repositories: 
@@ -35,36 +27,24 @@ resources:
       ref: refs/heads/main
 
 extends:
-  template: v2/OneBranch.Official.CrossPlat.yml@templates
+  template: v2/OneBranch.NonOfficial.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
   parameters:
-    cloudvault:
-      enabled: false
-    globalSdl:
-      tsa:
-        enabled: true
-      binskim:
-        break: true # always break the build on binskim issues in addition to TSA upload
+    globalSdl: # https://aka.ms/obpipelines/sdl
+      policheck:
+        break: true # always break the build on policheck issues.
       codeql:
         python:
           enabled: true
-      policheck:
-        break: true # always break the build on policheck issues. You can disable it by setting to 'false'
-        exclusionsFile: '$(REPOROOT)\.config\policheck_exclusions.xml'
 
     stages:
-    - stage: first_stage
+    - stage: firststage
       jobs:
-      - job: 'Test'
+      - job: Testjob
         pool:
           type: linux
-        strategy:
-          matrix:
-
-            Python393:
-              python.version: '3.9'
-              ONNX_PATH: onnx==1.12.0
-
-          maxParallel: 4
+        variables:
+          ob_outputDirectory: '$(REPOROOT)\out'
+          ob_sdl_binskim_break: true 
 
         steps:
         - script: sudo install -d -m 0777 /home/vsts/.conda/envs
@@ -73,8 +53,8 @@ extends:
         - task: CondaEnvironment@1
           inputs:
             createCustomEnvironment: true
-            environmentName: 'py$(python.version)'
-            packageSpecs: 'python=$(python.version)'
+            environmentName: 'py3.9'
+            packageSpecs: 'python=3.9'
 
         - script: |
             python -m pip install --upgrade pip
@@ -84,7 +64,7 @@ extends:
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install $(ONNX_PATH)
+            pip install onnx==1.12.0
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
@@ -96,11 +76,18 @@ extends:
 
         - script: |
             python -c "import onnxconverter_common"
-            pytest tests --doctest-modules --junitxml=junit/test-results-onnxutils.xml
+            pytest tests --doctest-modules --junitxml=junit/test-results.xml
           displayName: 'pytest - onnxutils'
 
         - task: PublishTestResults@2
           inputs:
-            testResultsFiles: '**/test-results.xml'
-            testRunTitle: 'Python $(python.version)'
+            testResultsFiles: 'junit/test-results.xml'
+            testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
+
+        - task: CopyFiles@2
+          displayName: 'Copy Files to ob_outputDirectory'
+          inputs:
+            SourceFolder: junit/
+            Contents: '**/*.xml'
+            TargetFolder: $(REPOROOT)/out
