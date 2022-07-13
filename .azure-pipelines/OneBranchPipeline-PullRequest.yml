@@ -17,7 +17,7 @@ variables:
   LinuxContainerImage: 'onebranch.azurecr.io/linux/ubuntu-2004:latest'
   ROOT: $(Build.SourcesDirectory)
   REPOROOT: $(Build.SourcesDirectory)
-  OUTPUTROOT: $(REPOROOT)\out
+  OUTPUTROOT: $(REPOROOT)/out
 
 resources:
   repositories: 
@@ -43,7 +43,7 @@ extends:
         pool:
           type: linux
         variables:
-          ob_outputDirectory: '$(REPOROOT)\out'
+          ob_outputDirectory: '$(REPOROOT)/out'
           ob_sdl_binskim_break: true 
 
         steps:
