@@ -89,5 +89,5 @@ extends:
           displayName: 'Copy Files to ob_outputDirectory'
           inputs:
             SourceFolder: junit/
-            Contents: '*.xml'
+            Contents: 'test-results.xml'
             TargetFolder: $(REPOROOT)/out
