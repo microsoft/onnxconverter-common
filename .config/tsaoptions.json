@@ -1,0 +1,8 @@
+{
+    "notificationAliases": ["xiaowuhu@microsoft.com"],
+    "areaPath": "Vienna\\ONNX Runtime\\Shared Core",
+    "codebaseName": "onnxconverter-common",
+    "instanceUrl": "https://aiinfra.visualstudio.com/",
+    "projectName": "Onnx Converters",
+    "ignoreBranchName": true
+  }

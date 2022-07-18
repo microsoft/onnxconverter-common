@@ -17,7 +17,7 @@ variables:
   LinuxContainerImage: 'onebranch.azurecr.io/linux/ubuntu-2004:latest'
   ROOT: $(Build.SourcesDirectory)
   REPOROOT: $(Build.SourcesDirectory)
-  OUTPUTROOT: $(REPOROOT)\out
+  OUTPUTROOT: $(REPOROOT)/out
 
 resources:
   repositories: 
@@ -43,7 +43,7 @@ extends:
         pool:
           type: linux
         variables:
-          ob_outputDirectory: '$(REPOROOT)\out'
+          ob_outputDirectory: '$(REPOROOT)/out'
           ob_sdl_binskim_break: true 
 
         steps:
@@ -85,9 +85,17 @@ extends:
             testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
 
+        - task: CmdLine@2
+          displayName: Command Line Script
+          inputs:
+            script: |
+              pip install --upgrade pip
+              pip install wheel
+              python setup.py bdist_wheel
+
         - task: CopyFiles@2
           displayName: 'Copy Files to ob_outputDirectory'
           inputs:
-            SourceFolder: junit/
-            Contents: '**/*.xml'
+            SourceFolder: dist/
+            Contents: '**/*.whl'
             TargetFolder: $(REPOROOT)/out
