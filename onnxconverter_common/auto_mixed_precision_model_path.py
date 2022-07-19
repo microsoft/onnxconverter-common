@@ -251,7 +251,7 @@ def inference(model_path, input_feed, providers=None):
 
 
 def save_model(model, model_path, location=None):
-    # remove the old one, because the save_model function will use append mode to 
+    # remove the old one, because the save_model function will use append mode to
     # make the tensor data file too big if save many times
     _clean_output_folder(model_path, location)
     onnx.save_model(model, model_path, save_as_external_data=True, location=location)
