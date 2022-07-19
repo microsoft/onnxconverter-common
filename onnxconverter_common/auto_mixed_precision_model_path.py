@@ -130,7 +130,7 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         print("Your fp16 model is here %s and the external data file is here %s" % (target_model_path, location))
 
     finally:
-        _clean_output_folder(**kwargs)
+        _clean_output_folder(tmp_model32_path, tmp_model32_tensor_name)
 
 
 def generate_temp_filename(target_model_path):
@@ -251,6 +251,9 @@ def inference(model_path, input_feed, providers=None):
 
 
 def save_model(model, model_path, location=None):
+    # remove the old one, because the save_model function will use append mode to
+    # make the tensor data file too big if save many times
+    _clean_output_folder(model_path, location)
     onnx.save_model(model, model_path, save_as_external_data=True, location=location)
 
 
@@ -263,10 +266,7 @@ def _print_node_block_list(node_block_list, max_len=128):
         print(tmp_list)
 
 
-def _clean_output_folder(**kwargs):
-    tmp_model32_path = kwargs.get("tmp_model32_path")
-    tmp_model32_tensor_name = kwargs.get("tmp_model32_tensor_name")
-
+def _clean_output_folder(tmp_model32_path, tmp_model32_tensor_name):
     if os.path.exists(tmp_model32_path):
         os.remove(tmp_model32_path)
     tmp_tensor_path = os.path.join(os.path.dirname(tmp_model32_path), tmp_model32_tensor_name)
