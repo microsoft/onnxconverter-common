@@ -84,9 +84,17 @@ extends:
             testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
 
+        - task: CmdLine@2
+          displayName: Command Line Script
+          inputs:
+            script: |
+              pip install --upgrade pip
+              pip install wheel
+              python setup.py bdist_wheel
+
         - task: CopyFiles@2
           displayName: 'Copy Files to ob_outputDirectory'
           inputs:
-            SourceFolder: junit/
-            Contents: '**/*.xml'
+            SourceFolder: dist/
+            Contents: '**/*.whl'
             TargetFolder: $(REPOROOT)/out
