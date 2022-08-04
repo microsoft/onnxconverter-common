@@ -114,7 +114,8 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         kwargs["is_final_model"] = False
         result = _convert_and_check_inference_result(**kwargs)
         if not result:
-            raise ValueError("Validation failed for model with nothing converted to fp16.")
+            raise ValueError("Validation failed for model with nothing converted to fp16. "
+                             "Given parameters %r." % kwargs)
 
         final_block_list = _find_nodes_blocking_fp16(**kwargs)
 
