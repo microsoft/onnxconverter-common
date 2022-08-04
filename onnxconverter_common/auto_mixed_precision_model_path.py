@@ -12,7 +12,6 @@ so it still works well when the model's size > 2G.
 
 import copy
 import numpy as np
-import onnxruntime as ort
 import onnx
 import os
 import uuid
@@ -245,6 +244,8 @@ def _convert_and_check_inference_result(**kwargs):
 
 
 def inference(model_path, input_feed, providers=None):
+    # delayed import to avoid taking a strong dependancy on onnxruntime
+    import onnxruntime as ort
     sess = ort.InferenceSession(model_path, None, providers=providers)
     output = sess.run(None, input_feed)
     return output
