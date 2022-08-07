@@ -37,6 +37,10 @@ jobs:
         python.version: '3.9'
         ONNX_PATH: onnx==1.12.0
 
+      Python310_112:
+        python.version: '3.10'
+        ONNX_PATH: onnx==1.12.0
+
 
     maxParallel: 4
 
@@ -56,12 +60,22 @@ jobs:
       conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
       pip install -r requirements.txt
+      pip install pytest
+    displayName: 'Install dependencies'
+
+  - script: |
+      python -c "import onnxconverter_common"
+    displayName: 'Check import without onnxruntime'
+
+  - script: |
       pip install onnxruntime
       pip install onnxmltools
       pip install $(ONNX_PATH)
-      pip install pytest
+    displayName: 'Install onnxruntime, onnxmltools'
+
+  - script: |
       pip install -e .
-    displayName: 'Install dependencies'
+    displayName: 'Install onnxconverter_common'
 
   - script: |
       pip install flake8

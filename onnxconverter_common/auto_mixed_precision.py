@@ -26,7 +26,6 @@ Example usage:
 
 """
 
-import onnxruntime as ort
 import onnx
 import numpy as np
 from onnxconverter_common import float16
@@ -127,6 +126,8 @@ def add_missing_dtypes_using_ort(model, feed_dict, outputs_per_iter=100):
 
 
 def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_options=None):
+    # delayed import to avoid taking a strong dependancy on onnxruntime
+    import onnxruntime as ort
     if output_names is None:
         sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
         return sess.run(None, input_feed)
