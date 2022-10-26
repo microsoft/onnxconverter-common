@@ -1,8 +1,9 @@
 {
-    "notificationAliases": ["xiaowuhu@microsoft.com"],
-    "areaPath": "Vienna\\ONNX Runtime\\Shared Core",
-    "codebaseName": "onnxconverter-common",
-    "instanceUrl": "https://aiinfra.visualstudio.com/",
-    "projectName": "Onnx Converters",
-    "ignoreBranchName": true
-  }
+  "notificationAliases": ["xiaowuhu@microsoft.com"],
+  "areaPath": "ONNX Runtime\\Extensions",
+  "codebaseName": "onnxconverter-common",
+  "instanceUrl": "https://aiinfra.visualstudio.com/",
+  "projectName": "ONNX Runtime",
+  "ignoreBranchName": true,
+  "template": "AIINFRA_TSA"
+}
