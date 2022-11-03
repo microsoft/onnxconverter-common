@@ -8,7 +8,7 @@ The entry point to onnxconverter-common.
 This framework performs optimization for ONNX models and
 includes common utilities for ONNX converters.
 """
-__version__ = "1.12.2"
+__version__ = "1.13.0"
 __author__ = "Microsoft"
 __producer__ = "OnnxMLTools"
 __producer_version__ = __version__
