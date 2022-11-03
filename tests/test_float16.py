@@ -11,6 +11,7 @@ from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.optimizer import optimize_onnx_model
 from onnxconverter_common.float16 import convert_float_to_float16
+from onnxconverter_common.float16 import convert_np_to_float16
 
 
 def _ort_inference(mdl, inputs):
@@ -103,6 +104,9 @@ class ONNXFloat16Test(unittest.TestCase):
         output_16 = _ort_inference(onnx_model16, {'modelInput': input_x.astype(np.float16)})
         self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
+    def test_convert_to_float16_with_truncated(self):
+        np_array = np.array([1e-10, 2.0, 65536.1])
+        convert_np_to_float16(np_array)
 
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(ONNXFloat16Test)
