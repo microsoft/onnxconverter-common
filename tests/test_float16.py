@@ -105,7 +105,7 @@ class ONNXFloat16Test(unittest.TestCase):
         self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
     def test_convert_to_float16_with_truncated(self):
-        np_array = np.array([1e-10, 2.0, 65536.1])
+        np_array = np.array([1e-10, -2.0, 15, -1e-9, 65536.1, -100000])
         convert_np_to_float16(np_array)
 
 if __name__ == '__main__':
