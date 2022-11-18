@@ -7,6 +7,7 @@ import itertools
 import numpy as np
 import onnx
 import packaging.version as pv
+import warnings
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 
@@ -30,6 +31,27 @@ def convert_np_to_float16(np_array, min_positive_val=1e-7, max_finite_val=1e4):
     '''
     def between(a, b, c):
         return np.logical_and(a < b, b < c)
+
+    if (np_array[np.where(np_array > 0)].shape[0] > 0):
+        pos_max = np_array[np.where(np_array > 0)].max()
+        pos_min = np_array[np.where(np_array > 0)].min()
+
+        if (pos_max >= max_finite_val):
+            warnings.warn("the float32 number {} will be truncated to {}".format(pos_max, max_finite_val))
+
+        if (pos_min <= min_positive_val):
+            warnings.warn("the float32 number {} will be truncated to {}".format(pos_min, min_positive_val))
+
+    if (np_array[np.where(np_array < 0)].shape[0] > 0):
+        neg_max = np_array[np.where(np_array < 0)].max()
+        neg_min = np_array[np.where(np_array < 0)].min()
+
+        if (neg_min <= -max_finite_val):
+            warnings.warn("the float32 number {} will be truncated to {}".format(neg_min, -max_finite_val))
+
+        if (neg_max >= -min_positive_val):
+            warnings.warn("the float32 number {} will be truncated to {}".format(neg_max, -min_positive_val))
+
     np_array = np.where(between(0, np_array, min_positive_val), min_positive_val, np_array)
     np_array = np.where(between(-min_positive_val, np_array, 0), -min_positive_val, np_array)
     np_array = np.where(between(max_finite_val, np_array, float('inf')), max_finite_val, np_array)
