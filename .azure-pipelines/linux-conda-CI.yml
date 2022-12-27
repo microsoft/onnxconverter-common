@@ -55,7 +55,6 @@ jobs:
       conda config --set always_yes yes --set changeps1 no
       conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
-      pip install -r requirements.txt
       pip install pytest
     displayName: 'Install dependencies'
 
