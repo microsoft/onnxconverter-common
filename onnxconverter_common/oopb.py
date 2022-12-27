@@ -116,7 +116,7 @@ class OnnxOperatorBuilder:
             if isinstance(value, float):
                 ty = np.float32
             elif isinstance(value, bool):
-                ty = np.bool
+                ty = np.bool_
             else:
                 pass
             value = np.array(value).astype(ty)
