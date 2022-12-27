@@ -60,14 +60,14 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
-      python -c "import onnxconverter_common"
-    displayName: 'Check import without onnxruntime'
-
-  - script: |
       pip install onnxruntime
       pip install onnxmltools
       pip install $(ONNX_PATH)
     displayName: 'Install onnxruntime, onnxmltools'
+
+  - script: |
+      python -c "import onnxconverter_common"
+    displayName: 'Check import without onnxruntime'
 
   - script: |
       pip install -e .
