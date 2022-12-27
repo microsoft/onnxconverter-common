@@ -4,7 +4,6 @@
 ###############################################################################
 
 import numpy as np
-import onnx
 from uuid import uuid4
 from typing import Union
 from onnx import numpy_helper, helper
