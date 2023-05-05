@@ -10,7 +10,7 @@ jobs:
 
 - job: 'Test'
   pool:
-    vmImage: 'Ubuntu-18.04'
+    vmImage: 'Ubuntu-latest'
   strategy:
     matrix:
       Python381:
