@@ -10,7 +10,7 @@ jobs:
 
 - job: 'Test'
   pool:
-    vmImage: 'Ubuntu-18.04'
+    vmImage: 'Ubuntu-latest'
   strategy:
     matrix:
       Python381:
@@ -53,8 +53,8 @@ jobs:
   - script: |
       python -m pip install --upgrade pip
       conda config --set always_yes yes --set changeps1 no
-      conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
+      pip install protobuf==3.20.2
       pip install pytest
     displayName: 'Install dependencies'
 
