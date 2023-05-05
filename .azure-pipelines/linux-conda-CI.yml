@@ -53,8 +53,8 @@ jobs:
   - script: |
       python -m pip install --upgrade pip
       conda config --set always_yes yes --set changeps1 no
-      conda install -c conda-forge protobuf
       conda install -c conda-forge numpy
+      pip install protobuf==4.21.6
       pip install pytest
     displayName: 'Install dependencies'
 
