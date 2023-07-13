@@ -157,6 +157,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     queue = []
     value_info_list = []
     node_list = []
+    # key = node, value = graph, used to distinguish global with sub-graph
+    node_dict = {}
     # type inference on input model
     if func_infer_shape is not None:
         model = func_infer_shape(model)
@@ -222,6 +224,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # so it will not be converted to float16
                     if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
+                        node_dict[n.name] = q
                     else:
                         if n.op_type == 'Cast':
                             for attr in n.attribute:
@@ -264,7 +267,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
             for value_info in value_info_list:
                 if input == value_info.name:
                     # create new value_info for current node's new input name
-                    new_value_info = model.graph.value_info.add()
+                    graph = node_dict[node.name]  # get the correct graph instead of the global graph
+                    new_value_info = graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
                     output_name = node.name + '_input_cast_' + str(i)
                     new_value_info.name = output_name
@@ -272,7 +276,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # add Cast node (from tensor(float16) to tensor(float) before current node
                     node_name = node.name + '_input_cast' + str(i)
                     new_node = [helper.make_node('Cast', [input], [output_name], to=1, name=node_name)]
-                    model.graph.node.extend(new_node)
+                    graph.node.extend(new_node)
                     # change current node's input name
                     node.input[i] = output_name
                     break
@@ -283,7 +287,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
             for value_info in value_info_list:
                 if output == value_info.name:
                     # create new value_info for current node's new output
-                    new_value_info = model.graph.value_info.add()
+                    graph = node_dict[node.name]  # get the correct graph instead of the global graph
+                    new_value_info = graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
                     input_name = node.name + '_output_cast_' + str(i)
                     new_value_info.name = input_name
@@ -291,11 +296,12 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # add Cast node (from tensor(float) to tensor(float16) after current node
                     node_name = node.name + '_output_cast' + str(i)
                     new_node = [helper.make_node('Cast', [input_name], [output], to=10, name=node_name)]
-                    model.graph.node.extend(new_node)
+                    graph.node.extend(new_node)
                     # change current node's input name
                     node.output[i] = input_name
                     break
 
+    sort_topology(model.graph)
     return model
 
 
@@ -331,15 +337,13 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
             pass
     if not disable_shape_infer:
         model = onnx.load(model_path)
-    onnx_model = convert_float_to_float16(model, min_positive_val, max_finite_val, keep_io_types, disable_shape_infer)
-    walk_through_graph(onnx_model.graph)
-    return onnx_model
+    return convert_float_to_float16(model, min_positive_val, max_finite_val, keep_io_types, disable_shape_infer)
 
 
-def graph_node_sort(graph_proto):
+def sort_graph_node(graph_proto):
     # find the "first" node in Nodes that its input is not any node's output
     def find_first_node(output2node_dict):
-        for node in Nodes:
+        for node in org_nodes:
             #if node["name"] not in list_node:
             is_first_node = True
             for input in node.input:
@@ -350,44 +354,43 @@ def graph_node_sort(graph_proto):
                 return node
         return None
 
-    # del node from original nodes list to avoid duplicate traverse
-    def remove_node_from_Nodes2(node):
-        Nodes.remove(node)
-
     # remove the node from output2node_dict using output as key
     def remove_first_node_from_dict2(first_node):
         for output in first_node.output:
             del output2node_dict[output]
 
-    Nodes = graph_proto.node
+    org_nodes = graph_proto.node
+    # create a dict to store output as key and node as value
     output2node_dict = {}
-    for node in Nodes:
+    for node in org_nodes:
         for output in node.output:
             output2node_dict[output] = node
-    
-    # save the final order after sorted
+
+    # save the final node after sorted
     sorted_node = []
     # traverse the Nodes to find the first node
     while(len(output2node_dict) > 0):
         first_node = find_first_node(output2node_dict)
-        # print(first_node)
         sorted_node.append(first_node)
         remove_first_node_from_dict2(first_node)
-        remove_node_from_Nodes2(first_node)
-    
-    return sorted_node
+        # del node from original nodes list to avoid duplicate traverse
+        org_nodes.remove(first_node)
+
+    for new_node in sorted_node:
+        graph_proto.node.extend([new_node])
 
 
 # the input graph should be mode.graph
-def walk_through_graph(graph_proto):
+# recursevly sort the topology for each sub-graph
+def sort_topology(graph_proto):
     assert(isinstance(graph_proto, onnx_proto.GraphProto))
-    print(graph_proto.name, len(graph_proto.node))
-    graph_node_sort(graph_proto)
+    # print(graph_proto.name, len(graph_proto.node))
+    sort_graph_node(graph_proto)
     for node in graph_proto.node:
         for attr in node.attribute:
             if isinstance(attr.g, onnx_proto.GraphProto) and len(attr.g.node) > 0:
-                walk_through_graph(attr.g)
+                sort_topology(attr.g)
             for g in attr.graphs:
                 if isinstance(g, onnx_proto.GraphProto):
-                    walk_through_graph(g)
+                    sort_topology(g)
 
