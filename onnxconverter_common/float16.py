@@ -384,7 +384,6 @@ def sort_graph_node(graph_proto):
 # recursevly sort the topology for each sub-graph
 def sort_topology(graph_proto):
     assert(isinstance(graph_proto, onnx_proto.GraphProto))
-    # print(graph_proto.name, len(graph_proto.node))
     sort_graph_node(graph_proto)
     for node in graph_proto.node:
         for attr in node.attribute:
