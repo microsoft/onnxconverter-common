@@ -108,6 +108,7 @@ class ONNXFloat16Test(unittest.TestCase):
         np_array = np.array([1e-10, -2.0, 15, -1e-9, 65536.1, -100000])
         convert_np_to_float16(np_array)
 
+    @unittest.skipIf(pv.Version(onnx.__version__) == pv.Version('1.9.0'), "ONNX 1.9 has different Optype behavior for Max operator")
     def test_convert_to_float16_with_subgraph(self):
         model32_name = "test_subgraph.onnx"
         working_path = os.path.abspath(os.path.dirname(__file__))
