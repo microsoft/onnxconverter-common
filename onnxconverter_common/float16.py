@@ -380,16 +380,16 @@ def sort_graph_node(graph_proto):
         graph_proto.node.extend([new_node])
 
 
-# the input graph should be mode.graph
-# recursevly sort the topology for each sub-graph
+# The input graph should be mode.graph
+# Recursevly sort the topology for each sub-graph
 def sort_topology(graph_proto):
     assert(isinstance(graph_proto, onnx_proto.GraphProto))
-    sort_graph_node(graph_proto)
+    sort_graph_node(graph_proto)  # sort global graph
     for node in graph_proto.node:
         for attr in node.attribute:
             if isinstance(attr.g, onnx_proto.GraphProto) and len(attr.g.node) > 0:
-                sort_topology(attr.g)
+                sort_topology(attr.g)  # sort sub-graph
             for g in attr.graphs:
                 if isinstance(g, onnx_proto.GraphProto):
-                    sort_topology(g)
+                    sort_topology(g)  # sort sub-graph
 
