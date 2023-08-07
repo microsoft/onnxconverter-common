@@ -344,7 +344,7 @@ def sort_graph_node(graph_proto):
     # find the "first" node in Nodes that its input is not any node's output
     def find_first_node(output2node_dict):
         for node in org_nodes:
-            #if node["name"] not in list_node:
+            # if node["name"] not in list_node:
             is_first_node = True
             for input in node.input:
                 if input in output2node_dict:  # not a first node
@@ -369,7 +369,7 @@ def sort_graph_node(graph_proto):
     # save the final node after sorted
     sorted_node = []
     # traverse the Nodes to find the first node
-    while(len(output2node_dict) > 0):
+    while (len(output2node_dict) > 0):
         first_node = find_first_node(output2node_dict)
         sorted_node.append(first_node)
         remove_first_node_from_dict2(first_node)
@@ -383,7 +383,7 @@ def sort_graph_node(graph_proto):
 # The input graph should be mode.graph
 # Recursevly sort the topology for each sub-graph
 def sort_topology(graph_proto):
-    assert(isinstance(graph_proto, onnx_proto.GraphProto))
+    assert (isinstance(graph_proto, onnx_proto.GraphProto))
     sort_graph_node(graph_proto)  # sort global graph
     for node in graph_proto.node:
         for attr in node.attribute:
@@ -392,4 +392,3 @@ def sort_topology(graph_proto):
             for g in attr.graphs:
                 if isinstance(g, onnx_proto.GraphProto):
                     sort_topology(g)  # sort sub-graph
-
