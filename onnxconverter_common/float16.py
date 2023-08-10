@@ -344,20 +344,16 @@ def sort_graph_node(graph_proto):
     # find the "first" node in Nodes that its input is not any node's output
     def find_first_node(output2node_dict):
         for node in org_nodes:
-            # if node["name"] not in list_node:
-            is_first_node = True
-            for input in node.input:
-                if input in output2node_dict:  # not a first node
-                    is_first_node = False
-                    break
-            if is_first_node:
+            is_not_first_node = any(item in output2node_dict for item in node.input)
+            if not is_not_first_node:
                 return node
         return None
 
     # remove the node from output2node_dict using output as key
     def remove_first_node_from_dict2(first_node):
         for output in first_node.output:
-            del output2node_dict[output]
+            if output in output2node_dict:
+                del output2node_dict[output]
 
     org_nodes = graph_proto.node
     # create a dict to store output as key and node as value
