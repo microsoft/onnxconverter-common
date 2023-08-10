@@ -7,12 +7,12 @@ name = "onnxconverter-common"
 dynamic = ["version"]
 description="ONNX Converter and Optimization Tools"
 authors = [{ name = "Microsoft Corporation", email = "onnx@microsoft.com" }]
-urls = "https://github.com/microsoft/onnxconverter-common"
+urls =  { "Repository" = "https://github.com/microsoft/onnxconverter-common" }
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: MacOS :: MacOS X",
@@ -27,4 +27,4 @@ classifiers = [
 dependencies = ["numpy", "onnx", "packaging", "protobuf==3.20.2"]
 
 [tool.setuptools.dynamic]
-version = {attr = "onnxconverter-common.__version__"}
+version = {attr = "onnxconverter_common.__version__"}
