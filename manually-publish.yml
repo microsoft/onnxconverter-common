@@ -19,3 +19,14 @@ steps:
     displayName: 'Publish converter-common'
     inputs:
       ArtifactName: onnxconverter_common
+  - task: EsrpRelease@3
+    inputs:
+      ConnectedServiceName: 'esrprelease'
+      Intent: 'PackageDistribution'
+      ContentType: 'PyPi'
+      PackageLocation: '$(Build.ArtifactStagingDirectory)'
+      Owners: 'xiaowuhu@microsoft.com'
+      Approvers: 'xiaowuhu@microsoft.com'
+      ServiceEndpointUrl: 'https://api.esrp.microsoft.com'
+      MainPublisher: 'AIFramework'
+      DomainTenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47'
