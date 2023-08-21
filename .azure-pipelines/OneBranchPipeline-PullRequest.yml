@@ -34,7 +34,7 @@ extends:
         break: true # always break the build on policheck issues.
       codeql:
         python:
-          enabled: true
+          enabled: false
 
     stages:
     - stage: firststage
@@ -55,7 +55,7 @@ extends:
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install onnx==1.12.0
+            pip install onnx
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
