@@ -5,15 +5,16 @@ steps:
     displayName: 'Set Up Python'
   - script: python -m pip install --upgrade pip build wheel
     displayName: 'Install Python build dependencies'
-  - script: sed -i 's/name = "onnxconverter-common"/name = "onnxconverter-common"/' 'pyproject.toml'
-    displayName: 'Temporarily rename package to onnx-preview'
+#  - script: sed -i 's/name = "onnxconverter-common"/name = "onnxconverter-common"/' 'pyproject.toml'
+#    displayName: 'Temporarily rename package to onnx-preview'
   - script: python -m build
     displayName: 'Build wheel'
   - task: CopyFiles@2
     displayName: 'Copy Python Wheel to: $(Build.ArtifactStagingDirectory)'
     inputs:
       SourceFolder: 'dist'
-      Contents: '*.whl'
+#      Contents: '*.whl'
+      Contents: '*.*'
       TargetFolder: '$(Build.ArtifactStagingDirectory)'
   - task: PublishBuildArtifacts@1
     displayName: 'Publish converter-common'
