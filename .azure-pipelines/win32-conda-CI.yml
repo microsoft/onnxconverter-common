@@ -36,7 +36,7 @@ jobs:
   - powershell: Write-Host "##vso[task.prependpath]$env:CONDA\Scripts"
     displayName: Add conda to PATH
 
-  - script: conda create --yes --quiet --name py$(python.version) -c conda-forge python=$(python.version) protobuf numpy
+  - script: conda create --yes --quiet --name py$(python.version) -c conda-forge python=$(python.version) numpy
     displayName: Create Anaconda environment
 
   - script: |
@@ -44,6 +44,7 @@ jobs:
       pip install onnxruntime
       pip install onnxmltools
       pip install %ONNX_PATH%
+      pip install protobuf==3.20.2
       pip install pytest
       pip install -e .
     displayName: 'Install dependencies'

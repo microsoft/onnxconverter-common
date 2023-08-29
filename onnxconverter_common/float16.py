@@ -157,6 +157,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     queue = []
     value_info_list = []
     node_list = []
+    # key = node, value = graph, used to distinguish global with sub-graph
+    node_dict = {}
     # type inference on input model
     if func_infer_shape is not None:
         model = func_infer_shape(model)
@@ -222,6 +224,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # so it will not be converted to float16
                     if n.op_type in op_block_list or n.name in node_block_list:
                         node_list.append(n)
+                        node_dict[n.name] = q
                     else:
                         if n.op_type == 'Cast':
                             for attr in n.attribute:
@@ -264,7 +267,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
             for value_info in value_info_list:
                 if input == value_info.name:
                     # create new value_info for current node's new input name
-                    new_value_info = model.graph.value_info.add()
+                    graph = node_dict[node.name]  # get the correct graph instead of the global graph
+                    new_value_info = graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
                     output_name = node.name + '_input_cast_' + str(i)
                     new_value_info.name = output_name
@@ -272,7 +276,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # add Cast node (from tensor(float16) to tensor(float) before current node
                     node_name = node.name + '_input_cast' + str(i)
                     new_node = [helper.make_node('Cast', [input], [output_name], to=1, name=node_name)]
-                    model.graph.node.extend(new_node)
+                    graph.node.extend(new_node)
                     # change current node's input name
                     node.input[i] = output_name
                     break
@@ -283,7 +287,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
             for value_info in value_info_list:
                 if output == value_info.name:
                     # create new value_info for current node's new output
-                    new_value_info = model.graph.value_info.add()
+                    graph = node_dict[node.name]  # get the correct graph instead of the global graph
+                    new_value_info = graph.value_info.add()
                     new_value_info.CopyFrom(value_info)
                     input_name = node.name + '_output_cast_' + str(i)
                     new_value_info.name = input_name
@@ -291,11 +296,12 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     # add Cast node (from tensor(float) to tensor(float16) after current node
                     node_name = node.name + '_output_cast' + str(i)
                     new_node = [helper.make_node('Cast', [input_name], [output], to=10, name=node_name)]
-                    model.graph.node.extend(new_node)
+                    graph.node.extend(new_node)
                     # change current node's input name
                     node.output[i] = input_name
                     break
 
+    sort_topology(model.graph)
     return model
 
 
@@ -332,3 +338,53 @@ def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_f
     if not disable_shape_infer:
         model = onnx.load(model_path)
     return convert_float_to_float16(model, min_positive_val, max_finite_val, keep_io_types, disable_shape_infer)
+
+
+def sort_graph_node(graph_proto):
+    # find the "first" node in Nodes that its input is not any node's output
+    def find_first_node(output2node_dict):
+        for node in org_nodes:
+            is_not_first_node = any(item in output2node_dict for item in node.input)
+            if not is_not_first_node:
+                return node
+        return None
+
+    # remove the node from output2node_dict using output as key
+    def remove_first_node_from_dict2(first_node):
+        for output in first_node.output:
+            if output in output2node_dict:
+                del output2node_dict[output]
+
+    org_nodes = graph_proto.node
+    # create a dict to store output as key and node as value
+    output2node_dict = {}
+    for node in org_nodes:
+        for output in node.output:
+            output2node_dict[output] = node
+
+    # save the final node after sorted
+    sorted_node = []
+    # traverse the Nodes to find the first node
+    while (len(output2node_dict) > 0):
+        first_node = find_first_node(output2node_dict)
+        sorted_node.append(first_node)
+        remove_first_node_from_dict2(first_node)
+        # del node from original nodes list to avoid duplicate traverse
+        org_nodes.remove(first_node)
+
+    for new_node in sorted_node:
+        graph_proto.node.extend([new_node])
+
+
+# The input graph should be mode.graph
+# Recursevly sort the topology for each sub-graph
+def sort_topology(graph_proto):
+    assert (isinstance(graph_proto, onnx_proto.GraphProto))
+    sort_graph_node(graph_proto)  # sort global graph
+    for node in graph_proto.node:
+        for attr in node.attribute:
+            if isinstance(attr.g, onnx_proto.GraphProto) and len(attr.g.node) > 0:
+                sort_topology(attr.g)  # sort sub-graph
+            for g in attr.graphs:
+                if isinstance(g, onnx_proto.GraphProto):
+                    sort_topology(g)  # sort sub-graph

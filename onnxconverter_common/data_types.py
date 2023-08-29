@@ -248,9 +248,9 @@ def find_type_conversion(source_type, target_type):
     """
     Find the operator name for converting source_type into target_type
     """
-    if type(source_type) == type(target_type):
+    if isinstance(source_type, target_type):
         return 'identity'
-    if type(target_type) == FloatTensorType:
+    if isinstance(target_type, FloatTensorType):
         return 'imageToFloatTensor'
     raise ValueError('Unsupported type conversion from %s to %s' % (
                      source_type, target_type))
