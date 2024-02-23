@@ -25,6 +25,11 @@ jobs:
         python.version: '3.10'
         ONNX_PATH: onnx==1.13.0
 
+      Python311:
+        python.version: '3.11'
+        ONNX_PATH: onnx==1.15.0
+
+
     maxParallel: 4
 
   steps:
