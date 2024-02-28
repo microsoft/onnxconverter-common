@@ -48,7 +48,7 @@ jobs:
 
   # using conda cli to install python 311
   - script: |
-      conda install python=$(python.version)
+      conda install python=$(python.version) -y
     displayName: 'Install Python'
 
   - script: |
