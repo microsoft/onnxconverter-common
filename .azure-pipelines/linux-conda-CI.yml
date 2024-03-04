@@ -37,7 +37,7 @@ jobs:
         python.version: '3.10'
         ONNX_PATH: onnx==1.12.0
 
-      Python310:
+      Python310_onnx116rc:
         python.version: '3.10'
         ONNX_PATH: '-i https://test.pypi.org/simple/ onnx==1.16.0rc1'
 
