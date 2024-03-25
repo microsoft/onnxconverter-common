@@ -41,7 +41,7 @@ jobs:
 
   - script: |
       call activate py$(python.version)
-      pip install onnxruntime
+      pip install onnxruntime==1.15
       pip install onnxmltools
       pip install %ONNX_PATH%
       pip install 'protobuf==3.20.2'
