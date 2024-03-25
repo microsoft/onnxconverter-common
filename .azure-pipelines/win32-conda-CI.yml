@@ -44,7 +44,7 @@ jobs:
       pip install onnxruntime
       pip install onnxmltools
       pip install %ONNX_PATH%
-      pip install 'protobuf>=3.20.2'
+      pip install 'protobuf==3.20.2'
       pip install pytest
       pip install -e .
     displayName: 'Install dependencies'

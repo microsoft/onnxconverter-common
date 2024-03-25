@@ -41,14 +41,6 @@ jobs:
     maxParallel: 4
 
   steps:
-  # - script: sudo install -d -m 0777 /home/vsts/.conda/envs
-  #   displayName: Fix Conda permissions
-
-  # - task: CondaEnvironment@1
-  #   inputs:
-  #     createCustomEnvironment: true
-  #     environmentName: 'py$(python.version)'
-  #     packageSpecs: 'python=$(python.version)'
 
   - task: UsePythonVersion@0
     inputs:
@@ -59,7 +51,7 @@ jobs:
 
   - script: |
       python -m pip install --upgrade pip
-      pip install 'protobuf>=3.20.2'
+      pip install 'protobuf==3.20.2'
       pip install pytest
     displayName: 'Install dependencies'
 
