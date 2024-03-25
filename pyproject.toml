@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["numpy", "onnx", "packaging", "protobuf>=3.20.2"]
+dependencies = ["numpy", "onnx", "packaging", "protobuf==3.20.2"]
 
 [tool.setuptools.dynamic]
 version = {attr = "onnxconverter_common.__version__"}
