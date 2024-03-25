@@ -56,7 +56,7 @@ jobs:
     displayName: 'Install dependencies'
 
   - script: |
-      pip install onnxruntime
+      pip install onnxruntime==1.15
       pip install onnxmltools
       pip install $(ONNX_PATH)
     displayName: 'Install onnxruntime, onnxmltools'
