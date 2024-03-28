@@ -9,7 +9,7 @@ Prints total durations grouped by node (-n), optype (-t), or step (-s)
 Script is standalone and can be downloaded and run as prefstats.py
 
 Ex:
-    python -m onnxconvert_common.perfstats -t -l 5 trace.json   # List durations by optype
+    python -m onnxconverter_common.perfstats -t -l 5 trace.json   # List durations by optype
     (or python perfstats.py -t -l 5 trace.json)
 
 Result:
@@ -48,11 +48,11 @@ from collections import namedtuple, defaultdict
 _HELP_TEXT = """
 Usage Examples:
 
-python -m onnxconvert_common.perfstats -t trace.json   # List results by type
-python -m onnxconvert_common.perfstats -n -l 10 trace.json   # List top 10 nodes
-python -m onnxconvert_common.perfstats -n trace.json -q t=Conv   # List conv nodes
-python -m onnxconvert_common.perfstats -n trace.json -q t!=Conv   # List non-conv nodes
-python -m onnxconvert_common.perfstats -n trace.json -q t=Conv;n!=NAME   # List conv nodes except NAME
+python -m onnxconverter_common.perfstats -t trace.json   # List results by type
+python -m onnxconverter_common.perfstats -n -l 10 trace.json   # List top 10 nodes
+python -m onnxconverter_common.perfstats -n trace.json -q t=Conv   # List conv nodes
+python -m onnxconverter_common.perfstats -n trace.json -q t!=Conv   # List non-conv nodes
+python -m onnxconverter_common.perfstats -n trace.json -q t=Conv;n!=NAME   # List conv nodes except NAME
 """
 
 
