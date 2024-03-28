@@ -4,7 +4,7 @@
 ###########################################################################
 
 """
-This tool converts converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
+This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
 a certain accuracy.
 
 Example usage:
