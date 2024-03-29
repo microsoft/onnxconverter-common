@@ -19,7 +19,7 @@ jobs:
       matrix:
         python-version: ["3.8", "3.9", "3.10"]
         include: 
-          - python-version: 3.8
+          - python-version: "3.8"
             onnx_version: 1.12.0
           - python-version: 3.9
             onnx_version: "1.13"
