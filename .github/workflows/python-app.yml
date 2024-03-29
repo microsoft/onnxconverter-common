@@ -13,11 +13,11 @@ permissions:
   contents: read
 
 jobs:
-  example_matrix:
-    runs-on: ubuntu-latest
+  test_matrix:
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10"]
+        os: [ubuntu-latest, windows-latest]
         include: 
           - python-version: "3.8"
             onnx-version: 1.12.0
@@ -25,12 +25,12 @@ jobs:
             onnx-version: 1.13
           - python-version: "3.10"
             onnx-version: 1.14.1
+    runs-on: ${{ matrix.os}}
           
-  
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5.1
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
