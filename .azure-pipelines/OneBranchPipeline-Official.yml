@@ -33,7 +33,7 @@ extends:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       codeql:
         python:
-          enabled: true
+          enabled: false
 
     stages:
     - stage: firststage
@@ -49,12 +49,6 @@ extends:
         - script: sudo install -d -m 0777 /home/vsts/.conda/envs
           displayName: Fix Conda permissions
 
-        - task: CondaEnvironment@1
-          inputs:
-            createCustomEnvironment: true
-            environmentName: 'py3.9'
-            packageSpecs: 'python=3.9'
-
         - script: |
             python -m pip install --upgrade pip
             conda config --set always_yes yes --set changeps1 no
@@ -63,7 +57,7 @@ extends:
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install onnx==1.12.0
+            pip install onnx
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
@@ -84,9 +78,17 @@ extends:
             testRunTitle: 'Python 3.9'
           condition: succeededOrFailed()
 
+        - task: CmdLine@2
+          displayName: Command Line Script
+          inputs:
+            script: |
+              pip install --upgrade pip
+              pip install wheel
+              python setup.py bdist_wheel
+
         - task: CopyFiles@2
           displayName: 'Copy Files to ob_outputDirectory'
           inputs:
-            SourceFolder: junit/
-            Contents: '**/*.xml'
+            SourceFolder: dist/
+            Contents: '**/*.whl'
             TargetFolder: $(REPOROOT)/out

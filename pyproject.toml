@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "onnxconverter-common"
+dynamic = ["version"]
+description="ONNX Converter and Optimization Tools"
+authors = [{ name = "Microsoft Corporation", email = "onnx@microsoft.com" }]
+urls =  { "Repository" = "https://github.com/microsoft/onnxconverter-common" }
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+]
+dependencies = ["numpy", "onnx", "packaging", "protobuf==3.20.2"]
+
+[tool.setuptools.dynamic]
+version = {attr = "onnxconverter_common.__version__"}

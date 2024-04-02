@@ -12,7 +12,6 @@ so it still works well when the model's size > 2G.
 
 import copy
 import numpy as np
-import onnxruntime as ort
 import onnx
 import os
 import uuid
@@ -115,7 +114,8 @@ def auto_convert_mixed_precision_model_path(source_model_path, input_feed,
         kwargs["is_final_model"] = False
         result = _convert_and_check_inference_result(**kwargs)
         if not result:
-            raise ValueError("Validation failed for model with nothing converted to fp16.")
+            raise ValueError("Validation failed for model with nothing converted to fp16. "
+                             "Given parameters %r." % kwargs)
 
         final_block_list = _find_nodes_blocking_fp16(**kwargs)
 
@@ -245,6 +245,8 @@ def _convert_and_check_inference_result(**kwargs):
 
 
 def inference(model_path, input_feed, providers=None):
+    # delayed import to avoid taking a strong dependancy on onnxruntime
+    import onnxruntime as ort
     sess = ort.InferenceSession(model_path, None, providers=providers)
     output = sess.run(None, input_feed)
     return output

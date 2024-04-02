@@ -11,6 +11,7 @@ from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.optimizer import optimize_onnx_model
 from onnxconverter_common.float16 import convert_float_to_float16
+from onnxconverter_common.float16 import convert_np_to_float16
 
 
 def _ort_inference(mdl, inputs):
@@ -102,6 +103,26 @@ class ONNXFloat16Test(unittest.TestCase):
         onnx_model16 = convert_float_to_float16(onnx_model32)
         output_16 = _ort_inference(onnx_model16, {'modelInput': input_x.astype(np.float16)})
         self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
+
+    def test_convert_to_float16_with_truncated(self):
+        np_array = np.array([1e-10, -2.0, 15, -1e-9, 65536.1, -100000])
+        convert_np_to_float16(np_array)
+
+    @unittest.skipIf(pv.Version(onnx.__version__) == pv.Version('1.9.0'), "ONNX 1.9 has different Optype behavior for Max operator")
+    def test_convert_to_float16_with_subgraph(self):
+        model32_name = "test_subgraph.onnx"
+        working_path = os.path.abspath(os.path.dirname(__file__))
+        data_path = os.path.join(working_path, 'data')
+        model_path = os.path.join(data_path, model32_name)
+        onnx_model32 = onnxmltools.utils.load_model(model_path)
+        x = np.array([1.0], dtype=np.float32)
+        y = np.array([2.0], dtype=np.float32)
+        output_32 = _ort_inference(onnx_model32, {"x":x, "y":y})
+
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
+        output_16 = _ort_inference(onnx_model16, {"x":x, "y":y})
+        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
+
 
 
 if __name__ == '__main__':

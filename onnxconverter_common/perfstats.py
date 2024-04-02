@@ -114,7 +114,7 @@ def compute_op_type_entries(raw_entries):
 def read_raw_entries(profile_path):
     with open(profile_path, "r") as f:
         data = json.load(f)
-    if type(data) == dict:
+    if isinstance(data, dict):
         data = data['traceEvents']
     entries = []
     for item in data:

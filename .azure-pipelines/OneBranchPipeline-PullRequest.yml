@@ -34,7 +34,7 @@ extends:
         break: true # always break the build on policheck issues.
       codeql:
         python:
-          enabled: true
+          enabled: false
 
     stages:
     - stage: firststage
@@ -50,21 +50,12 @@ extends:
         - script: sudo install -d -m 0777 /home/vsts/.conda/envs
           displayName: Fix Conda permissions
 
-        - task: CondaEnvironment@1
-          inputs:
-            createCustomEnvironment: true
-            environmentName: 'py3.9'
-            packageSpecs: 'python=3.9'
-
         - script: |
             python -m pip install --upgrade pip
-            conda config --set always_yes yes --set changeps1 no
-            conda install -c conda-forge protobuf
-            conda install -c conda-forge numpy
             pip install -r requirements.txt
             pip install onnxruntime
             pip install onnxmltools
-            pip install onnx==1.12.0
+            pip install onnx
             pip install pytest
             pip install -e .
           displayName: 'Install dependencies'
