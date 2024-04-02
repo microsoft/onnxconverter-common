@@ -4,9 +4,7 @@
 ###############################################################################
 
 import numpy as np
-import onnx
 from uuid import uuid4
-from typing import Union
 from onnx import numpy_helper, helper
 from onnx import onnx_pb as onnx_proto
 from ._opt_const_folding import const_folding_optimizer, reserve_node_for_embedded_graph, OnnxGraphContext

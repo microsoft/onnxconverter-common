@@ -1,7 +1,4 @@
-import os
-import onnx
 import unittest
-from distutils.version import StrictVersion
 from onnx import onnx_pb as onnx_proto
 from onnxconverter_common.data_types import (
     BooleanTensorType,

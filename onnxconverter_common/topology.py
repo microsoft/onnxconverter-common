@@ -7,7 +7,7 @@
 import re
 import onnx
 import warnings
-from distutils.version import StrictVersion
+import packaging.version as pv
 from onnx import helper
 from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
@@ -691,7 +691,7 @@ def convert_topology(topology, model_name, doc_string, target_opset, targeted_on
         Possible values include '1.1.2', '1.2', and so on.
     :return: a ONNX ModelProto
     '''
-    if targeted_onnx is not None and StrictVersion(targeted_onnx) != StrictVersion(onnx.__version__):
+    if targeted_onnx is not None and pv.Version(targeted_onnx) != pv.Version(onnx.__version__):
         warnings.warn(
             'targeted_onnx is deprecated, please specify target_opset for the target model.\n' +
             '*** ONNX version conflict found. The installed version is %s while the targeted version is %s' % (

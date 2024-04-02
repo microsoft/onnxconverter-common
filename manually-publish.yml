@@ -1,0 +1,32 @@
+trigger: none
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.11'
+    displayName: 'Set Up Python'
+  - script: python -m pip install --upgrade pip build wheel
+    displayName: 'Install Python build dependencies'
+  - script: python -m build
+    displayName: 'Build wheel'
+  - task: CopyFiles@2
+    displayName: 'Copy Python Wheel to: $(Build.ArtifactStagingDirectory)'
+    inputs:
+      SourceFolder: 'dist'
+      Contents: '*.*'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish converter-common'
+    inputs:
+      ArtifactName: onnxconverter_common
+  - task: EsrpRelease@3
+    inputs:
+      ConnectedServiceName: 'esrprelease'
+      Intent: 'PackageDistribution'
+      ContentType: 'PyPi'
+      PackageLocation: '$(Build.ArtifactStagingDirectory)'
+      Owners: 'xiaowuhu@microsoft.com'
+      Approvers: 'xiaowuhu@microsoft.com'
+      ServiceEndpointUrl: 'https://api.esrp.microsoft.com'
+      MainPublisher: 'AIFrameworks'
+      DomainTenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47'
