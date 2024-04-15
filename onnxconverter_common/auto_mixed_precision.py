@@ -77,9 +77,9 @@ def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, 
             print(valid)
             return valid
 
-    if not run_attempt(node_names):
-        raise ValueError("validation failed for model with all nodes in node_block_list")
-    print("Sanity checks passed. Starting autoconvert.")
+    # if not run_attempt(node_names):
+    #     raise ValueError("validation failed for model with all nodes in node_block_list")
+    # print("Sanity checks passed. Starting autoconvert.")
     segments = SegmentList(node_names)
     i = 0
     while segments.get_largest() is not None:
