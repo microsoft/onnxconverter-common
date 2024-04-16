@@ -396,18 +396,21 @@ def remove_unnecessary_cast_node(graph_proto):
     cast_node_list = []
     input_name_to_cast_node_dict = {}
     output_name_to_cast_node_dict = {}
+    # using name as key to point to a node. because node cannot be key
+    name_to_node_dict = {}  
     for node in graph_proto.node:
         if node.op_type == 'Cast':
-            cast_node_list.append(node)
+            if node.input[0] != "x":
+                cast_node_list.append(node)
+            name_to_node_dict[node.name] = node
             for input_name in node.input:
                 input_name_to_cast_node_dict[input_name] = node
             for output_name in node.output:
                 output_name_to_cast_node_dict[output_name] = node
 
     # 2. find upstream and downstream node of the cast node
-    cast_node_upstream_dict = {}
-    cast_node_downstream_dict = {} 
-    name_to_node_dict = {}  # using name as key to point to a node
+    cast_node_upstream_dict = {}  # mapping cast node(name) to its upstream node
+    cast_node_downstream_dict = {}   # mapping cast node(name) to its downstream node
     for current_node in graph_proto.node:
         # find the downstream node(s)
         for input_name in current_node.input:
@@ -416,29 +419,30 @@ def remove_unnecessary_cast_node(graph_proto):
                 cast_node = output_name_to_cast_node_dict[input_name]
                 if cast_node.name not in cast_node_downstream_dict:
                     cast_node_downstream_dict[cast_node.name] = current_node
+                    #name_to_node_dict[current_node.name] = current_node
                 else:  # already exists one downstream node, make it a list
-                    existing_downstream_node = cast_node_downstream_dict[cast_node.name]
-                    if isinstance(existing_downstream_node, list):
-                        existing_downstream_node.append(current_node)
-                    else:
-                        existing_downstream_node = [existing_downstream_node, current_node]
-                        cast_node_downstream_dict[cast_node.name] = existing_downstream_node
-                        name_to_node_dict[cast_node.name] = cast_node
+                    existing_downstream_nodes = cast_node_downstream_dict[cast_node.name]
+                    if isinstance(existing_downstream_nodes, list):
+                        existing_downstream_nodes.append(current_node)
+                    else:  # make a list
+                        existing_downstream_nodes = [existing_downstream_nodes, current_node]
+                        cast_node_downstream_dict[cast_node.name] = existing_downstream_nodes
+                        #name_to_node_dict[current_node.name] = current_node
         # find the upstream node
         for output_name in current_node.output:
             if output_name in input_name_to_cast_node_dict:
                 # found the upstream node of the cast node, should be unique
                 cast_node = input_name_to_cast_node_dict[output_name]
                 cast_node_upstream_dict[cast_node.name] = current_node
-                name_to_node_dict[cast_node.name] = cast_node
+                #name_to_node_dict[current_node.name] = current_node
 
     # 3. remove the cast node which upstream is 'Constant'
     for cast_node_name, upstream_node in cast_node_upstream_dict.items():
+        cast_node = name_to_node_dict[cast_node_name]
         if upstream_node.op_type == 'Constant':
-            cast_node = name_to_node_dict[cast_node_name]
             cast_node_list.remove(cast_node)
 
-    # 4. remove the cast(to16) node which downstream is Cast(to32)
+    # 4. find the cast(to16) node which downstream is Cast(to32)
     remove_candidate = []
     for cast_node_name, downstream_node in cast_node_downstream_dict.items():
         cast_node = name_to_node_dict[cast_node_name]
@@ -471,7 +475,7 @@ def remove_unnecessary_cast_node(graph_proto):
                     downstream_node.input.remove(input_name)
                     downstream_node.input.append(out)
 
-    # 5. remove the cast node pair
+    # 6. remove the cast node pair
     for cast_node_pair in remove_candidate:
         first_cast_node = cast_node_pair[0]
         second_cast_node = cast_node_pair[1]
