@@ -302,7 +302,9 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     break
 
     sort_topology(model.graph)
+    onnx.save_model(model, 'temp_before.onnx')
     remove_unnecessary_cast_node(model.graph)
+    onnx.save_model(model, 'temp_after.onnx')
     return model
 
 
@@ -400,7 +402,7 @@ def remove_unnecessary_cast_node(graph_proto):
     name_to_node_dict = {}  
     for node in graph_proto.node:
         if node.op_type == 'Cast':
-            if node.input[0] != "x":
+            if node.input[0] != "x" and node.output[0] != "z":
                 cast_node_list.append(node)
             name_to_node_dict[node.name] = node
             for input_name in node.input:
