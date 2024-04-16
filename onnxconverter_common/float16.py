@@ -302,9 +302,9 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     break
 
     sort_topology(model.graph)
-    onnx.save_model(model, 'temp_before.onnx')
+    onnx.save_model(model, 'd:/temp_before.onnx')
     remove_unnecessary_cast_node(model.graph)
-    onnx.save_model(model, 'temp_after.onnx')
+    onnx.save_model(model, 'd:/temp_after.onnx')
     return model
 
 
