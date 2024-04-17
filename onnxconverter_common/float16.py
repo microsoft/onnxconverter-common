@@ -302,9 +302,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     break
 
     sort_topology(model.graph)
-    onnx.save_model(model, 'd:/temp_before.onnx')
     remove_unnecessary_cast_node(model.graph)
-    onnx.save_model(model, 'd:/temp_after.onnx')
     return model
 
 
@@ -470,12 +468,11 @@ def remove_unnecessary_cast_node(graph_proto):
                 out = output_name
                 break
         # find the downstream node's input as second_cast_node's output
-        for input_name in downstream_node.input:
+        for i, input_name in enumerate(downstream_node.input):
             for output_name in second_cast_node.output:
                 if input_name == output_name:
                     # change the input as the upstream node's output
-                    downstream_node.input.remove(input_name)
-                    downstream_node.input.append(out)
+                    downstream_node.input[i] = out
 
     # 6. remove the cast node pair
     for cast_node_pair in remove_candidate:
