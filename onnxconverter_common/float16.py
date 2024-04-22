@@ -420,7 +420,6 @@ def remove_unnecessary_cast_node(graph_proto):
                 cast_node = output_name_to_cast_node_dict[input_name]
                 if cast_node.name not in cast_node_downstream_dict:
                     cast_node_downstream_dict[cast_node.name] = current_node
-                    #name_to_node_dict[current_node.name] = current_node
                 else:  # already exists one downstream node, make it a list
                     existing_downstream_nodes = cast_node_downstream_dict[cast_node.name]
                     if isinstance(existing_downstream_nodes, list):
@@ -428,14 +427,12 @@ def remove_unnecessary_cast_node(graph_proto):
                     else:  # make a list
                         existing_downstream_nodes = [existing_downstream_nodes, current_node]
                         cast_node_downstream_dict[cast_node.name] = existing_downstream_nodes
-                        #name_to_node_dict[current_node.name] = current_node
         # find the upstream node
         for output_name in current_node.output:
             if output_name in input_name_to_cast_node_dict:
                 # found the upstream node of the cast node, should be unique
                 cast_node = input_name_to_cast_node_dict[output_name]
                 cast_node_upstream_dict[cast_node.name] = current_node
-                #name_to_node_dict[current_node.name] = current_node
 
     # 3. remove the cast node which upstream is 'Constant'
     for cast_node_name, upstream_node in cast_node_upstream_dict.items():
@@ -447,8 +444,6 @@ def remove_unnecessary_cast_node(graph_proto):
     remove_candidate = []
     for cast_node_name, downstream_node in cast_node_downstream_dict.items():
         cast_node = name_to_node_dict[cast_node_name]
-        # I cannot believe that the downstream_node is a list
-#        assert(isinstance(downstream_node, list) == False)
         if isinstance(downstream_node, list):
             for dn in downstream_node:
                 if dn.op_type == 'Cast' and \
@@ -486,7 +481,5 @@ def remove_unnecessary_cast_node(graph_proto):
 
     # 6. remove the cast node pair
     for cast_node_pair in remove_candidate:
-        first_cast_node = cast_node_pair[0]
-        second_cast_node = cast_node_pair[1]
-        graph_proto.node.remove(first_cast_node)
-        graph_proto.node.remove(second_cast_node)
+        graph_proto.node.remove(cast_node_pair[0])
+        graph_proto.node.remove(cast_node_pair[1])
