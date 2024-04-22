@@ -400,8 +400,9 @@ def remove_unnecessary_cast_node(graph_proto):
     name_to_node_dict = {}  
     for node in graph_proto.node:
         if node.op_type == 'Cast':
-            if node.input[0] != "x" and node.output[0] != "z":
+            if node.name not in ["graph_input_cast0", "graph_output_cast0"]:
                 cast_node_list.append(node)
+            
             name_to_node_dict[node.name] = node
             for input_name in node.input:
                 input_name_to_cast_node_dict[input_name] = node
@@ -447,13 +448,22 @@ def remove_unnecessary_cast_node(graph_proto):
     for cast_node_name, downstream_node in cast_node_downstream_dict.items():
         cast_node = name_to_node_dict[cast_node_name]
         # I cannot believe that the downstream_node is a list
-        assert(isinstance(downstream_node, list) == False)
-        if downstream_node.op_type == 'Cast' and \
-            cast_node.attribute[0].i == 10 and \
-            downstream_node.attribute[0].i == 1 and \
-            downstream_node in cast_node_list and \
-            cast_node in cast_node_list:
-            remove_candidate.append((cast_node, downstream_node))
+#        assert(isinstance(downstream_node, list) == False)
+        if isinstance(downstream_node, list):
+            for dn in downstream_node:
+                if dn.op_type == 'Cast' and \
+                    dn.attribute[0].i == 32 and \
+                    cast_node.attribute[0].i == 16 and \
+                    dn in cast_node_list and \
+                    cast_node in cast_node_list:
+                    remove_candidate.append((cast_node, dn))
+        else:
+            if downstream_node.op_type == 'Cast' and \
+                cast_node.attribute[0].i == 10 and \
+                downstream_node.attribute[0].i == 1 and \
+                downstream_node in cast_node_list and \
+                cast_node in cast_node_list:
+                remove_candidate.append((cast_node, downstream_node))
 
     # 5. change the connection of "upstream->cast16->cast32->downstream" to "upstream->downstream"
     for cast_node_pair in remove_candidate:
