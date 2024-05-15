@@ -166,7 +166,7 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     name_mapping = {}
     graph_io_to_skip = set()
     io_casts = set()
-    if keep_io_types:
+    if keep_io_types:  # the input dtype is float32, output dtype is float32
         for i, n in enumerate(model.graph.input):
             if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
                 output_name = 'graph_input_cast_' + str(i)
@@ -228,8 +228,8 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                     else:
                         if n.op_type == 'Cast':
                             for attr in n.attribute:
-                                if attr.name == 'to' and attr.i == 1:
-                                    attr.i = 10
+                                if attr.name == 'to' and attr.i == 1:  # float32
+                                    attr.i = 10  # float16. bug: if this cast is degined for next op(need cast to fp32), why force changing to fp16?
                                     break
                         for attr in n.attribute:
                             next_level.append(attr)
@@ -304,6 +304,11 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     sort_topology(model.graph)
     remove_unnecessary_cast_node(model.graph)
     return model
+
+# cast 原来是 to32 的，不要轻易改成 to16，看看后面的 op 是否需要 to32，如果需要，就不要改成 to16
+# 反之，某个 op 前面有 cast 的，就不要再加新的 cast
+# op 内部的 tensor 需要转成 16
+# 保持 graph/sub-graph 不乱
 
 
 def convert_float_to_float16_model_path(model_path, min_positive_val=1e-7, max_finite_val=1e4, keep_io_types=False):
