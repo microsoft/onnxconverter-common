@@ -108,7 +108,38 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
                          'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
 
 
+def initial_checking(model, disable_shape_infer):
+    func_infer_shape = None
+    if not disable_shape_infer and pv.Version(onnx.__version__) >= pv.Version('1.2'):
+        try:
+            from onnx.shape_inference import infer_shapes
+            func_infer_shape = infer_shapes
+        finally:
+            pass
+
+    if not isinstance(model, onnx_proto.ModelProto):
+        raise ValueError('Expected model type is an ONNX ModelProto but got %s' % type(model))
+
+    if func_infer_shape is not None:
+        model = func_infer_shape(model)
+
+    return model
+
+# new implementation by Xiaowu to fix a lot of bug due to ort changed
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
+                             keep_io_types=False, disable_shape_infer=False,
+                             op_block_list=None, node_block_list=None):
+
+    # basic checking, including shape inference
+    model = initial_checking(model, disable_shape_infer)
+
+    print("---- node ----")
+    for node in model.graph.node:
+        print("-- node --")
+        print(node)
+
+
+def convert_float_to_float16_old(model, min_positive_val=1e-7, max_finite_val=1e4,
                              keep_io_types=False, disable_shape_infer=False,
                              op_block_list=None, node_block_list=None):
     '''
