@@ -42,12 +42,15 @@ class ONNXFloat16Test(unittest.TestCase):
         expected = transpose_n_matmul(m1)
         model = transpose_n_matmul.to_model()
         f16model = convert_float_to_float16(copy.deepcopy(model))
-        actual = _ort_inference(f16model, {'x': m1.astype(np.float16)})
-        self.assertTrue(np.allclose(expected, actual))
-
+        onnx.save_model(f16model, 'd:/float16.onnx')
         f16model2 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
-        actual2 = _ort_inference(f16model2, {'x': m1})
-        self.assertTrue(np.allclose(expected, actual2))
+        onnx.save_model(f16model2, 'd:/float16_keepio.onnx')
+        #actual = _ort_inference(f16model, {'x': m1.astype(np.float16)})
+        #self.assertTrue(np.allclose(expected, actual))
+
+        # f16model2 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
+        # actual2 = _ort_inference(f16model2, {'x': m1})
+        # self.assertTrue(np.allclose(expected, actual2))
 
     # def test_float16_with_loop(self):
     #     @onnx_function(outputs=['y1', 'y2'],

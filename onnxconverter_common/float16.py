@@ -12,6 +12,10 @@ from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
 
 
+FLOAT32 = 1
+FLOAT16 = 10
+
+
 def _npfloat16_to_int(np_list):
     '''
     Convert numpy float16 to python int.
@@ -132,11 +136,76 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
 
     # basic checking, including shape inference
     model = initial_checking(model, disable_shape_infer)
+    basic_info(model)
+    ##########################
+    # 1. block list 中的node，前后必须加 cast. 已经有 cast 的不需要再变化
+    # 2. initializer 中的 tensor 需要转成 16
+    # 3. graph input/output 中的 tensor 需要转成 16
+    # 4. graph value_info 中的 tensor 需要转成 16
+    # 5. graph node 中的 tensor 需要转成 16
+    ##########################
+    process_input(model, keep_io_types)
+    return model
 
+
+def add_cast_node(model: onnx_proto.ModelProto, inputs, outputs, node_name, to_type):
+    new_node = [helper.make_node('Cast', inputs, outputs, to=to_type, name=node_name)]
+    model.graph.node.extend(new_node)
+
+def find_donwstream_node_by_input(model, input):
+    for node in model.graph.node:
+        if input in node.input:
+            return node
+    return None
+
+def change_input(node, old_input, new_input):
+    for i, input in enumerate(node.input):
+        if input == old_input:
+            node.input[i] = new_input
+            break
+
+def process_input(model: onnx_proto.ModelProto, keep_io_types: bool):
+    if keep_io_types:  # the input dtype is float32, need to cast to fp16
+        for i, n in enumerate(model.graph.input):
+            if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                cast_output_name = 'graph_input_cast_' + str(i)
+                node_name = 'graph_input_cast' + str(i)
+                add_cast_node(model, [n.name], [cast_output_name], node_name, FLOAT16)
+                downstream_node = find_donwstream_node_by_input(model, n.name)
+                if downstream_node:
+                    change_input(downstream_node, n.name, cast_output_name)
+    else:  # change the input dtype to fp16
+        for graph_input in model.graph.input:
+            if graph_input.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                graph_input.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+
+
+
+def basic_info(model):
     print("---- node ----")
     for node in model.graph.node:
         print("-- node --")
         print(node)
+
+    print("---- value info ----")
+    for value_info in model.graph.value_info:
+        print("-- value_info --")
+        print(value_info)
+
+    print("---- input ----")
+    for input in model.graph.input:
+        print("-- input --")
+        print(input)
+    
+    print("---- output ----")
+    for output in model.graph.output:
+        print("-- output --")
+        print(output)
+
+    print("---- initializer ----")
+    for initializer in model.graph.initializer:
+        print("-- initializer --")
+        print(initializer)
 
 
 def convert_float_to_float16_old(model, min_positive_val=1e-7, max_finite_val=1e4,
