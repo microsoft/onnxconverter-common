@@ -153,16 +153,18 @@ def add_cast_node(model: onnx_proto.ModelProto, inputs, outputs, node_name, to_t
     model.graph.node.extend(new_node)
 
 def find_donwstream_node_by_input(model, input):
+    nodes = []
     for node in model.graph.node:
         if input in node.input:
-            return node
-    return None
+            nodes.append(node)
+    return nodes
 
-def change_input(node, old_input, new_input):
-    for i, input in enumerate(node.input):
-        if input == old_input:
-            node.input[i] = new_input
-            break
+def change_input(nodes, old_input, new_input):
+    for node in nodes:
+        for i, input in enumerate(node.input):
+            if input == old_input:
+                node.input[i] = new_input
+                break
 
 def process_input(model: onnx_proto.ModelProto, keep_io_types: bool):
     if keep_io_types:  # the input dtype is float32, need to cast to fp16
@@ -171,9 +173,9 @@ def process_input(model: onnx_proto.ModelProto, keep_io_types: bool):
                 cast_output_name = 'graph_input_cast_' + str(i)
                 node_name = 'graph_input_cast' + str(i)
                 add_cast_node(model, [n.name], [cast_output_name], node_name, FLOAT16)
-                downstream_node = find_donwstream_node_by_input(model, n.name)
-                if downstream_node:
-                    change_input(downstream_node, n.name, cast_output_name)
+                downstream_nodes = find_donwstream_node_by_input(model, n.name)
+                if len(downstream_nodes) > 0:
+                    change_input(downstream_nodes, n.name, cast_output_name)
     else:  # change the input dtype to fp16
         for graph_input in model.graph.input:
             if graph_input.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
