@@ -109,7 +109,8 @@ DEFAULT_OP_BLOCK_LIST = ['ArrayFeatureExtractor', 'Binarizer', 'CastMap', 'Categ
                          'FeatureVectorizer', 'Imputer', 'LabelEncoder', 'LinearClassifier', 'LinearRegressor',
                          'Normalizer', 'OneHotEncoder', 'RandomUniformLike', 'SVMClassifier', 'SVMRegressor', 'Scaler',
                          'TreeEnsembleClassifier', 'TreeEnsembleRegressor', 'ZipMap', 'NonMaxSuppression', 'TopK',
-                         'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+                         #'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Max', 'Upsample']
+                         'RoiAlign', 'Resize', 'Range', 'CumSum', 'Min', 'Upsample']
 
 
 def initial_checking(model, disable_shape_infer):
@@ -127,16 +128,24 @@ def initial_checking(model, disable_shape_infer):
     if func_infer_shape is not None:
         model = func_infer_shape(model)
 
-    return model
+    return model, func_infer_shape
 
 # new implementation by Xiaowu to fix a lot of bug due to ort changed
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                              keep_io_types=False, disable_shape_infer=False,
                              op_block_list=None, node_block_list=None):
 
+    # create blocklists
+    if op_block_list is None:
+        op_block_list = DEFAULT_OP_BLOCK_LIST
+    if node_block_list is None:
+        node_block_list = []
+    op_block_list = set(op_block_list)
+    node_block_list = set(node_block_list)
+
     # basic checking, including shape inference
-    model = initial_checking(model, disable_shape_infer)
-    basic_info(model)
+    model, func_infer_shape = initial_checking(model, disable_shape_infer)
+    # basic_info(model)
     ##########################
     # 1. block list 中的node，前后必须加 cast. 已经有 cast 的不需要再变化
     # 2. initializer 中的 tensor 需要转成 16
@@ -144,14 +153,120 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
     # 4. graph value_info 中的 tensor 需要转成 16
     # 5. graph node 中的 tensor 需要转成 16
     ##########################
-    process_input(model, keep_io_types)
+    process_graph_input(model, keep_io_types)
+    process_initializers(model, min_positive_val, max_finite_val)
+    process_tensor_in_node(model, op_block_list, node_block_list, min_positive_val, max_finite_val)
+    value_info_block_list = process_node_in_block_list(model, op_block_list, node_block_list)
+    process_value_info(model, value_info_block_list)
+    process_graph_output(model, keep_io_types)
+    if func_infer_shape is not None:
+        model = func_infer_shape(model)
+
     return model
 
+# 在黑名单中的 op 前面要加 cast32, 后面加 cast16
+def process_node_in_block_list(model, op_block_list, node_block_list):
+    value_info_set = set()
+    for node in model.graph.node:
+        if node.op_type in op_block_list or node.name in node_block_list:
+            # 检查上游有没有 cast32
+            for i, input_name in enumerate(node.input):                
+                upstream_node = find_upstream_node_by_output(model, input_name)
+                if upstream_node.op_type == 'Cast':
+                    if upstream_node.attribute[0].i == FLOAT32:
+                        pass
+                    else:
+                        upstream_node.attribute[0].i = FLOAT32
+                else:  # 加 cast 32
+                    cast_node_output_name = insert_cast_node_between(model, upstream_node, node, FLOAT32)
+                    value_info_set.add(cast_node_output_name)
+            # 检查下游有没有 cast16
+            for i, output_name in enumerate(node.output):
+                value_info_set.add(output_name)
+                downstream_nodes = find_donwstream_node_by_input(model, output_name)
+                for d_n in downstream_nodes:
+                    if d_n.op_type == 'Cast':
+                        if d_n.attribute[0].i == FLOAT16:
+                            # OK
+                            pass
+                        else:
+                            d_n.attribute[0].i = FLOAT16
+                    else:  # 加 cast 16
+                        insert_cast_node_between(model, node, d_n, FLOAT16)
+    return value_info_set
 
+def process_tensor_in_node(model, op_block_list, node_block_list, min_positive_val, max_finite_val):
+    for node in model.graph.node:
+        if node.op_type in op_block_list or node.name in node_block_list:
+            continue
+        for attr in node.attribute:
+            # 一个 tensor
+            # attr.t = convert_tensor_float_to_float16(attr.t, min_positive_val, max_finite_val)
+            attr.t.CopyFrom(convert_tensor_float_to_float16(attr.t, min_positive_val, max_finite_val))
+            # 多个 tensor
+            for t in attr.tensors:
+                t.CopyFrom(convert_tensor_float_to_float16(t, min_positive_val, max_finite_val))
+
+
+def process_value_info(model, value_info_block_list):
+    for value_info in model.graph.value_info:
+        if value_info.name in value_info_block_list:
+            continue
+        else:
+            if value_info.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+
+
+def process_initializers(model, min_positive_val, max_finite_val):
+    for initializer in model.graph.initializer:
+        if initializer.data_type == onnx_proto.TensorProto.FLOAT:
+            convert_tensor_float_to_float16(initializer, min_positive_val, max_finite_val)
+
+
+# 在两个node之间插入一个 cast node
+def insert_cast_node_between(model, upstream_node, downstream_node, to_type, id=0):
+    # insert cast node between two nodes
+    if isinstance(upstream_node, onnx_proto.NodeProto) and isinstance(downstream_node, onnx_proto.NodeProto):
+        for output_name in upstream_node.output:
+            for i, input_name in enumerate(downstream_node.input):
+                if output_name == input_name:
+                    cast_node_name = downstream_node.name + "_input_cast" + str(i)
+                    cast_node_output_name = downstream_node.name + "_input_cast_" + str(i)
+                    add_cast_node(model, [output_name], [cast_node_output_name], cast_node_name, to_type)
+                    downstream_node.input[i] = cast_node_output_name
+                    return cast_node_output_name  # this will be put into value_info_block_list
+    # insert cast node between graph input(x) and node
+    elif isinstance(upstream_node, onnx_proto.ValueInfoProto) and isinstance(downstream_node, onnx_proto.NodeProto):
+        cast_node_name = "graph_input_cast" + str(id)
+        cast_node_output_name = "graph_input_cast_" + str(id)
+        add_cast_node(model, [upstream_node.name], [cast_node_output_name], cast_node_name, to_type)
+        downstream_node.input[id] = cast_node_output_name
+    # insert cast node between node and graph output(z)
+    elif isinstance(upstream_node, onnx_proto.NodeProto) and isinstance(downstream_node, onnx_proto.ValueInfoProto):
+        cast_node_name = "graph_output_cast" + str(id)
+        cast_node_input_name = "graph_output_cast_" + str(id)
+        add_cast_node(model, [cast_node_input_name], [downstream_node.name], cast_node_name, to_type)
+        upstream_node.output[id] = cast_node_input_name
+    else:
+        raise ValueError("upstream_node and downstream_node should be NodeProto or ValueInfoProto")
+
+# 这里的 model 应该改成 graph，for sub-graph
 def add_cast_node(model: onnx_proto.ModelProto, inputs, outputs, node_name, to_type):
     new_node = [helper.make_node('Cast', inputs, outputs, to=to_type, name=node_name)]
     model.graph.node.extend(new_node)
 
+
+# 通过 output name 找到所有的上游 node, 应该只有一个上有node
+def find_upstream_node_by_output(model, output):
+    nodes = []
+    for node in model.graph.node:
+        if output in node.output:
+            nodes.append(node)
+    assert len(nodes) == 1
+    return nodes[0]
+
+
+# 通过 input name 找到所有的下游 node
 def find_donwstream_node_by_input(model, input):
     nodes = []
     for node in model.graph.node:
@@ -159,29 +274,32 @@ def find_donwstream_node_by_input(model, input):
             nodes.append(node)
     return nodes
 
-def change_input(nodes, old_input, new_input):
-    for node in nodes:
-        for i, input in enumerate(node.input):
-            if input == old_input:
-                node.input[i] = new_input
-                break
 
-def process_input(model: onnx_proto.ModelProto, keep_io_types: bool):
+# 处理输入
+def process_graph_input(model: onnx_proto.ModelProto, keep_io_types: bool):
     if keep_io_types:  # the input dtype is float32, need to cast to fp16
-        for i, n in enumerate(model.graph.input):
-            if n.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
-                cast_output_name = 'graph_input_cast_' + str(i)
-                node_name = 'graph_input_cast' + str(i)
-                add_cast_node(model, [n.name], [cast_output_name], node_name, FLOAT16)
-                downstream_nodes = find_donwstream_node_by_input(model, n.name)
-                if len(downstream_nodes) > 0:
-                    change_input(downstream_nodes, n.name, cast_output_name)
-    else:  # change the input dtype to fp16
+        for i, n_input in enumerate(model.graph.input):
+            if n_input.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                downstream_nodes = find_donwstream_node_by_input(model, n_input.name)
+                for d_n in downstream_nodes:
+                    insert_cast_node_between(model, n_input, d_n, FLOAT16, id=i)              
+    else:  # change the input dtype to fp16 in tensor
         for graph_input in model.graph.input:
             if graph_input.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
                 graph_input.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
 
 
+# 处理输出
+def process_graph_output(model, keep_io_types):
+    if keep_io_types:  # the output dtype is float32, need to cast to fp16
+        for i, n_output in enumerate(model.graph.output):
+            if n_output.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                upstream_node = find_upstream_node_by_output(model, n_output.name)
+                insert_cast_node_between(model, upstream_node, n_output, FLOAT32, id=i)
+    else:  # change the output dtype to fp16 in tensor
+        for graph_output in model.graph.output:
+            if graph_output.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
+                graph_output.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
 
 def basic_info(model):
     print("---- node ----")
