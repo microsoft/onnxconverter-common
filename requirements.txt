@@ -1,4 +1,2 @@
-numpy
-onnx
+onnx>=1.16
 packaging
-protobuf==3.20.2

@@ -4,7 +4,7 @@
 ###########################################################################
 
 """
-This tool converts converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
+This tool converts a model to mixed precision (float32->float16) while excluding nodes as needed to maintain
 a certain accuracy.
 
 Example usage:
@@ -77,9 +77,6 @@ def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, 
             print(valid)
             return valid
 
-    if not run_attempt(node_names):
-        raise ValueError("validation failed for model with all nodes in node_block_list")
-    print("Sanity checks passed. Starting autoconvert.")
     segments = SegmentList(node_names)
     i = 0
     while segments.get_largest() is not None:
@@ -129,6 +126,9 @@ def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_optio
     # delayed import to avoid taking a strong dependancy on onnxruntime
     import onnxruntime as ort
     if output_names is None:
+        # Below code is for debug only, keep it for next time use
+        # sess_options = ort.SessionOptions()
+        # sess_options.optimized_model_filepath = "d:/optimized_model.onnx"
         sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
         return sess.run(None, input_feed)
     original_outputs = list(model.graph.output)
