@@ -228,7 +228,7 @@ def _convert_and_check_inference_result(**kwargs):
         _print_node_block_list(node_block_list)
     model_16 = float16.convert_float_to_float16(
         copy.deepcopy(model_32), node_block_list=node_block_list,
-        keep_io_types=keep_io_types, disable_shape_infer=True)
+        is_io_fp32=keep_io_types, disable_shape_infer=True)
 
     if is_final_model:
         location = kwargs.get("location")  # using the speficified external data file name
