@@ -43,7 +43,6 @@ class ONNXFloat16Test(unittest.TestCase):
         m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
         expected = transpose_n_matmul(m1)
         model = transpose_n_matmul.to_model()
-        onnx.save_model(model, 'd:/float32.onnx')
         actual = _ort_inference(model, {'x': m1})
         self.assertTrue(np.allclose(expected, actual))
 
