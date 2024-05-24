@@ -303,7 +303,6 @@ def get_next_level_graph(graph: onnx_proto.GraphProto, op_block_list, node_block
             # 处理 sub-graph
             if len(attr.g.node) > 0:
                 sub_graph_list.append(attr.g) 
-                print("ssssss")
             for g in attr.graphs:
                 if len(g.node) > 0:
                     sub_graph_list.append(g)
