@@ -46,9 +46,9 @@ class AutoFloat16Test(unittest.TestCase):
         def validate_fn(res, fp16res):
             return np.allclose(res[0], fp16res[0], rtol=0.01)
 
-        # f16model = auto_convert_mixed_precision(copy.deepcopy(model), {'x': m1}, validate_fn, keep_io_types=True)
-        # actual = _ort_inference(f16model, {'x': m1})
-        # self.assertTrue(np.allclose(expected, actual, rtol=0.01))
+        f16model = auto_convert_mixed_precision(copy.deepcopy(model), {'x': m1}, validate_fn, keep_io_types=True)
+        actual = _ort_inference(f16model, {'x': m1})
+        self.assertTrue(np.allclose(expected, actual, rtol=0.01))
 
         f16model2 = auto_convert_mixed_precision(copy.deepcopy(model), {'x': m1}, rtol=0.01, keep_io_types=False)
         actual = _ort_inference(f16model2, {'x': m1.astype(np.float16)})

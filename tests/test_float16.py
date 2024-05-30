@@ -10,7 +10,7 @@ from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.optimizer import optimize_onnx_model
-from onnxconverter_common.float16 import convert_float_to_float16
+from onnxconverter_common.float16 import convert_float_to_float16, remove_identity_node_from_model
 from onnxconverter_common.float16 import convert_float_to_float16_old
 from onnxconverter_common.float16 import convert_np_to_float16
 
@@ -43,6 +43,8 @@ class ONNXFloat16Test(unittest.TestCase):
         m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
         expected = transpose_n_matmul(m1)
         model = transpose_n_matmul.to_model()
+        # This is optional, is a new feature test case
+        model = remove_identity_node_from_model(model)
         actual = _ort_inference(model, {'x': m1})
         self.assertTrue(np.allclose(expected, actual))
 
@@ -137,38 +139,6 @@ class ONNXFloat16Test(unittest.TestCase):
         actual = _ort_inference(onnx_model16_2, {"x": x.astype(np.float16), "y": y.astype(np.float16)})
         self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
         self.assertTrue(actual[0].dtype == np.float16)
-
-
-    # def test_auto_mixed_precision(self):
-    #     @onnx_function(outputs=['z'],
-    #                    input_types=(_Ty.F([1, 1, 6, 1])),
-    #                    output_types=[_Ty.f])
-    #     def transpose_n_matmul(x):
-    #         ox = x.ox  # type: OnnxOperatorBuilderX
-    #         wm = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 6])
-    #         b = ox.constant(value=wm)
-    #         a = ox.transpose(x, perm=[0, 1, 3, 2])
-    #         c = ox.transpose(b, perm=[1, 0])
-    #         m = ox.matmul([a, c])
-    #         m_large = ox.mul([m, ox.constant(value=np.array(100, np.float32))])
-    #         m_xlarge = ox.mul([m_large, ox.constant(value=np.array(10, np.float32))])
-    #         mr = ox.reshape([m_xlarge], desired_shape=[2])
-    #         mr = ox.reshape([mr], desired_shape=[2])
-    #         m_normal = ox.div([mr, ox.constant(value=np.array(999, np.float32))])
-    #         return m_normal
-
-    #     m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
-    #     expected = transpose_n_matmul(m1)
-    #     model32 = transpose_n_matmul.to_model()
-    #     onnx.save_model(model32, "d:/f32.onnx")
-    #     model16_1 = convert_float_to_float16(model32, is_io_fp32=False)
-    #     onnx.save_model(model16_1, "d:/f16_io16.onnx")
-    #     actual = _ort_inference(model16_1, {"x": m1.astype(np.float16)})
-    #     self.assertTrue(np.allclose(actual, expected, atol=1e-2))
-    #     model16_2 = convert_float_to_float16(model32, is_io_fp32=True)
-    #     onnx.save_model(model16_2, "d:/f16_io32.onnx")
-    #     actual = _ort_inference(model16_2, {"x": m1})
-    #     self.assertTrue(np.allclose(actual, expected, atol=1e-2))
 
 
 if __name__ == '__main__':
