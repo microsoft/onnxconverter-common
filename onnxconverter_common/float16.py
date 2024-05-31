@@ -227,15 +227,19 @@ def process_node_in_block_list(graph: onnx_proto.GraphProto, is_io_fp32: bool, g
                                 global_input_name_dict[input_name] = cast_node_output_name
                     continue
                 # Check if already exist cast upstream cast node
-                if upstream_node.op_type == 'Cast':  # Change to fp32 if already have cast node
-                    if upstream_node.attribute[0].i != FLOAT32:
-                        upstream_node.attribute[0].i = FLOAT32
-                else:
-                    # Add cast to 32 for very previous node
-                    cast_node_output_name = insert_cast_node_between(graph, upstream_node, node, FLOAT32)
-                    if cast_node_output_name is not None:
-                        global_input_name_dict[input_name] = cast_node_output_name
-                        value_info_block_list.add(cast_node_output_name)
+                # if upstream_node.op_type == 'Cast':  # Change to fp32 if already have cast node
+                #     if upstream_node.attribute[0].i != FLOAT32:  # 这里如果是 FLOAT16 的话，可以考虑直接把cast删掉
+                #         upstream_node.attribute[0].i = FLOAT32
+                # else:  # Other type of node besides of graph input and cast
+                #     # Add cast to 32 for very previous node
+                #     cast_node_output_name = insert_cast_node_between(graph, upstream_node, node, FLOAT32)
+                #     if cast_node_output_name is not None:
+                #         global_input_name_dict[input_name] = cast_node_output_name
+                #         value_info_block_list.add(cast_node_output_name)
+                cast_node_output_name = insert_cast_node_between(graph, upstream_node, node, FLOAT32)
+                if cast_node_output_name is not None:
+                    global_input_name_dict[input_name] = cast_node_output_name
+                    value_info_block_list.add(cast_node_output_name)
             # Process downstream nodes
             for output_name in node.output:
                 value_info_block_list.add(output_name)  # These output should be all fp32 type
@@ -248,13 +252,16 @@ def process_node_in_block_list(graph: onnx_proto.GraphProto, is_io_fp32: bool, g
                 else:
                     for d_n in downstream_nodes:
                         # Check if already exist cast downstream cast node
-                        if d_n.op_type == 'Cast':  # Change to fp16 if already have cast node
-                            if d_n.attribute[0].i != FLOAT16:
-                                d_n.attribute[0].i = FLOAT16
-                        else:
-                            cast_node_output_name = insert_cast_node_between(graph, node, d_n, FLOAT16)
-                            if cast_node_output_name is not None:
-                                global_input_name_dict[output_name] = cast_node_output_name
+                        # if d_n.op_type == 'Cast':  # Change to fp16 if already have cast node
+                        #     if d_n.attribute[0].i != FLOAT16:
+                        #         d_n.attribute[0].i = FLOAT16
+                        # else:
+                        #     cast_node_output_name = insert_cast_node_between(graph, node, d_n, FLOAT16)
+                        #     if cast_node_output_name is not None:
+                        #         global_input_name_dict[output_name] = cast_node_output_name
+                        cast_node_output_name = insert_cast_node_between(graph, node, d_n, FLOAT16)
+                        if cast_node_output_name is not None:
+                            global_input_name_dict[output_name] = cast_node_output_name
     return value_info_block_list
 
 

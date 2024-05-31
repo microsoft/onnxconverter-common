@@ -69,7 +69,7 @@ def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, 
         print(node_block_list)
         # compare new and old model
         model = float16.convert_float_to_float16(copy.deepcopy(model0), node_block_list=node_block_list,
-                                                 is_io_fp32=keep_io_types, disable_shape_infer=True)
+                                                 is_io_fp32=keep_io_types, disable_shape_infer=False)
         #onnx.save_model(model, "d:/new_fp16.onnx")        
         res1 = get_tensor_values_using_ort(model, feed_dict)
         if return_model:
