@@ -210,10 +210,10 @@ def process_graph_input(graph: onnx_proto.GraphProto, is_top_level: bool, is_io_
                 graph_input.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
 
 
-def process_node_in_block_list(graph: onnx_proto.GraphProto, is_io_fp32: bool, global_input_name_dict: dict, op_block_list, node_block_list):
+def process_node_in_block_list_old(graph: onnx_proto.GraphProto, is_io_fp32: bool, global_input_name_dict: dict, op_block_list, node_block_list):
     value_info_block_list = set()  # keep the value_info is alyready processed
     for node in graph.node:
-        if node.op_type in op_block_list or node.name in node_block_list:
+        if (node.op_type in op_block_list) or (node.name in node_block_list):
             # Process upstream nodes
             for input_name in node.input:
                 upstream_node = find_upstream_node_by_output_name(graph, input_name)
@@ -265,17 +265,62 @@ def process_node_in_block_list(graph: onnx_proto.GraphProto, is_io_fp32: bool, g
     return value_info_block_list
 
 
+def process_node_in_block_list(graph: onnx_proto.GraphProto, is_io_fp32: bool, global_input_name_dict: dict, op_block_list, node_block_list):
+    value_info_block_list = set()  # keep the value_info is alyready processed
+    for node in graph.node:
+        if (node.op_type in op_block_list) or (node.name in node_block_list):
+            insert_cast32_before_node(graph, node, value_info_block_list)
+            insert_cast16_after_node(graph, node, value_info_block_list)
+    return value_info_block_list
+
+def insert_cast32_before_node(graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, value_info_block_list: list):
+    for i in range(len(node.input)):
+        input_name = node.input[i]
+        for value_info in itertools.chain(graph.value_info, graph.input):
+            if input_name == value_info.name:
+                if value_info.type.tensor_type.elem_type != onnx_proto.TensorProto.FLOAT16:
+                    break
+                new_value_info = graph.value_info.add()
+                new_value_info.CopyFrom(value_info)
+                cast_output_name = node.name + "_input_cast_" + str(i)
+                new_value_info.name = cast_output_name
+                new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT
+                cast_node_name = node.name + "_input_cast" + str(i)
+                add_cast_node(graph, [input_name], [cast_output_name], cast_node_name, onnx_proto.TensorProto.FLOAT)
+                node.input[i] = cast_output_name
+                value_info_block_list.add(new_value_info.name)
+                break
+
+def insert_cast16_after_node(graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, value_info_block_list: list):
+    for i in range(len(node.output)):
+        output_name = node.output[i]
+        for value_info in itertools.chain(graph.value_info, graph.output):
+            if output_name == value_info.name:
+                if value_info.type.tensor_type.elem_type != onnx_proto.TensorProto.FLOAT:
+                    break
+                new_value_info = graph.value_info.add()
+                new_value_info.CopyFrom(value_info)
+                cast_input_name = node.name + "_output_cast_" + str(i)
+                new_value_info.name = cast_input_name
+                new_value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
+                cast_node_name = node.name + "_output_cast" + str(i)
+                add_cast_node(graph, [cast_input_name], [output_name], cast_node_name, onnx_proto.TensorProto.FLOAT16)
+                node.output[i] = cast_input_name
+                value_info_block_list.add(new_value_info.name)
+                break
+
 def process_tensor_in_node(graph: onnx_proto.GraphProto, op_block_list: list, node_block_list: list, min_positive_val, max_finite_val):
     for node in graph.node:
         if node.op_type in op_block_list or node.name in node_block_list:
             continue
         for attr in node.attribute:
-            # 一个 tensor
-            # attr.t = convert_tensor_float_to_float16(attr.t, min_positive_val, max_finite_val)
-            attr.t.CopyFrom(convert_tensor_float_to_float16(attr.t, min_positive_val, max_finite_val))
-            # 多个 tensor
+            # one tensor
+            if attr.t.data_type == onnx_proto.TensorProto.FLOAT:
+                attr.t.CopyFrom(convert_tensor_float_to_float16(attr.t, min_positive_val, max_finite_val))
+            # list of tensor
             for t in attr.tensors:
-                t.CopyFrom(convert_tensor_float_to_float16(t, min_positive_val, max_finite_val))
+                if t.data_type == onnx_proto.TensorProto.FLOAT:
+                    t.CopyFrom(convert_tensor_float_to_float16(t, min_positive_val, max_finite_val))
                 
 
 def process_value_info(graph: onnx_proto.GraphProto, value_info_block_list: list):
