@@ -11,7 +11,6 @@ from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.optimizer import optimize_onnx_model
 from onnxconverter_common.float16 import convert_float_to_float16, remove_identity_node_from_model
-from onnxconverter_common.float16 import convert_float_to_float16_old
 from onnxconverter_common.float16 import convert_np_to_float16
 
 
