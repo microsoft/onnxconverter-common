@@ -10,7 +10,7 @@ from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
 from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
 from onnxconverter_common.optimizer import optimize_onnx_model
-from onnxconverter_common.float16 import convert_float_to_float16
+from onnxconverter_common.float16 import convert_float_to_float16, remove_identity_node_from_model
 from onnxconverter_common.float16 import convert_np_to_float16
 
 
@@ -36,18 +36,24 @@ class ONNXFloat16Test(unittest.TestCase):
             b = ox.constant(value=wm)
             a = ox.transpose(x, perm=[0, 1, 3, 2])
             c = ox.transpose(b, perm=[1, 0])
-            return ox.matmul([a, c])
+            d = ox.matmul([a, c])
+            return ox.min(d)
 
         m1 = np.array([[2, 3], [4, 5], [6, 7]]).astype(np.float32).reshape([1, 1, 6, 1])
         expected = transpose_n_matmul(m1)
         model = transpose_n_matmul.to_model()
-        f16model = convert_float_to_float16(copy.deepcopy(model))
+        # This is optional, is a new feature test case
+        model = remove_identity_node_from_model(model)
+        actual = _ort_inference(model, {'x': m1})
+        self.assertTrue(np.allclose(expected, actual))
+
+        f16model = convert_float_to_float16(copy.deepcopy(model), keep_io_types=False)
         actual = _ort_inference(f16model, {'x': m1.astype(np.float16)})
         self.assertTrue(np.allclose(expected, actual))
 
         f16model2 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
-        actual2 = _ort_inference(f16model2, {'x': m1})
-        self.assertTrue(np.allclose(expected, actual2))
+        actual = _ort_inference(f16model2, {'x': m1})
+        self.assertTrue(np.allclose(expected, actual))
 
     def test_float16_with_loop(self):
         @onnx_function(outputs=['y1', 'y2'],
@@ -79,15 +85,15 @@ class ONNXFloat16Test(unittest.TestCase):
         expected_res = loop_test(m1)
 
         model = loop_test.to_model()
-        f16model = convert_float_to_float16(copy.deepcopy(model))
-        actual_res = _ort_inference(f16model, {'data': m1.astype(np.float16)})
-        for expected, actual in zip(expected_res, actual_res):
+        f16model = convert_float_to_float16(copy.deepcopy(model), keep_io_types=False)
+        actual = _ort_inference(f16model, {'data': m1.astype(np.float16)})
+        for expected, actual in zip(expected_res, actual):
             self.assertTrue(np.allclose(expected, actual))
             self.assertTrue(actual.dtype == np.float16)
 
-        f16model2 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
-        actual_res2 = _ort_inference(f16model2, {'data': m1})
-        for expected, actual2 in zip(expected_res, actual_res2):
+        f16model = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
+        actual = _ort_inference(f16model, {'data': m1})
+        for expected, actual2 in zip(expected_res, actual):
             self.assertTrue(np.allclose(expected, actual2))
             self.assertTrue(actual2.dtype == np.float32)
 
@@ -100,8 +106,12 @@ class ONNXFloat16Test(unittest.TestCase):
         input_x = np.random.rand(1, 3, 32, 32).astype(np.float32)
         output_32 = _ort_inference(onnx_model32, {'modelInput': input_x})
 
-        onnx_model16 = convert_float_to_float16(onnx_model32)
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
         output_16 = _ort_inference(onnx_model16, {'modelInput': input_x.astype(np.float16)})
+        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
+
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
+        output_16 = _ort_inference(onnx_model16, {'modelInput': input_x})
         self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
     def test_convert_to_float16_with_truncated(self):
@@ -120,9 +130,14 @@ class ONNXFloat16Test(unittest.TestCase):
         output_32 = _ort_inference(onnx_model32, {"x":x, "y":y})
 
         onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
-        output_16 = _ort_inference(onnx_model16, {"x":x, "y":y})
-        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
+        actual = _ort_inference(onnx_model16, {"x":x, "y":y})
+        self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
+        self.assertTrue(actual[0].dtype == np.float32)
 
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
+        actual = _ort_inference(onnx_model16, {"x": x.astype(np.float16), "y": y.astype(np.float16)})
+        self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
+        self.assertTrue(actual[0].dtype == np.float16)
 
 
 if __name__ == '__main__':

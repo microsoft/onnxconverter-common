@@ -68,7 +68,7 @@ def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, 
     def run_attempt(node_block_list, return_model=False):
         print(node_block_list)
         model = float16.convert_float_to_float16(copy.deepcopy(model0), node_block_list=node_block_list,
-                                                 keep_io_types=keep_io_types, disable_shape_infer=True)
+                                                 keep_io_types=keep_io_types, disable_shape_infer=False)
         res1 = get_tensor_values_using_ort(model, feed_dict)
         if return_model:
             return validate(res0, res1), model
@@ -129,7 +129,7 @@ def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_optio
         # Below code is for debug only, keep it for next time use
         # sess_options = ort.SessionOptions()
         # sess_options.optimized_model_filepath = "d:/optimized_model.onnx"
-        sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
+        sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CPUExecutionProvider'])
         return sess.run(None, input_feed)
     original_outputs = list(model.graph.output)
     while len(model.graph.output) > 0:
@@ -137,7 +137,8 @@ def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_optio
     for n in output_names:
         out = model.graph.output.add()
         out.name = n
-    sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CUDAExecutionProvider'])
+    # if set to 'CUDAExecutionProvider', will be failed, need further investigation
+    sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=['CPUExecutionProvider'])
     try:
         return sess.run(output_names, input_feed)
     finally:
