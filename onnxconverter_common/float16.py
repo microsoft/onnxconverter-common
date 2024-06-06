@@ -323,11 +323,11 @@ def get_next_level_graph(graph: onnx_proto.GraphProto, op_block_list: list, node
         if node.op_type in op_block_list or node.name in node_block_list:
             continue
         for attr in node.attribute:
-            # Check if exists sub-graph
+            # Check if sub-graph exist
             if len(attr.g.node) > 0:  # single sub-graph
                 sub_graph_list.append(attr.g) 
             for g in attr.graphs:
-                if len(g.node) > 0:  # multiple sub-graph
+                if len(g.node) > 0:  # multiple sub-graphs
                     sub_graph_list.append(g)
     return sub_graph_list
 
@@ -351,7 +351,7 @@ def find_upstream_node_by_output_name(graph: onnx_proto.GraphProto, output_name:
         if output_name in node.output:
             nodes.append(node)
     assert len(nodes) <= 1  # Suppose there is less than one node found
-    return nodes  # Only return the first node instead of the list object
+    return nodes
 
 
 # Find the node that has the specified input name
