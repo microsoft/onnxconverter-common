@@ -85,15 +85,15 @@ class ONNXFloat16Test(unittest.TestCase):
         expected_res = loop_test(m1)
 
         model = loop_test.to_model()
-        f16model1 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=False)
-        actual_res = _ort_inference(f16model1, {'data': m1.astype(np.float16)})
-        for expected, actual in zip(expected_res, actual_res):
+        f16model = convert_float_to_float16(copy.deepcopy(model), keep_io_types=False)
+        actual = _ort_inference(f16model, {'data': m1.astype(np.float16)})
+        for expected, actual in zip(expected_res, actual):
             self.assertTrue(np.allclose(expected, actual))
             self.assertTrue(actual.dtype == np.float16)
 
-        f16model2 = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
-        actual_res2 = _ort_inference(f16model2, {'data': m1})
-        for expected, actual2 in zip(expected_res, actual_res2):
+        f16model = convert_float_to_float16(copy.deepcopy(model), keep_io_types=True)
+        actual = _ort_inference(f16model, {'data': m1})
+        for expected, actual2 in zip(expected_res, actual):
             self.assertTrue(np.allclose(expected, actual2))
             self.assertTrue(actual2.dtype == np.float32)
 
@@ -106,13 +106,13 @@ class ONNXFloat16Test(unittest.TestCase):
         input_x = np.random.rand(1, 3, 32, 32).astype(np.float32)
         output_32 = _ort_inference(onnx_model32, {'modelInput': input_x})
 
-        onnx_model16_1 = convert_float_to_float16(onnx_model32, keep_io_types=False)
-        output_16_1 = _ort_inference(onnx_model16_1, {'modelInput': input_x.astype(np.float16)})
-        self.assertTrue(np.allclose(output_16_1, output_32, atol=1e-2))
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
+        output_16 = _ort_inference(onnx_model16, {'modelInput': input_x.astype(np.float16)})
+        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
-        onnx_model16_2 = convert_float_to_float16(onnx_model32, keep_io_types=True)
-        output_16_2 = _ort_inference(onnx_model16_2, {'modelInput': input_x})
-        self.assertTrue(np.allclose(output_16_2, output_32, atol=1e-2))
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
+        output_16 = _ort_inference(onnx_model16, {'modelInput': input_x})
+        self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
     def test_convert_to_float16_with_truncated(self):
         np_array = np.array([1e-10, -2.0, 15, -1e-9, 65536.1, -100000])
@@ -129,13 +129,13 @@ class ONNXFloat16Test(unittest.TestCase):
         y = np.array([2.0], dtype=np.float32)
         output_32 = _ort_inference(onnx_model32, {"x":x, "y":y})
 
-        onnx_model16_1 = convert_float_to_float16(onnx_model32, keep_io_types=True)
-        actual = _ort_inference(onnx_model16_1, {"x":x, "y":y})
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
+        actual = _ort_inference(onnx_model16, {"x":x, "y":y})
         self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
         self.assertTrue(actual[0].dtype == np.float32)
 
-        onnx_model16_2 = convert_float_to_float16(onnx_model32, keep_io_types=False)
-        actual = _ort_inference(onnx_model16_2, {"x": x.astype(np.float16), "y": y.astype(np.float16)})
+        onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
+        actual = _ort_inference(onnx_model16, {"x": x.astype(np.float16), "y": y.astype(np.float16)})
         self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
         self.assertTrue(actual[0].dtype == np.float16)
 
