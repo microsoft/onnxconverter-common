@@ -127,12 +127,14 @@ def initial_checking(model, disable_shape_infer):
     if func_infer_shape is not None:
         model = func_infer_shape(model)
 
-    return model, func_infer_shape
+    is_fp16_ready_flag = check_if_fp16_ready(model.graph)
+
+    return model, func_infer_shape, is_fp16_ready_flag
 
 # new implementation by Xiaowu to fix a lot of bug due to ort changed
 def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                              keep_io_types=False, disable_shape_infer=False,
-                             op_block_list=None, node_block_list=None):
+                             op_block_list=None, node_block_list=None, check_fp16_ready=True):
 
     # create blocklists
     if op_block_list is None:
@@ -144,7 +146,10 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
 
     global_input_name_dict = {}  # key: input name, value: new output name after Cast node
     # basic checking, including shape inference
-    model, func_infer_shape = initial_checking(model, disable_shape_infer)
+    model, func_infer_shape, is_fp16_ready_flag = initial_checking(model, disable_shape_infer)
+    if is_fp16_ready_flag and check_fp16_ready:
+        raise ValueError("The model is already converted to float16, if convert again, the model might be wrong. \n If you are sure to convert again, please set check_fp16_ready=False.")
+        
     graph_stack = [model.graph]
     
     is_top_level = True
@@ -165,13 +170,6 @@ def convert_float_to_float16(model, min_positive_val=1e-7, max_finite_val=1e4,
                 process_node_input_output(curr_graph, global_input_name_dict)
             is_top_level = False  # Going to process sub-graph      
         graph_stack = next_level
-
-    # infor_shape again to fill the shape and size for the new node and edge
-    # so edge info can be shown in Netron
-    if func_infer_shape is not None:
-        # infer_shape will change the memory address of the components in the model
-        # so don't do things depending on the memory address or object reference
-        model = func_infer_shape(model)
 
     sort_topology(model.graph)
     remove_unnecessary_cast_node(model.graph)
@@ -575,3 +573,33 @@ def remove_unnecessary_cast_node(graph_proto: onnx_proto.GraphProto):
     for cast_node_pair in remove_candidate:
         graph_proto.node.remove(cast_node_pair[0])
         graph_proto.node.remove(cast_node_pair[1])
+
+
+# Check if the model is already converted to float16
+def check_if_fp16_ready(graph_proto):
+    # Check graph input and ouput
+    is_value_info_fp16 = False
+    for value_info in itertools.chain(graph_proto.output, graph_proto.input, graph_proto.value_info):
+        if value_info.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT16:
+            is_value_info_fp16 = True
+            break
+    
+    # Check initializer
+    is_initializer_fp16 = False
+    for initializer in graph_proto.initializer:
+        if initializer.data_type == onnx_proto.TensorProto.FLOAT16:
+            is_initializer_fp16 = True
+            break
+    
+    # Check cast node
+    has_cast_node_fp16 = False
+    for node in graph_proto.node:
+        if node.op_type == 'Cast' and node.attribute[0].i == FLOAT16:
+            has_cast_node_fp16 = True
+            break
+
+    # Any of above flags is True, return True  
+    if is_value_info_fp16 or is_initializer_fp16 or has_cast_node_fp16:
+        return True  # already converted to float16
+    else:
+        return False  # not converted to float16 yet
