@@ -148,7 +148,7 @@ def convert_value_info(val_info):
         kwargs["doc_string"].doc_string
 
     if is_sequence_type:
-        return helper_traced.make_sequence_value_info(name, elem_type, **kwargs)
+        return helper_traced.make_tensor_sequence_value_info(name, elem_type, **kwargs)
     else:
         return helper_traced.make_tensor_value_info(name, elem_type, **kwargs)
 
@@ -177,7 +177,7 @@ def convert_tensor(tensor):
     if tensor.data_location == TensorProto.EXTERNAL:
         return convert_external_tensor(tensor)
     np_data = numpy_helper.to_array(tensor)
-    if np.product(np_data.shape) <= 10:
+    if np.prod(np_data.shape) <= 10:
         return numpy_helper_traced.from_array(np_data, name=tensor.name)
     dtype = np_data.dtype
     if dtype == object:
