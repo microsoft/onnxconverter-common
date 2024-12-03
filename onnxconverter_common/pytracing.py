@@ -22,8 +22,8 @@ class TracingObject:
     Used by onnx2py to mock a module like numpy or onnx.helper and record calls on that module
     Ex:
         np = TracingObject("np")
-        x = np.array(np.product([1, 2, 3]), np.int32)
-        assert repr(x) == "np.array(np.product([1, 2, 3]), np.int32)"
+        x = np.array(np.prod([1, 2, 3]), np.int32)
+        assert repr(x) == "np.array(np.prod([1, 2, 3]), np.int32)"
     """
     def __init__(self, trace, py_obj=NoPyObjException):
         self._trace = trace
