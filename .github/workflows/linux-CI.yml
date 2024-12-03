@@ -21,11 +21,11 @@ jobs:
         python-version: ["3.8", "3.9", "3.10"]
         include: 
           - python-version: "3.8"
-            onnx-version: 1.16
+            onnx-version: 1.17
           - python-version: "3.9"
-            onnx-version: 1.16
+            onnx-version: 1.17
           - python-version: "3.10"
-            onnx-version: 1.16
+            onnx-version: 1.17
     
           
     steps:
