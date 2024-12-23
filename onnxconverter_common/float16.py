@@ -276,7 +276,8 @@ def insert_cast16_after_node(graph: onnx_proto.GraphProto, node: onnx_proto.Node
 def process_tensor_in_node(graph: onnx_proto.GraphProto, op_block_list: list, node_block_list: list, min_positive_val, max_finite_val):
     value_info_block_list = set()  # This is for later use, not in this step
     for node in graph.node:
-        if (node.op_type in op_block_list) or (node.name in node_block_list):
+        # NOTE: "Cast" operation cannot change its output type because it is strongly typed.
+        if (node.op_type in op_block_list) or (node.name in node_block_list) or (node.op_type == "Cast"):
             # Only need to block the output value_info changing
             for output_name in node.output:
                 value_info_block_list.add(output_name)
