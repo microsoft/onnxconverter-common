@@ -4,6 +4,8 @@
 ###########################################################################
 
 import itertools
+import uuid
+import warnings
 import numpy as np
 import onnx
 import packaging.version as pv
@@ -239,15 +241,15 @@ def process_node_in_block_list(graph: onnx_proto.GraphProto, global_input_name_d
 
 # Todo: global_input_name_dict still not fill value
 def insert_cast32_before_node(graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, global_input_name_dict):
-    for i in range(len(node.input)):
+    for i, input_name in enumerate(node.input):
         input_name = node.input[i]
         for value_info in itertools.chain(graph.value_info, graph.input):
             if input_name == value_info.name:
                 if value_info.type.tensor_type.elem_type != onnx_proto.TensorProto.FLOAT16:
                     break
-                cast_output_name = node.name + "_input_cast_" + str(i)
+                cast_node_name = f"onnxconverter_inserted_cast_{str(uuid.uuid4())}"
+                cast_output_name = f"{cast_node_name}_output"
                 add_new_value_info(graph, value_info, cast_output_name, onnx_proto.TensorProto.FLOAT)
-                cast_node_name = node.name + "_input_cast" + str(i)
                 add_cast_node(graph, [input_name], [cast_output_name], cast_node_name, onnx_proto.TensorProto.FLOAT)
                 node.input[i] = cast_output_name
                 break
@@ -255,16 +257,16 @@ def insert_cast32_before_node(graph: onnx_proto.GraphProto, node: onnx_proto.Nod
 
 # Todo: global_input_name_dict still not fill value
 def insert_cast16_after_node(graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, global_input_name_dict):
-    for i in range(len(node.output)):
+    for i, output_name in enumerate(node.output):
         output_name = node.output[i]
         for value_info in itertools.chain(graph.value_info, graph.output):
             if output_name == value_info.name:
                 if value_info.type.tensor_type.elem_type != onnx_proto.TensorProto.FLOAT:
                     break
-                cast_input_name = node.name + "_output_cast_" + str(i)
+                cast_node_name = f"onnxconverter_inserted_cast_{str(uuid.uuid4())}"
+                cast_input_name = f"{cast_node_name}_input"
                 add_new_value_info(graph, value_info, cast_input_name, onnx_proto.TensorProto.FLOAT)
                 value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
-                cast_node_name = node.name + "_output_cast" + str(i)
                 add_cast_node(graph, [cast_input_name], [output_name], cast_node_name, onnx_proto.TensorProto.FLOAT16)
                 node.output[i] = cast_input_name
                 break
