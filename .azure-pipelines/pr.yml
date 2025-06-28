@@ -22,4 +22,4 @@ extends:
     stages:
     - stage: Stage
       jobs:
-      - template: main-template.yml@self
+      - template: .azure-pipelines/main-template.yml@self
