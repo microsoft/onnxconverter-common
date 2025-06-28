@@ -22,4 +22,4 @@ extends:
     stages:
     - stage: Stage
       jobs:
-      - template: self@main-template.yml
+      - template: main-template.yml@self
