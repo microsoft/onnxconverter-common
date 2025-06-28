@@ -4,8 +4,10 @@
 ###############################################################################
 
 import warnings
-from .case_insensitive_dict import CaseInsensitiveDict
+
 from onnx import onnx_pb as onnx_proto
+
+from .case_insensitive_dict import CaseInsensitiveDict
 
 KNOWN_METADATA_PROPS = CaseInsensitiveDict(
     {
@@ -34,11 +36,7 @@ def _validate_metadata(metadata_props):
     for key, value in metadata_props.items():
         valid_values = KNOWN_METADATA_PROPS.get(key)
         if valid_values and value.lower() not in valid_values:
-            warnings.warn(
-                "Key {} has invalid value {}. Valid values are {}".format(
-                    key, value, valid_values
-                )
-            )
+            warnings.warn(f"Key {key} has invalid value {value}. Valid values are {valid_values}")
 
 
 def add_metadata_props(onnx_model, metadata_props, target_opset):
@@ -55,26 +53,18 @@ def add_metadata_props(onnx_model, metadata_props, target_opset):
     :param target_opset: Target ONNX opset
     """
     if target_opset < 7:
-        warnings.warn(
-            "Metadata properties are not supported in targeted opset - %d"
-            % target_opset
-        )
+        warnings.warn("Metadata properties are not supported in targeted opset - %d" % target_opset)
         return
     _validate_metadata(metadata_props)
-    new_metadata = CaseInsensitiveDict(
-        {x.key: x.value for x in onnx_model.metadata_props}
-    )
+    new_metadata = CaseInsensitiveDict({x.key: x.value for x in onnx_model.metadata_props})
     new_metadata.update(metadata_props)
     del onnx_model.metadata_props[:]
     onnx_model.metadata_props.extend(
-        onnx_proto.StringStringEntryProto(key=key, value=value)
-        for key, value in metadata_props.items()
+        onnx_proto.StringStringEntryProto(key=key, value=value) for key, value in metadata_props.items()
     )
 
 
-def set_denotation(
-    onnx_model, input_name, denotation, target_opset, dimension_denotation=None
-):
+def set_denotation(onnx_model, input_name, denotation, target_opset, dimension_denotation=None):
     """
     Set input type denotation and dimension denotation.
 
@@ -96,9 +86,7 @@ def set_denotation(
     (example: `['DATA_BATCH', 'DATA_CHANNEL', 'DATA_FEATURE', 'DATA_FEATURE']`)
     """
     if target_opset < 7:
-        warnings.warn(
-            "Denotation is not supported in targeted opset - %d" % target_opset
-        )
+        warnings.warn("Denotation is not supported in targeted opset - %d" % target_opset)
         return
     for graph_input in onnx_model.graph.input:
         if graph_input.name == input_name:
@@ -107,13 +95,9 @@ def set_denotation(
                 dimensions = graph_input.type.tensor_type.shape.dim
                 if len(dimension_denotation) != len(dimensions):
                     raise RuntimeError(
-                        'Wrong number of dimensions: input "{}" has {} dimensions'.format(
-                            input_name, len(dimensions)
-                        )
+                        f'Wrong number of dimensions: input "{input_name}" has {len(dimensions)} dimensions'
                     )
-                for dimension, channel_denotation in zip(
-                    dimensions, dimension_denotation
-                ):
+                for dimension, channel_denotation in zip(dimensions, dimension_denotation):
                     dimension.denotation = channel_denotation
             return onnx_model
-    raise RuntimeError('Input "{}" not found'.format(input_name))
+    raise RuntimeError(f'Input "{input_name}" not found')

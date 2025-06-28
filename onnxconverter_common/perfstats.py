@@ -39,11 +39,11 @@ Get a new graph with all inserted ops with:
     sess_options.optimized_model_filepath = "optimized_graph.onnx"
 """
 
-import json
 import argparse
-import shutil
 import csv
-from collections import namedtuple, defaultdict
+import json
+import shutil
+from collections import defaultdict, namedtuple
 
 _HELP_TEXT = """
 Usage Examples:
@@ -84,11 +84,7 @@ def compute_step_entries(raw_entries):
     step_entries = []
     for entry in raw_entries:
         percent = entry.duration * 100 / total_duration
-        step_entries.append(
-            StepEntry(
-                entry.name, entry.duration, entry.op_type, entry.provider, percent
-            )
-        )
+        step_entries.append(StepEntry(entry.name, entry.duration, entry.op_type, entry.provider, percent))
     step_entries.sort(key=lambda x: -x.duration)
     return step_entries
 
@@ -104,9 +100,7 @@ def compute_node_entries(raw_entries):
         percent = duration * 100 / total_duration
         op_type = entries[0].op_type
         provider = entries[0].provider
-        node_entries.append(
-            NodeEntry(name, duration, op_type, provider, percent, len(entries))
-        )
+        node_entries.append(NodeEntry(name, duration, op_type, provider, percent, len(entries)))
     node_entries.sort(key=lambda x: -x.duration)
     return node_entries
 
@@ -126,7 +120,7 @@ def compute_op_type_entries(raw_entries):
 
 
 def read_raw_entries(profile_path):
-    with open(profile_path, "r") as f:
+    with open(profile_path) as f:
         data = json.load(f)
     if isinstance(data, dict):
         data = data["traceEvents"]
@@ -194,15 +188,9 @@ def get_args():
         help="times for each execution step (sorted)",
     )
     parser.add_argument("-r", "--raw", action="store_true", help="unsorted raw data")
-    parser.add_argument(
-        "-d", "--data-only", action="store_true", help="don't include headers"
-    )
-    parser.add_argument(
-        "-q", "--query", help="only include entries satisfying the provided query"
-    )
-    parser.add_argument(
-        "-l", "--limit", type=int, default=-1, help="only show first n results"
-    )
+    parser.add_argument("-d", "--data-only", action="store_true", help="don't include headers")
+    parser.add_argument("-q", "--query", help="only include entries satisfying the provided query")
+    parser.add_argument("-l", "--limit", type=int, default=-1, help="only show first n results")
     parser.add_argument("-o", "--output", help="output to csv file")
     args = parser.parse_args()
     if sum(bool(a) for a in [args.type, args.node, args.step, args.raw]) != 1:
@@ -231,11 +219,7 @@ class QueryClause:
         self.patterns = set(clause_string.split(","))
 
     def match(self, entry):
-        if (
-            isinstance(entry, (NodeEntry, RawEntry))
-            and self.match_name
-            and entry.name in self.patterns
-        ):
+        if isinstance(entry, (NodeEntry, RawEntry)) and self.match_name and entry.name in self.patterns:
             return self.rule_type
         if self.match_type and entry.op_type in self.patterns:
             return self.rule_type
@@ -257,9 +241,7 @@ class TablePrinter:
         self.col_widths = col_widths
         self.unknown_cnt = col_widths.count(None)
         self.padding = padding
-        self.fixed_sum = sum(w for w in col_widths if w is not None) + self.padding * (
-            len(col_widths) - 1
-        )
+        self.fixed_sum = sum(w for w in col_widths if w is not None) + self.padding * (len(col_widths) - 1)
         self.min_width = min_width
 
     def get_col_widths(self, total_width):
@@ -298,9 +280,7 @@ class TablePrinter:
     def print(self, entries):
         total_width = shutil.get_terminal_size((80, 20)).columns
         col_widths = self.get_col_widths(total_width)
-        line = (" " * self.padding).join(
-            self.format(e, w) for e, w in zip(entries, col_widths)
-        )
+        line = (" " * self.padding).join(self.format(e, w) for e, w in zip(entries, col_widths))
         print(line)
 
 
@@ -337,9 +317,7 @@ def main():
 
     if args.output:
         with open(args.output, mode="w", newline="") as f:
-            writer = csv.writer(
-                f, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL
-            )
+            writer = csv.writer(f, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
             if not args.data_only:
                 writer.writerow(headers)
             for entry in entries:

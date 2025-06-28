@@ -2,6 +2,7 @@ import unittest
 
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
+
 from onnxconverter_common.decast import decast
 
 
@@ -14,12 +15,8 @@ class DecastTestCase(unittest.TestCase):
         nodes[3:] = [helper.make_node("Cast", ["reduce0"], ["cast1"], to=6)]
         nodes[4:] = [helper.make_node("Identity", ["cast1"], ["output0"])]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test_graph", [input0], [output0])
         model = helper.make_model(graph)

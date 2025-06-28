@@ -41,19 +41,12 @@ jobs:
 
   - script: |
       python -m pip install --upgrade pip
-      pip install protobuf
-      pip install numpy
-      pip install -r requirements.txt
-      # install ORT dependencies
       pip install onnxruntime
       # replace with ort-nightly
       pip uninstall -y onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install $(ONNX_PATH)
-      pip install protobuf>=3.20.2
-      pip install pytest
-      pip install onnxmltools
-      pip install -e .
+      pip install -e .[test,lint]
     displayName: 'Install dependencies'
 
   - script: |
@@ -104,17 +97,12 @@ jobs:
   - script: |
       python -m pip install --upgrade pip numpy
       echo Test numpy installation... && python -c "import numpy"
-      pip install -r requirements.txt
-      # install ORT dependencies
       pip install onnxruntime
       # replace with ort-nightly
       pip uninstall -y onnxruntime
       pip install --index-url https://test.pypi.org/simple/ ort-nightly
       pip install %ONNX_PATH%
-      pip install protobuf>=3.20.2
-      pip install pytest
-      pip install onnxmltools
-      pip install -e .
+      pip install -e .[test,lint]
     displayName: 'Install dependencies'
 
   - script: |

@@ -4,7 +4,9 @@
 ###############################################################################
 
 import sys
+
 import onnx
+
 from .optimizer import LinkedNode, Solution
 
 
@@ -13,10 +15,7 @@ def remove_cast(lnodes, op_set):
         sln = []
         for n_ in lnodes:
             if n_.op_type in op_set and n_.in_single_path:
-                if (
-                    n_.precedence[0].op_type == "Cast"
-                    and n_.successor[0].op_type == "Cast"
-                ):
+                if n_.precedence[0].op_type == "Cast" and n_.successor[0].op_type == "Cast":
                     sln.append(Solution(None, n_.precedence[0], n_.precedence[0], n_))
                     sln.append(Solution(n_, n_.successor[0], n_.successor[0], None))
                     break
@@ -57,7 +56,7 @@ def main():
         print("decast.py model_in  model_out <op1, ...>")
         return
 
-    input = sys.argv[1]
+    input_path = sys.argv[1]
     output = sys.argv[2]
     op_list = sys.argv[3:]
 

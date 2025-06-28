@@ -26,16 +26,16 @@ Example usage:
 
 """
 
-import onnx
-import numpy as np
-from onnxconverter_common import float16
-from onnx import helper, mapping
 import copy
 
+import numpy as np
+import onnx
+from onnx import helper, mapping
 
-def auto_convert_mixed_precision(
-    model, feed_dict, validate_fn=None, rtol=None, atol=None, keep_io_types=False
-):
+from onnxconverter_common import float16
+
+
+def auto_convert_mixed_precision(model, feed_dict, validate_fn=None, rtol=None, atol=None, keep_io_types=False):
     """
     Automatically converts a model to mixed precision, excluding the minimum number of nodes required to
     ensure valudate_fn returns True and/or results are equal according to rtol/atol
@@ -62,15 +62,10 @@ def auto_convert_mixed_precision(
     model0 = add_missing_dtypes_using_ort(model0, feed_dict)
     res0 = get_tensor_values_using_ort(model0, feed_dict)
     if not keep_io_types:
-        feed_dict = {
-            k: v.astype(np.float16) if v.dtype == np.float32 else v
-            for k, v in feed_dict.items()
-        }
+        feed_dict = {k: v.astype(np.float16) if v.dtype == np.float32 else v for k, v in feed_dict.items()}
     if not validate(res0, res0):
         raise ValueError("validation failed for original fp32 model")
-    node_names = [
-        n.name for n in model0.graph.node if n.op_type not in ["Loop", "If", "Scan"]
-    ]
+    node_names = [n.name for n in model0.graph.node if n.op_type not in ["Loop", "If", "Scan"]]
 
     def run_attempt(node_block_list, return_model=False):
         print(node_block_list)
@@ -94,10 +89,7 @@ def auto_convert_mixed_precision(
         seg = segments.get_largest()
         nodes_to_try = segments.get_nodes(seg)
         i += 1
-        print(
-            "Running attempt %d excluding conversion of %s nodes"
-            % (i, len(nodes_to_try))
-        )
+        print("Running attempt %d excluding conversion of %s nodes" % (i, len(nodes_to_try)))
         if run_attempt(nodes_to_try):
             seg.good = True
             print("Attempt succeeded.")
@@ -118,9 +110,7 @@ def auto_convert_mixed_precision(
 
 def add_missing_dtypes_using_ort(model, feed_dict, outputs_per_iter=100):
     outputs = [out for node in model.graph.node for out in node.output]
-    graph_io = [inp.name for inp in model.graph.input] + [
-        out.name for out in model.graph.output
-    ]
+    graph_io = [inp.name for inp in model.graph.input] + [out.name for out in model.graph.output]
     value_info_names = [info.name for info in model.graph.value_info]
     skip = set(graph_io + value_info_names)
     outputs = [out for out in outputs if out not in skip]
@@ -134,15 +124,11 @@ def add_missing_dtypes_using_ort(model, feed_dict, outputs_per_iter=100):
             out_to_dtype[out] = mapping.NP_TYPE_TO_TENSOR_TYPE[val.dtype]
         i += outputs_per_iter
     for out, dtype in out_to_dtype.items():
-        model.graph.value_info.append(
-            helper.make_tensor_value_info(out, dtype, shape=None)
-        )
+        model.graph.value_info.append(helper.make_tensor_value_info(out, dtype, shape=None))
     return model
 
 
-def get_tensor_values_using_ort(
-    model, input_feed, output_names=None, sess_options=None
-):
+def get_tensor_values_using_ort(model, input_feed, output_names=None, sess_options=None):
     # delayed import to avoid taking a strong dependancy on onnxruntime
     import onnxruntime as ort
 
@@ -150,9 +136,7 @@ def get_tensor_values_using_ort(
         # Below code is for debug only, keep it for next time use
         # sess_options = ort.SessionOptions()
         # sess_options.optimized_model_filepath = "d:/optimized_model.onnx"
-        sess = ort.InferenceSession(
-            model.SerializeToString(), sess_options, providers=["CPUExecutionProvider"]
-        )
+        sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=["CPUExecutionProvider"])
         return sess.run(None, input_feed)
     original_outputs = list(model.graph.output)
     while len(model.graph.output) > 0:
@@ -161,9 +145,7 @@ def get_tensor_values_using_ort(
         out = model.graph.output.add()
         out.name = n
     # if set to 'CUDAExecutionProvider', will be failed, need further investigation
-    sess = ort.InferenceSession(
-        model.SerializeToString(), sess_options, providers=["CPUExecutionProvider"]
-    )
+    sess = ort.InferenceSession(model.SerializeToString(), sess_options, providers=["CPUExecutionProvider"])
     try:
         return sess.run(output_names, input_feed)
     finally:

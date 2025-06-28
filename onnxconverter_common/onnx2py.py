@@ -12,14 +12,15 @@ Example usage:
 python -m onnxconverter_common.onnx2py my_model.onnx my_model.py
 """
 
-import sys
-import onnx
 import collections
 import inspect
-from collections import OrderedDict
-from onnx import helper, numpy_helper, TensorProto, external_data_helper
-import numpy as np
 import os
+import sys
+from collections import OrderedDict
+
+import numpy as np
+import onnx
+from onnx import TensorProto, external_data_helper, helper, numpy_helper
 
 from .pytracing import TracingObject
 
@@ -60,12 +61,8 @@ def make_external_tensor(name, data_type, dims, raw_data=None, **kwargs):
     return tensor
 
 
-def make_node(
-    op_type, inputs, outputs, name=None, doc_string=None, domain=None, **kwargs
-):
-    node = helper.make_node(
-        op_type, inputs, outputs, name, doc_string, domain, **kwargs
-    )
+def make_node(op_type, inputs, outputs, name=None, doc_string=None, domain=None, **kwargs):
+    node = helper.make_node(op_type, inputs, outputs, name, doc_string, domain, **kwargs)
     if doc_string == "":
         node.doc_string = ""
     order_repeated_field(node.attribute, "name", kwargs.keys())
@@ -83,9 +80,7 @@ def make_graph(*args, doc_string=None, **kwargs):
 
 
 clear_field_traced = TracingObject("clear_field", clear_field)
-make_external_tensor_traced = TracingObject(
-    "make_external_tensor", make_external_tensor
-)
+make_external_tensor_traced = TracingObject("make_external_tensor", make_external_tensor)
 make_node_traced = TracingObject("make_node", make_node)
 make_graph_traced = TracingObject("make_graph", make_graph)
 DATA_DIR_TRACED = None
@@ -150,9 +145,7 @@ def convert_value_info(val_info):
     else:
         kwargs["shape"] = None
     if any(d.HasField("denotation") for d in tensor_type.shape.dim):
-        kwargs["shape_denotation"] = [
-            convert_shape_denotation(d) for d in tensor_type.shape.dim
-        ]
+        kwargs["shape_denotation"] = [convert_shape_denotation(d) for d in tensor_type.shape.dim]
 
     if val_info.HasField("doc_string"):
         kwargs["doc_string"].doc_string
@@ -169,9 +162,7 @@ def convert_operatorsetid(opsetid):
         domain = opsetid.domain
         return helper_traced.make_operatorsetid(domain, version)
     else:
-        return clear_field_traced(
-            helper_traced.make_operatorsetid("", version), "domain"
-        )
+        return clear_field_traced(helper_traced.make_operatorsetid("", version), "domain")
 
 
 def convert_external_tensor(tensor):
@@ -181,9 +172,7 @@ def convert_external_tensor(tensor):
     if tensor.external_data:
         for d in tensor.external_data:
             kwargs[d.key] = d.value
-    return make_external_tensor_traced(
-        tensor.name, tensor.data_type, tensor.dims, **kwargs
-    )
+    return make_external_tensor_traced(tensor.name, tensor.data_type, tensor.dims, **kwargs)
 
 
 def convert_tensor(tensor):
@@ -216,9 +205,7 @@ def convert_tensor(tensor):
 def convert_node(node):
     fields = OrderedDict((f[0].name, f[1]) for f in node.ListFields())
     attributes = fields.pop("attribute", [])
-    attrs = OrderedDict(
-        (a.name, convert_field(helper.get_attribute_value(a))) for a in attributes
-    )
+    attrs = OrderedDict((a.name, convert_field(helper.get_attribute_value(a))) for a in attributes)
     fields = OrderedDict((f, convert_field(v)) for f, v in fields.items())
     op_type = fields.pop("op_type")
     if op_type == "Cast" and "to" in attrs:
@@ -234,9 +221,7 @@ def convert_graph(graph):
     name = fields.pop("name")
     inputs = fields.pop("input", [])
     outputs = fields.pop("output", [])
-    return make_graph_traced(
-        name=name, inputs=inputs, outputs=outputs, **fields, nodes=nodes
-    )
+    return make_graph_traced(name=name, inputs=inputs, outputs=outputs, **fields, nodes=nodes)
 
 
 def convert_model(model):
@@ -294,10 +279,7 @@ def convert(model, out_path):
     code += "import sys\n"
     if os.path.exists(const_dir):
         code += "import os\n"
-        code += (
-            "\nDATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), %r)\n"
-            % const_dir_name
-        )
+        code += "\nDATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), %r)\n" % const_dir_name
     if TracingObject.get_cnt(clear_field_traced):
         code += "\n" + inspect.getsource(clear_field)
     code += "\n" + inspect.getsource(order_repeated_field)
@@ -313,12 +295,10 @@ def convert(model, out_path):
         code += "        f.write(model.SerializeToString())\n"
     else:
         code += "    onnx.save(model, out_path)\n"
-    with open(out_path + ".py", "wt", encoding="utf8") as file:
+    with open(out_path + ".py", "w", encoding="utf8") as file:
         file.write(code)
     if needed_types:
-        raise MissingHandlerException(
-            "Missing handler for types: %s" % list(needed_types)
-        )
+        raise MissingHandlerException("Missing handler for types: %s" % list(needed_types))
     return model_trace
 
 
@@ -330,24 +310,18 @@ def main():
     model = onnx.load(in_path, load_external_data=False)
     try:
         model_trace = convert(model, out_path)
-        if (
-            TracingObject.get_py_obj(model_trace).SerializeToString()
-            == model.SerializeToString()
-        ):
+        if TracingObject.get_py_obj(model_trace).SerializeToString() == model.SerializeToString():
             print("\nConversion successful. Converted model is identical.\n")
         else:
             print(
-                "\nWARNING: Conversion succeeded but converted model is not identical. "
-                "Difference might be trivial.\n"
+                "\nWARNING: Conversion succeeded but converted model is not identical. Difference might be trivial.\n"
             )
     except MissingHandlerException as e:
         print("ERROR:", e)
 
     print("Model saved to", out_path)
     print("Run 'python %s output.onnx' to generate ONNX file" % out_path)
-    print(
-        "Import the model with 'from %s import model'" % os.path.basename(out_path[:-3])
-    )
+    print("Import the model with 'from %s import model'" % os.path.basename(out_path[:-3]))
 
 
 if __name__ == "__main__":

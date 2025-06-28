@@ -3,8 +3,9 @@
 # license information.
 ###########################################################################
 
-from collections import OrderedDict
 import math
+from collections import OrderedDict
+
 import numpy as np
 
 
@@ -83,14 +84,10 @@ class TracingObject:
         arg_s += [k + "=" + TracingObject.get_repr(o) for k, o in kwargs.items()]
         trace = self._trace + "(" + ", ".join(arg_s) + ")"
         if len(trace) > 200:
-            trace = (
-                self._trace + "(\n" + "".join(indent(s) + ",\n" for s in arg_s) + ")"
-            )
+            trace = self._trace + "(\n" + "".join(indent(s) + ",\n" for s in arg_s) + ")"
         try:
             arg_o = [TracingObject.get_py_obj(a) for a in args]
-            kwarg_o = OrderedDict(
-                (k, TracingObject.get_py_obj(v)) for k, v in kwargs.items()
-            )
+            kwarg_o = OrderedDict((k, TracingObject.get_py_obj(v)) for k, v in kwargs.items())
             py_obj = TracingObject.get_py_obj(self)(*arg_o, **kwarg_o)
         except NoPyObjException:
             py_obj = NoPyObjException

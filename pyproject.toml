@@ -11,6 +11,13 @@ urls = { "Repository" = "https://github.com/microsoft/onnxconverter-common" }
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools.package-data]
+"onnxconverter_common" = ["**/*.json"]
+
 classifiers = [
  "Development Status :: 5 - Production/Stable",
  "Environment :: Console",
@@ -46,7 +53,7 @@ version = {attr = "onnxconverter_common.__version__"}
 
 [tool.ruff]
 target-version = "py38"
-line-length = 88
+line-length = 120
 src = ["onnxconverter_common"]
 select = ["E", "F", "I", "UP", "B", "A", "C4"]
 

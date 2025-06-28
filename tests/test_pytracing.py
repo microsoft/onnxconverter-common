@@ -1,4 +1,5 @@
 import unittest
+
 import numpy as np
 
 from onnxconverter_common.pytracing import TracingObject

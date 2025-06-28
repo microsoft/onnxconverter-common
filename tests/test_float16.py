@@ -1,20 +1,21 @@
-import unittest
-import os
 import copy
+import os
+import unittest
+
 import numpy as np
 import onnx
-import onnxruntime as _ort
 import onnxmltools
+import onnxruntime as _ort
 import packaging.version as pv
-from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
-from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
-from onnxconverter_common.onnx_ex import get_maximum_opset_supported
-from onnxconverter_common.optimizer import optimize_onnx_model
+
 from onnxconverter_common.float16 import (
     convert_float_to_float16,
+    convert_np_to_float16,
     remove_identity_node_from_model,
 )
-from onnxconverter_common.float16 import convert_np_to_float16
+from onnxconverter_common.onnx_ex import get_maximum_opset_supported
+from onnxconverter_common.onnx_fx import Graph
+from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 
 
 def _ort_inference(mdl, inputs):
@@ -27,24 +28,14 @@ Graph.opset = 9
 onnx_function = Graph.trace
 
 
-@unittest.skipIf(
-    pv.Version(onnx.__version__) <= pv.Version("1.8.0"), "test for ONNX 1.8 and above"
-)
-@unittest.skipIf(
-    get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater"
-)
+@unittest.skipIf(pv.Version(onnx.__version__) <= pv.Version("1.8.0"), "test for ONNX 1.8 and above")
+@unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 class ONNXFloat16Test(unittest.TestCase):
     def test_float16(self):
-        @onnx_function(
-            outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f]
-        )
+        @onnx_function(outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f])
         def transpose_n_matmul(x):
             ox = x.ox  # type: OnnxOperatorBuilderX
-            wm = (
-                np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-                .astype(np.float32)
-                .reshape([2, 6])
-            )
+            wm = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 6])
             b = ox.constant(value=wm)
             a = ox.transpose(x, perm=[0, 1, 3, 2])
             c = ox.transpose(b, perm=[1, 0])
@@ -77,9 +68,7 @@ class ONNXFloat16Test(unittest.TestCase):
             ox = data.ox
             shape = ox.shape(data)
             dim_0 = ox.gather([shape, ox.constant(value=0)], axis=0)
-            dim_1 = ox.gather(
-                [shape, ox.constant(value=np.array([1], dtype=np.int64))], axis=0
-            )
+            dim_1 = ox.gather([shape, ox.constant(value=np.array([1], dtype=np.int64))], axis=0)
             zeros = ox.constant_of_shape(dim_1, value=0.0)
             is_true = ox.constant(value=True)
 
@@ -130,9 +119,7 @@ class ONNXFloat16Test(unittest.TestCase):
         output_32 = _ort_inference(onnx_model32, {"modelInput": input_x})
 
         onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
-        output_16 = _ort_inference(
-            onnx_model16, {"modelInput": input_x.astype(np.float16)}
-        )
+        output_16 = _ort_inference(onnx_model16, {"modelInput": input_x.astype(np.float16)})
         self.assertTrue(np.allclose(output_16, output_32, atol=1e-2))
 
         onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=True)
@@ -163,9 +150,7 @@ class ONNXFloat16Test(unittest.TestCase):
         self.assertTrue(actual[0].dtype == np.float32)
 
         onnx_model16 = convert_float_to_float16(onnx_model32, keep_io_types=False)
-        actual = _ort_inference(
-            onnx_model16, {"x": x.astype(np.float16), "y": y.astype(np.float16)}
-        )
+        actual = _ort_inference(onnx_model16, {"x": x.astype(np.float16), "y": y.astype(np.float16)})
         self.assertTrue(np.allclose(actual, output_32, atol=1e-2))
         self.assertTrue(actual[0].dtype == np.float16)
 

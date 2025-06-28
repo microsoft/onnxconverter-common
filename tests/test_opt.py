@@ -1,11 +1,12 @@
-import os
 import glob
+import os
 import unittest
-import numpy as np
 
+import numpy as np
 import onnx
 from onnx import helper
 from onnx import onnx_pb as onnx_proto
+
 from onnxconverter_common.optimizer import optimize_onnx, optimize_onnx_model
 
 working_path = os.path.abspath(os.path.dirname(__file__))
@@ -43,24 +44,12 @@ class OptimizerTestCase(unittest.TestCase):
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"])]
         nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"])]
         nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"])]
-        nodes[4:] = [
-            helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])
-        ]
-        nodes[5:] = [
-            helper.make_node(
-                "Transpose", ["tranpose0"], ["tranpose1"], perm=(0, 3, 1, 2)
-            )
-        ]
-        nodes[6:] = [
-            helper.make_node("Relu", ["tranpose1"], ["output0"], perm=(0, 3, 1, 2))
-        ]
+        nodes[4:] = [helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])]
+        nodes[5:] = [helper.make_node("Transpose", ["tranpose0"], ["tranpose1"], perm=(0, 3, 1, 2))]
+        nodes[6:] = [helper.make_node("Relu", ["tranpose1"], ["output0"], perm=(0, 3, 1, 2))]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -94,20 +83,12 @@ class OptimizerTestCase(unittest.TestCase):
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"])]
         nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"])]
         nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"])]
-        nodes[4:] = [
-            helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])
-        ]
+        nodes[4:] = [helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])]
         nodes[5:] = [helper.make_node("LeakyRelu", ["tranpose0"], ["tranpose1"])]
-        nodes[6:] = [
-            helper.make_node("Relu", ["tranpose1"], ["output0"], perm=(0, 3, 1, 2))
-        ]
+        nodes[6:] = [helper.make_node("Relu", ["tranpose1"], ["output0"], perm=(0, 3, 1, 2))]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -140,22 +121,12 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Max", ["input1"], ["max0"])]
-        nodes[2:] = [
-            helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])
-        ]
-        nodes[3:] = [
-            helper.make_node(
-                "Transpose", ["tranpose0"], ["add_input1"], perm=(0, 3, 1, 2)
-            )
-        ]
+        nodes[2:] = [helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1])]
+        nodes[3:] = [helper.make_node("Transpose", ["tranpose0"], ["add_input1"], perm=(0, 3, 1, 2))]
         nodes[4:] = [helper.make_node("Add", ["max0", "add_input1"], ["output0"])]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -189,34 +160,16 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"], name="1")]
-        nodes[2:] = [
-            helper.make_node("Identity", ["identity1"], ["identity2"], name="2")
-        ]
-        nodes[3:] = [
-            helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")
-        ]
-        nodes[4:] = [
-            helper.make_node(
-                "Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1], name="4"
-            )
-        ]
+        nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"], name="2")]
+        nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")]
+        nodes[4:] = [helper.make_node("Transpose", ["max0"], ["tranpose0"], perm=[0, 2, 3, 1], name="4")]
         nodes[5:] = [helper.make_node("LeakyRelu", ["tranpose0"], ["leak0"], name="5")]
         nodes[6:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak1"], name="6")]
-        nodes[7:] = [
-            helper.make_node(
-                "Transpose", ["leak1"], ["add_input1"], perm=(0, 3, 1, 2), name="7"
-            )
-        ]
-        nodes[8:] = [
-            helper.make_node("Add", ["leak0", "add_input1"], ["output0"], name="8")
-        ]
+        nodes[7:] = [helper.make_node("Transpose", ["leak1"], ["add_input1"], perm=(0, 3, 1, 2), name="7")]
+        nodes[8:] = [helper.make_node("Add", ["leak0", "add_input1"], ["output0"], name="8")]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -250,41 +203,19 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"], name="1")]
-        nodes[2:] = [
-            helper.make_node("Identity", ["identity1"], ["identity2"], name="2")
-        ]
-        nodes[3:] = [
-            helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")
-        ]
+        nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"], name="2")]
+        nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")]
         nodes[4:] = [helper.make_node("LeakyRelu", ["max0"], ["leak0"], name="4")]
         nodes[5:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak1"], name="5")]
         nodes[6:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak2"], name="6")]
-        nodes[7:] = [
-            helper.make_node(
-                "Transpose", ["leak1"], ["tranpose0"], perm=[0, 2, 3, 1], name="7"
-            )
-        ]
-        nodes[8:] = [
-            helper.make_node(
-                "Transpose", ["leak2"], ["tranpose1"], perm=[0, 2, 3, 1], name="8"
-            )
-        ]
-        nodes[9:] = [
-            helper.make_node("Add", ["tranpose0", "tranpose1"], ["add0"], name="9")
-        ]
-        nodes[10:] = [
-            helper.make_node(
-                "Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="10"
-            )
-        ]
+        nodes[7:] = [helper.make_node("Transpose", ["leak1"], ["tranpose0"], perm=[0, 2, 3, 1], name="7")]
+        nodes[8:] = [helper.make_node("Transpose", ["leak2"], ["tranpose1"], perm=[0, 2, 3, 1], name="8")]
+        nodes[9:] = [helper.make_node("Add", ["tranpose0", "tranpose1"], ["add0"], name="9")]
+        nodes[10:] = [helper.make_node("Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="10")]
         nodes[11:] = [helper.make_node("Conv", ["tranpose2"], ["output0"], name="11")]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -318,32 +249,20 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"], name="1")]
-        nodes[2:] = [
-            helper.make_node("Identity", ["identity1"], ["identity2"], name="2")
-        ]
-        nodes[3:] = [
-            helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")
-        ]
+        nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"], name="2")]
+        nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")]
         nodes[4:] = [helper.make_node("Identity", ["max0"], ["output0"], name="4")]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
-        graph = helper.make_graph(
-            nodes, "test_NextToOutputSolution", [input0], [output0]
-        )
+        graph = helper.make_graph(nodes, "test_NextToOutputSolution", [input0], [output0])
         model = helper.make_model(graph)
         self.assertIsNotNone(model)
 
         new_nodes = optimize_onnx(nodes, inputs=[input0], outputs=[output0])
         new_nodes = [n_ for n_ in new_nodes if not isinstance(n_, tuple)]
-        graph = helper.make_graph(
-            new_nodes, "test_NextToOutputSolution", [input0], [output0]
-        )
+        graph = helper.make_graph(new_nodes, "test_NextToOutputSolution", [input0], [output0])
         model = helper.make_model(graph)
         self.assertEqual(len(new_nodes), 2)
         self.assertIsNotNone(model)
@@ -370,41 +289,19 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"], name="1")]
-        nodes[2:] = [
-            helper.make_node("Identity", ["identity1"], ["identity2"], name="2")
-        ]
-        nodes[3:] = [
-            helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")
-        ]
+        nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"], name="2")]
+        nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")]
         nodes[4:] = [helper.make_node("LeakyRelu", ["max0"], ["leak0"], name="4")]
         nodes[5:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak1"], name="5")]
         nodes[6:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak2"], name="6")]
-        nodes[7:] = [
-            helper.make_node(
-                "Transpose", ["leak1"], ["tranpose0"], perm=[0, 2, 3, 1], name="7"
-            )
-        ]
-        nodes[8:] = [
-            helper.make_node(
-                "Transpose", ["leak2"], ["tranpose1"], perm=[0, 2, 3, 1], name="8"
-            )
-        ]
-        nodes[9:] = [
-            helper.make_node("Add", ["tranpose0", "tranpose1"], ["add0"], name="9")
-        ]
-        nodes[10:] = [
-            helper.make_node(
-                "Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="10"
-            )
-        ]
+        nodes[7:] = [helper.make_node("Transpose", ["leak1"], ["tranpose0"], perm=[0, 2, 3, 1], name="7")]
+        nodes[8:] = [helper.make_node("Transpose", ["leak2"], ["tranpose1"], perm=[0, 2, 3, 1], name="8")]
+        nodes[9:] = [helper.make_node("Add", ["tranpose0", "tranpose1"], ["add0"], name="9")]
+        nodes[10:] = [helper.make_node("Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="10")]
         nodes[11:] = [helper.make_node("Conv", ["tranpose2"], ["output0"], name="11")]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -432,12 +329,8 @@ class OptimizerTestCase(unittest.TestCase):
             )
         ]
         nodes[1:] = [helper.make_node("Identity", ["const1"], ["identity1"], name="1")]
-        nodes[2:] = [
-            helper.make_node("Identity", ["identity1"], ["identity2"], name="2")
-        ]
-        nodes[3:] = [
-            helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")
-        ]
+        nodes[2:] = [helper.make_node("Identity", ["identity1"], ["identity2"], name="2")]
+        nodes[3:] = [helper.make_node("Max", ["input1", "identity2"], ["max0"], name="3")]
         nodes[4:] = [helper.make_node("LeakyRelu", ["max0"], ["leak0"], name="4")]
         nodes[5:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak1"], name="5")]
         nodes[6:] = [helper.make_node("LeakyRelu", ["leak0"], ["leak2"], name="6")]
@@ -447,19 +340,11 @@ class OptimizerTestCase(unittest.TestCase):
         nodes[10:] = [helper.make_node("Cast", ["cast2"], ["cast3"], to=7, name="10")]
         nodes[11:] = [helper.make_node("Cast", ["cast3"], ["cast4"], to=1, name="11")]
         nodes[12:] = [helper.make_node("Add", ["cast1", "cast4"], ["add0"], name="12")]
-        nodes[13:] = [
-            helper.make_node(
-                "Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="13"
-            )
-        ]
+        nodes[13:] = [helper.make_node("Transpose", ["add0"], ["tranpose2"], perm=[0, 3, 1, 2], name="13")]
         nodes[14:] = [helper.make_node("Conv", ["tranpose2"], ["output0"], name="14")]
 
-        input0 = helper.make_tensor_value_info(
-            "input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
-        output0 = helper.make_tensor_value_info(
-            "output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3]
-        )
+        input0 = helper.make_tensor_value_info("input1", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
+        output0 = helper.make_tensor_value_info("output0", onnx_proto.TensorProto.FLOAT, [1, 1, 2, 3])
 
         graph = helper.make_graph(nodes, "test0", [input0], [output0])
         model = helper.make_model(graph)
@@ -488,9 +373,7 @@ class OptimizerTestCase(unittest.TestCase):
             origin_model = onnx.load_model(model_dir)
             opt_model = optimize_onnx_model(origin_model)
             self.assertIsNotNone(opt_model)
-            num_transpose = sum(
-                [1 if n_.op_type == "Transpose" else 0 for n_ in opt_model.graph.node]
-            )
+            num_transpose = sum([1 if n_.op_type == "Transpose" else 0 for n_ in opt_model.graph.node])
             self.assertEqual(num_transpose, num_transpose_list[idx_])
 
 

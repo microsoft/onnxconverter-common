@@ -16,8 +16,7 @@ jobs:
       artifactFeeds: 'Lotus'
   - script: |
       python -m pip install --upgrade pip
-      pip install -r requirements-dev.txt      
-      pip install -e .
+      pip install -e .[test,lint]
     displayName: 'Install dependencies'
 
   - script: |
@@ -35,10 +34,8 @@ jobs:
       testRunTitle: 'Python 3.9'
     condition: succeededOrFailed()
 
-  - task: CmdLine@2
-    displayName: 'Command Line Script'
-    inputs:
-      script: |
-        pip install --upgrade pip
-        pip install wheel
-        python setup.py bdist_wheel
+  - script: |
+      python -m pip install --upgrade pip
+      pip install build
+      python -m build
+    displayName: 'Build Python Package'

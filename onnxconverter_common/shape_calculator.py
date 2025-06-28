@@ -8,13 +8,15 @@ Common functions to convert any learner based on trees.
 """
 
 import numbers
+
 import numpy as np
+
 from .data_types import (
-    Int64TensorType,
-    FloatTensorType,
-    StringTensorType,
     DictionaryType,
+    FloatTensorType,
+    Int64TensorType,
     SequenceType,
+    StringTensorType,
 )
 from .utils import check_input_and_output_numbers, check_input_and_output_types
 
@@ -29,12 +31,8 @@ def calculate_linear_classifier_output_shapes(operator):
 
     Note that the second case is not allowed as long as ZipMap only produces dictionary.
     """
-    check_input_and_output_numbers(
-        operator, input_count_range=1, output_count_range=[1, 2]
-    )
-    check_input_and_output_types(
-        operator, good_input_types=[FloatTensorType, Int64TensorType]
-    )
+    check_input_and_output_numbers(operator, input_count_range=1, output_count_range=[1, 2])
+    check_input_and_output_types(operator, good_input_types=[FloatTensorType, Int64TensorType])
     if len(operator.inputs[0].type.shape) != 2:
         raise RuntimeError("Input must be a [N, C]-tensor")
 
@@ -48,13 +46,9 @@ def calculate_linear_classifier_output_shapes(operator):
         if len(class_labels) > 2 or operator.type != "SklearnLinearSVC":
             # For multi-class classifier, we produce a map for encoding the probabilities of all classes
             if operator.target_opset < 7:
-                operator.outputs[1].type = DictionaryType(
-                    StringTensorType([1]), FloatTensorType([1])
-                )
+                operator.outputs[1].type = DictionaryType(StringTensorType([1]), FloatTensorType([1]))
             else:
-                operator.outputs[1].type = SequenceType(
-                    DictionaryType(StringTensorType([]), FloatTensorType([])), N
-                )
+                operator.outputs[1].type = SequenceType(DictionaryType(StringTensorType([]), FloatTensorType([])), N)
         else:
             # For binary LinearSVC, we produce probability of the positive class
             operator.outputs[1].type = FloatTensorType(shape=[N, 1])
@@ -63,13 +57,9 @@ def calculate_linear_classifier_output_shapes(operator):
         if len(class_labels) > 2 or operator.type != "SklearnLinearSVC":
             # For multi-class classifier, we produce a map for encoding the probabilities of all classes
             if operator.target_opset < 7:
-                operator.outputs[1].type = DictionaryType(
-                    Int64TensorType([1]), FloatTensorType([1])
-                )
+                operator.outputs[1].type = DictionaryType(Int64TensorType([1]), FloatTensorType([1]))
             else:
-                operator.outputs[1].type = SequenceType(
-                    DictionaryType(Int64TensorType([]), FloatTensorType([])), N
-                )
+                operator.outputs[1].type = SequenceType(DictionaryType(Int64TensorType([]), FloatTensorType([])), N)
         else:
             # For binary LinearSVC, we produce probability of the positive class
             operator.outputs[1].type = FloatTensorType(shape=[N, 1])

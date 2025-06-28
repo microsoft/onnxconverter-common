@@ -1,11 +1,11 @@
-# coding=utf-8
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
 import numpy as np
-from onnx import onnx_pb as onnx_proto, helper
-from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
+from onnx import helper
+from onnx import onnx_pb as onnx_proto
+
 from . import onnx_ops
 
 
@@ -59,20 +59,14 @@ class OnnxOperatorBuilder:
             ox_n = i_
             if isinstance(i_, np.ndarray):
                 ox_n = self._scope.get_unique_variable_name(name + "_i")
-                self._container.add_initializer(
-                    ox_n, helper.np_dtype_to_tensor_dtype(i_.dtype), i_.shape, i_.flatten()
-                )
+                self._container.add_initializer(ox_n, helper.np_dtype_to_tensor_dtype(i_.dtype), i_.shape, i_.flatten())
             elif isinstance(i_, (tuple, list)):
                 ox_n = self._scope.get_unique_variable_name(name + i_[0])
-                self._container.add_initializer(
-                    ox_n, i_[1], i_[2].shape, i_[2].flatten()
-                )
+                self._container.add_initializer(ox_n, i_[1], i_[2].shape, i_[2].flatten())
             elif isinstance(ox_n, str):
                 pass
             else:
-                raise ValueError(
-                    "Unknown type for ONNX initializer: {}".format(type(ox_n))
-                )
+                raise ValueError(f"Unknown type for ONNX initializer: {type(ox_n)}")
             ox_inputs.append(ox_n)
 
         return ox_inputs
@@ -83,14 +77,11 @@ class OnnxOperatorBuilder:
         else:
             ox_outputs = outputs
         if isinstance(ox_outputs, int):
-            ox_outputs = [
-                self._scope.get_unique_variable_name(name + str(i_))
-                for i_ in range(ox_outputs)
-            ]
+            ox_outputs = [self._scope.get_unique_variable_name(name + str(i_)) for i_ in range(ox_outputs)]
         elif isinstance(ox_outputs, (list, tuple)):
             pass
         else:
-            raise ValueError("Unknown type for outputs: {}".format(type(ox_outputs)))
+            raise ValueError(f"Unknown type for outputs: {type(ox_outputs)}")
         return ox_outputs
 
     def _generate_name(self, type_or_func, name):
@@ -124,9 +115,7 @@ class OnnxOperatorBuilder:
             if atleast_1d:
                 value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
             lst = value.flatten().tolist()
-            value = helper.make_tensor(
-                name, helper.np_dtype_to_tensor_dtype(value.dtype), value.shape, lst
-            )
+            value = helper.make_tensor(name, helper.np_dtype_to_tensor_dtype(value.dtype), value.shape, lst)
         return value
 
     def add_node(
@@ -155,15 +144,11 @@ class OnnxOperatorBuilder:
         )
         return ox_outputs[0] if outputs is None else ox_outputs
 
-    def add_node_with_output(
-        self, op_type, inputs, outputs, name, op_domain="", op_version=None, **attrs
-    ):
+    def add_node_with_output(self, op_type, inputs, outputs, name, op_domain="", op_version=None, **attrs):
         if op_version is None:
             op_version = self._container.target_opset
         ox_inputs = self._process_inputs(inputs, name)
-        self._container.add_node(
-            op_type, ox_inputs, outputs, op_domain, op_version, name=name, **attrs
-        )
+        self._container.add_node(op_type, ox_inputs, outputs, op_domain, op_version, name=name, **attrs)
         return outputs
 
     def apply_op(self, apply_func, inputs, name=None, outputs=None, **attrs):
@@ -190,9 +175,7 @@ class OnnxOperatorBuilder:
             raise ValueError("constant_of_shape requires 'value' to be a scalar")
         c_name = self._scope.get_unique_variable_name(name or "cos")
         c_value = self._value_to_tensor(value, c_name, atleast_1d=True)
-        return self.apply_op(
-            onnx_ops.apply_constant_of_shape, inputs, name, outputs, value=c_value
-        )
+        return self.apply_op(onnx_ops.apply_constant_of_shape, inputs, name, outputs, value=c_value)
 
     def slice(
         self,
@@ -222,9 +205,7 @@ class OnnxOperatorBuilder:
         ox_inputs = self._process_inputs(inputs, name)
         ox_inputs = [trip_count, cond_name] + ox_inputs
         ox_outputs = outputs
-        self._container.add_node(
-            "Loop", ox_inputs, ox_outputs, op_version=1, name=name, body=body
-        )
+        self._container.add_node("Loop", ox_inputs, ox_outputs, op_version=1, name=name, body=body)
         return ox_outputs
 
     # !!!!CODE-AUTOGEN!!!! #
@@ -234,13 +215,9 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_abs, inputs, name, outputs)
 
     def add(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        return self.apply_op(
-            onnx_ops.apply_add, inputs, name, outputs, axis=axis, broadcast=broadcast
-        )
+        return self.apply_op(onnx_ops.apply_add, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
-    def argmax(
-        self, inputs, name=None, outputs=None, axis=0, keepdims=1, select_last_index=0
-    ):
+    def argmax(self, inputs, name=None, outputs=None, axis=0, keepdims=1, select_last_index=0):
         return self.apply_op(
             onnx_ops.apply_argmax,
             inputs,
@@ -251,9 +228,7 @@ class OnnxOperatorBuilder:
             select_last_index=select_last_index,
         )
 
-    def argmin(
-        self, inputs, name=None, outputs=None, axis=0, keepdims=1, select_last_index=0
-    ):
+    def argmin(self, inputs, name=None, outputs=None, axis=0, keepdims=1, select_last_index=0):
         return self.apply_op(
             onnx_ops.apply_argmin,
             inputs,
@@ -265,9 +240,7 @@ class OnnxOperatorBuilder:
         )
 
     def affine(self, inputs, name=None, outputs=None, alpha=1.0, beta=0.0):
-        return self.apply_op(
-            onnx_ops.apply_affine, inputs, name, outputs, alpha=alpha, beta=beta
-        )
+        return self.apply_op(onnx_ops.apply_affine, inputs, name, outputs, alpha=alpha, beta=beta)
 
     def batch_norm(
         self,
@@ -294,9 +267,7 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_cast, inputs, name, outputs, to=to)
 
     def clip(self, inputs, name=None, outputs=None, max=None, min=None):
-        return self.apply_op(
-            onnx_ops.apply_clip, inputs, name, outputs, max=max, min=min
-        )
+        return self.apply_op(onnx_ops.apply_clip, inputs, name, outputs, max=max, min=min)
 
     def concat(self, inputs, name=None, outputs=None, axis=0):
         return self.apply_op(onnx_ops.apply_concat, inputs, name, outputs, axis=axis)
@@ -326,9 +297,7 @@ class OnnxOperatorBuilder:
         )
 
     def div(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        return self.apply_op(
-            onnx_ops.apply_div, inputs, name, outputs, axis=axis, broadcast=broadcast
-        )
+        return self.apply_op(onnx_ops.apply_div, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def elu(self, inputs, name=None, outputs=None, alpha=1.0):
         return self.apply_op(onnx_ops.apply_elu, inputs, name, outputs, alpha=alpha)
@@ -348,9 +317,7 @@ class OnnxOperatorBuilder:
     def gather(self, inputs, name=None, outputs=None, axis=0):
         return self.apply_op(onnx_ops.apply_gather, inputs, name, outputs, axis=axis)
 
-    def gemm(
-        self, inputs, name=None, outputs=None, alpha=1.0, beta=1.0, transA=0, transB=0
-    ):
+    def gemm(self, inputs, name=None, outputs=None, alpha=1.0, beta=1.0, transA=0, transB=0):
         return self.apply_op(
             onnx_ops.apply_gemm,
             inputs,
@@ -382,25 +349,19 @@ class OnnxOperatorBuilder:
         )
 
     def hard_sigmoid(self, inputs, name=None, outputs=None, alpha=None, beta=None):
-        return self.apply_op(
-            onnx_ops.apply_hard_sigmoid, inputs, name, outputs, alpha=alpha, beta=beta
-        )
+        return self.apply_op(onnx_ops.apply_hard_sigmoid, inputs, name, outputs, alpha=alpha, beta=beta)
 
     def identity(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_identity, inputs, name, outputs)
 
     def instance_norm(self, inputs, name=None, outputs=None, epsilon=1e-05):
-        return self.apply_op(
-            onnx_ops.apply_instance_norm, inputs, name, outputs, epsilon=epsilon
-        )
+        return self.apply_op(onnx_ops.apply_instance_norm, inputs, name, outputs, epsilon=epsilon)
 
     def inverse(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_inverse, inputs, name, outputs)
 
     def leaky_relu(self, inputs, name=None, outputs=None, alpha=0.01):
-        return self.apply_op(
-            onnx_ops.apply_leaky_relu, inputs, name, outputs, alpha=alpha
-        )
+        return self.apply_op(onnx_ops.apply_leaky_relu, inputs, name, outputs, alpha=alpha)
 
     def less(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_less, inputs, name, outputs)
@@ -409,9 +370,7 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_log, inputs, name, outputs)
 
     def lstm(self, inputs, name=None, outputs=None, output_seq=0):
-        return self.apply_op(
-            onnx_ops.apply_lstm, inputs, name, outputs, output_seq=output_seq
-        )
+        return self.apply_op(onnx_ops.apply_lstm, inputs, name, outputs, output_seq=output_seq)
 
     def matmul(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_matmul, inputs, name, outputs)
@@ -426,17 +385,13 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_min, inputs, name, outputs)
 
     def mul(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        return self.apply_op(
-            onnx_ops.apply_mul, inputs, name, outputs, axis=axis, broadcast=broadcast
-        )
+        return self.apply_op(onnx_ops.apply_mul, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def neg(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_neg, inputs, name, outputs)
 
     def normalization(self, inputs, name=None, outputs=None, axis=1, p=2):
-        return self.apply_op(
-            onnx_ops.apply_normalization, inputs, name, outputs, axis=axis, p=p
-        )
+        return self.apply_op(onnx_ops.apply_normalization, inputs, name, outputs, axis=axis, p=p)
 
     def not_op(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_not_op, inputs, name, outputs)
@@ -462,9 +417,7 @@ class OnnxOperatorBuilder:
             onnx_type=onnx_type,
         )
 
-    def parametric_softplus(
-        self, inputs, name=None, outputs=None, alpha=None, beta=None
-    ):
+    def parametric_softplus(self, inputs, name=None, outputs=None, alpha=None, beta=None):
         return self.apply_op(
             onnx_ops.apply_parametric_softplus,
             inputs,
@@ -475,9 +428,7 @@ class OnnxOperatorBuilder:
         )
 
     def pow(self, inputs, name=None, outputs=None, axis=None, broadcast=None):
-        return self.apply_op(
-            onnx_ops.apply_pow, inputs, name, outputs, axis=axis, broadcast=broadcast
-        )
+        return self.apply_op(onnx_ops.apply_pow, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def prelu(self, inputs, name=None, outputs=None, slope=None):
         return self.apply_op(onnx_ops.apply_prelu, inputs, name, outputs, slope=slope)
@@ -503,14 +454,10 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_relu, inputs, name, outputs)
 
     def relu_6(self, inputs, name=None, outputs=None, zero_value=0.0):
-        return self.apply_op(
-            onnx_ops.apply_relu_6, inputs, name, outputs, zero_value=zero_value
-        )
+        return self.apply_op(onnx_ops.apply_relu_6, inputs, name, outputs, zero_value=zero_value)
 
     def reshape(self, inputs, name=None, outputs=None, desired_shape=None):
-        return self.apply_op(
-            onnx_ops.apply_reshape, inputs, name, outputs, desired_shape=desired_shape
-        )
+        return self.apply_op(onnx_ops.apply_reshape, inputs, name, outputs, desired_shape=desired_shape)
 
     def resize(
         self,
@@ -532,9 +479,7 @@ class OnnxOperatorBuilder:
         )
 
     def rnn(self, inputs, name=None, outputs=None, output_seq=0):
-        return self.apply_op(
-            onnx_ops.apply_rnn, inputs, name, outputs, output_seq=output_seq
-        )
+        return self.apply_op(onnx_ops.apply_rnn, inputs, name, outputs, output_seq=output_seq)
 
     def shape(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_shape, inputs, name, outputs)
@@ -546,17 +491,13 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_softsign, inputs, name, outputs)
 
     def selu(self, inputs, name=None, outputs=None, alpha=1.673263, gamma=1.050701):
-        return self.apply_op(
-            onnx_ops.apply_selu, inputs, name, outputs, alpha=alpha, gamma=gamma
-        )
+        return self.apply_op(onnx_ops.apply_selu, inputs, name, outputs, alpha=alpha, gamma=gamma)
 
     def softmax(self, inputs, name=None, outputs=None, axis=None):
         return self.apply_op(onnx_ops.apply_softmax, inputs, name, outputs, axis=axis)
 
     def scaled_tanh(self, inputs, name=None, outputs=None, alpha=None, beta=None):
-        return self.apply_op(
-            onnx_ops.apply_scaled_tanh, inputs, name, outputs, alpha=alpha, beta=beta
-        )
+        return self.apply_op(onnx_ops.apply_scaled_tanh, inputs, name, outputs, alpha=alpha, beta=beta)
 
     def slice2(
         self,
@@ -580,22 +521,16 @@ class OnnxOperatorBuilder:
         )
 
     def split(self, inputs, name=None, outputs=None, split=None, axis=0):
-        return self.apply_op(
-            onnx_ops.apply_split, inputs, name, outputs, split=split, axis=axis
-        )
+        return self.apply_op(onnx_ops.apply_split, inputs, name, outputs, split=split, axis=axis)
 
     def sqrt(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_sqrt, inputs, name, outputs)
 
     def squeeze(self, inputs, name=None, outputs=None, axes=None, rank=0):
-        return self.apply_op(
-            onnx_ops.apply_squeeze, inputs, name, outputs, axes=axes, rank=rank
-        )
+        return self.apply_op(onnx_ops.apply_squeeze, inputs, name, outputs, axes=axes, rank=rank)
 
     def sub(self, inputs, name=None, outputs=None, axis=None, broadcast=0):
-        return self.apply_op(
-            onnx_ops.apply_sub, inputs, name, outputs, axis=axis, broadcast=broadcast
-        )
+        return self.apply_op(onnx_ops.apply_sub, inputs, name, outputs, axis=axis, broadcast=broadcast)
 
     def sum(self, inputs, name=None, outputs=None):
         return self.apply_op(onnx_ops.apply_sum, inputs, name, outputs)
@@ -604,14 +539,10 @@ class OnnxOperatorBuilder:
         return self.apply_op(onnx_ops.apply_tanh, inputs, name, outputs)
 
     def thresholded_relu(self, inputs, name=None, outputs=None, alpha=None):
-        return self.apply_op(
-            onnx_ops.apply_thresholded_relu, inputs, name, outputs, alpha=alpha
-        )
+        return self.apply_op(onnx_ops.apply_thresholded_relu, inputs, name, outputs, alpha=alpha)
 
     def tile(self, inputs, name=None, outputs=None, repeats=None):
-        return self.apply_op(
-            onnx_ops.apply_tile, inputs, name, outputs, repeats=repeats
-        )
+        return self.apply_op(onnx_ops.apply_tile, inputs, name, outputs, repeats=repeats)
 
     def transpose(self, inputs, name=None, outputs=None, perm=None):
         return self.apply_op(onnx_ops.apply_transpose, inputs, name, outputs, perm=perm)
@@ -636,6 +567,4 @@ class OnnxOperatorBuilder:
         )
 
     def unsqueeze(self, inputs, name=None, outputs=None, axes=None, rank=0):
-        return self.apply_op(
-            onnx_ops.apply_unsqueeze, inputs, name, outputs, axes=axes, rank=rank
-        )
+        return self.apply_op(onnx_ops.apply_unsqueeze, inputs, name, outputs, axes=axes, rank=rank)

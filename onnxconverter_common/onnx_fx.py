@@ -1,30 +1,30 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
 import copy
-import onnx
 import logging
-import numpy as np
-from onnx import onnx_pb as onnx_proto
 from inspect import getfullargspec
 
+import numpy as np
+import onnx
+from onnx import onnx_pb as onnx_proto
+
 from . import onnx_ops
-from .registration import register_converter
-from .topology import Topology, convert_topology
-from .oopb import OnnxOperatorBuilder
-from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
 from .data_types import (
-    DoubleTensorType,
-    FloatTensorType,
-    Int64TensorType,
-    Int32TensorType,
     BooleanTensorType,
     Complex64TensorType,
     Complex128TensorType,
+    DoubleTensorType,
+    FloatTensorType,
+    Int32TensorType,
+    Int64TensorType,
     StringTensorType,
 )
+from .onnx_ex import OPSET_TO_IR_VERSION, get_maximum_opset_supported
+from .oopb import OnnxOperatorBuilder
+from .registration import register_converter
+from .topology import Topology, convert_topology
 
 _logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def _get_python_function_arguments(f):
     return arg_names, annotations
 
 
-class _SimpleRawModelContainer(object):
+class _SimpleRawModelContainer:
     def __init__(self, inputs, outputs):
         self.input_names = inputs
         self.output_names = outputs
@@ -105,9 +105,7 @@ class Graph:
     def _bind(self, oxml, inputs, outputs):
         ox_graph = oxml.graph
         initializer_set = {initializer.name for initializer in ox_graph.initializer}
-        model_inputs = [
-            input.name for input in ox_graph.input if input.name not in initializer_set
-        ]
+        model_inputs = [input.name for input in ox_graph.input if input.name not in initializer_set]
         model_outputs = [output.name for output in ox_graph.output]
         if inputs is None:
             inputs = model_inputs
@@ -118,9 +116,9 @@ class Graph:
         if outputs is None:
             outputs = model_outputs
         else:
-            assert {output for output in outputs} == {
-                output for output in model_outputs
-            }, "User-specified set of outputs does not match actual set"
+            assert {output for output in outputs} == {output for output in model_outputs}, (
+                "User-specified set of outputs does not match actual set"
+            )
         self._oxml = oxml
         self._inputs = inputs
         self._outputs = outputs
@@ -143,7 +141,7 @@ class Graph:
         def model(source_sequence):
             ...
         """
-        if len(args) > 0 and hasattr(args[0], "__call__"):  # first arg is function
+        if len(args) > 0 and callable(args[0]):  # first arg is function
             return Graph._create(args[0])
         else:
             return lambda f: Graph._create(f, *args, **kwargs)
@@ -153,17 +151,11 @@ class Graph:
         if element_or_list is None:
             return []
 
-        return (
-            element_or_list
-            if isinstance(element_or_list, (list, tuple))
-            else [element_or_list]
-        )
+        return element_or_list if isinstance(element_or_list, (list, tuple)) else [element_or_list]
 
     @staticmethod
     def _on_conversion(scope, operator, container):
-        with OnnxOperatorBuilderX(container, scope).as_default(
-            operator.full_name
-        ) as ox:  # type: OnnxOperatorBuilderX
+        with OnnxOperatorBuilderX(container, scope).as_default(operator.full_name) as ox:  # type: OnnxOperatorBuilderX
             f = operator.raw_operator
             # if ox.upper_context is not None:
             #     container.enable_optimizer = False  # optimizer on a subgraph is not supported yet.
@@ -182,25 +174,18 @@ class Graph:
                     ]
                     n_outputs = len(f_outputs)
             assert n_outputs == len(outputs), (
-                "Function {}() returned {} but {} were declared".format(
-                    operator.full_name, n_outputs, len(outputs)
-                )
+                f"Function {operator.full_name}() returned {n_outputs} but {len(outputs)} were declared"
             )
 
     @staticmethod
     def _enforce_opset_version(oxml):
         for im_ in oxml.opset_import:
-            if (
-                im_.domain == "" or im_.domain == "ai.onnx"
-            ) and im_.version != Graph.opset:
+            if (im_.domain == "" or im_.domain == "ai.onnx") and im_.version != Graph.opset:
                 im_.version = Graph.opset
                 opv = Graph.opset
                 irv = OPSET_TO_IR_VERSION.get(opv, onnx_proto.IR_VERSION)
                 oxml.ir_version = irv
-                _logger.warning(
-                    "The maximum opset needed by this model is updated to %d."
-                    % Graph.opset
-                )
+                _logger.warning("The maximum opset needed by this model is updated to %d." % Graph.opset)
 
     def _build_graph(self, f, input_types=None, output_types=None, outputs=None):
         input_types = Graph._to_list(input_types)
@@ -220,23 +205,17 @@ class Graph:
         for i_ in raw_model.input_names:
             vi_ = top_level.get_local_variable_or_declare_one(
                 i_,
-                FloatTensorType(shape=[None])
-                if not input_types
-                else input_types[arg_names.index(i_)],
+                FloatTensorType(shape=[None]) if not input_types else input_types[arg_names.index(i_)],
             )
             op_whole.inputs.append(vi_)
         for o_ in raw_model.output_names:
             vo_ = top_level.get_local_variable_or_declare_one(
                 o_,
-                FloatTensorType(shape=[None])
-                if not output_types
-                else output_types[outputs.index(o_)],
+                FloatTensorType(shape=[None]) if not output_types else output_types[outputs.index(o_)],
             )
             op_whole.outputs.append(vo_)
 
-        oxml = convert_topology(
-            topo, f_name, "onnx.fn: {}".format(f_name), target_opset=Graph.opset
-        )
+        oxml = convert_topology(topo, f_name, f"onnx.fn: {f_name}", target_opset=Graph.opset)
         type(self)._enforce_opset_version(oxml)
         self._bind(oxml, arg_names, outputs)
         return self
@@ -266,9 +245,7 @@ class Graph:
 
     def _defer_building(self):
         if self._oxml is None:
-            self._build_graph(
-                self._onnxfunc, *self._onnxfunc_args, **self._onnxfunc_kwargs
-            )
+            self._build_graph(self._onnxfunc, *self._onnxfunc_args, **self._onnxfunc_kwargs)
 
     def _argument_map(self, *args, **kwargs):
         """
@@ -280,11 +257,7 @@ class Graph:
         """
         params = self._inputs
         if len(args) + len(kwargs) != len(params):
-            raise TypeError(
-                "Graph invocation expected {} arguments, got {}".format(
-                    len(params), len(args) + len(kwargs)
-                )
-            )
+            raise TypeError(f"Graph invocation expected {len(params)} arguments, got {len(args) + len(kwargs)}")
         params_set = {arg for arg in params}
         return Graph._map_function_arguments(params, params_set, *args, **kwargs)
 
@@ -297,18 +270,13 @@ class Graph:
         if is_symbolic:
             first_arg = next(iter(arg_map.values()))
             ox = first_arg.ox
-            output_map = {output: None for output in self._outputs}
+            output_map = dict.fromkeys(self._outputs)
             # @TODO: outputs missing
             return ox.apply_invoke_inline(self.oxml.graph, arg_map, output_map)
         else:
-            assert Graph.inference_runtime is not None, (
-                "No inference runtime has been provided."
-            )
+            assert Graph.inference_runtime is not None, "No inference runtime has been provided."
             # evaluate with real values
-            kwargs = {
-                name: OnnxOperatorBuilderX.value_to_ndarray(val)
-                for name, val in arg_map.items()
-            }
+            kwargs = {name: OnnxOperatorBuilderX.value_to_ndarray(val) for name, val in arg_map.items()}
             return Graph.inference_runtime(self.oxml, kwargs)
 
     def save(self, path):
@@ -319,11 +287,7 @@ class Graph:
         """
         Construct a Graph object by loading an ONNX model.
         """
-        oxml = (
-            onnx.load_model(path_or_model)
-            if isinstance(path_or_model, str)
-            else path_or_model
-        )
+        oxml = onnx.load_model(path_or_model) if isinstance(path_or_model, str) else path_or_model
         for opset_import in oxml.opset_import:
             if opset_import.domain == "":
                 if Graph.opset < opset_import.version:
@@ -340,7 +304,7 @@ class Graph:
         return g
 
 
-class Tensor(object):
+class Tensor:
     def __init__(self, tensor_name: str, ox):
         self.name = tensor_name
         self.ox = ox
@@ -407,9 +371,7 @@ class Tensor(object):
             axis for axis, index in enumerate(indices) if isinstance(index, int)
         ]  # which axes had a single index?
         indices = tuple(
-            index
-            if isinstance(index, slice)
-            else slice(index, index + 1 if index != -1 else None, 1)
+            index if isinstance(index, slice) else slice(index, index + 1 if index != -1 else None, 1)
             for index in indices
         )  # make all tuple items of type Slice
         bs, es, ss, ds = [], [], [], []
@@ -429,9 +391,7 @@ class Tensor(object):
             res = self.ox.squeeze([res], axes=squeeze)
         return res
 
-    _all_ops = [
-        op_name[6:] for op_name in dir(onnx_ops) if op_name.startswith("apply_")
-    ] + [
+    _all_ops = [op_name[6:] for op_name in dir(onnx_ops) if op_name.startswith("apply_")] + [
         "shape",
         "constant_of_shape",
         "range",
@@ -448,12 +408,8 @@ class Tensor(object):
             f = self.ox.__getattribute__(attr)
 
             def call_it(*args, **kwargs):
-                assert len(args) == 0, (
-                    "In chaining expressions, only keyword args are allowed"
-                )
-                assert "inputs" not in kwargs, (
-                    "Chaining expressions do not currently support additional inputs"
-                )
+                assert len(args) == 0, "In chaining expressions, only keyword args are allowed"
+                assert "inputs" not in kwargs, "Chaining expressions do not currently support additional inputs"
                 return f(self, *args, **kwargs)
 
             return call_it
@@ -474,21 +430,15 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         else:
             return [self._tensors_to_input_names(input) for input in inputs]
 
-    def apply_op(
-        self, apply_func_or_op_type, inputs, name=None, outputs=None, **attrs
-    ):  # override!
+    def apply_op(self, apply_func_or_op_type, inputs, name=None, outputs=None, **attrs):  # override!
         inputs = self._tensors_to_input_names(inputs)
         if isinstance(apply_func_or_op_type, str):
             return self._output_names_to_tensors(
-                super().add_node(
-                    apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs
-                )
+                super().add_node(apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs)
             )
         else:
             return self._output_names_to_tensors(
-                super().apply_op(
-                    apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs
-                )
+                super().apply_op(apply_func_or_op_type, inputs, name=name, outputs=outputs, **attrs)
             )
 
     def apply_invoke_inline(self, ox_graph, input_map, output_map):
@@ -498,38 +448,26 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         # output_map: [name in graph] -> desired name for the result, or None
         f_name = "invoke_inline_" + ox_graph.name
         for graph_output in output_map.keys():  # @TODO: use proper comprehensions
-            output_map[graph_output] = self._process_outputs(
-                output_map[graph_output], name=f_name
-            )[0]
-        outputs = list(
-            output_map.values()
-        )  # remember these; these are the outputs of this invocation
+            output_map[graph_output] = self._process_outputs(output_map[graph_output], name=f_name)[0]
+        outputs = list(output_map.values())  # remember these; these are the outputs of this invocation
         if len(outputs) == 1:
             outputs = outputs[0]  # single output
         for graph_input in input_map.keys():
-            input_map[graph_input] = self._process_inputs(
-                [input_map[graph_input].name], name=f_name
-            )[0]
+            input_map[graph_input] = self._process_inputs([input_map[graph_input].name], name=f_name)[0]
         _logger.debug(f_name, input_map, output_map)
 
         existing_node_names = {item.name: item for item in self._container.nodes}
-        existing_initializer_names = {
-            item.name: item for item in self._container.initializers
-        }
+        existing_initializer_names = {item.name: item for item in self._container.initializers}
         existing_value_infos = {item.name: item for item in self._container.value_info}
 
         # collect all outputs from the graph we are expanding, so that we can map them to unique names
         # @TODO: This will also map some code that may be shared later on. Leave that to the optimizer.
         node_map = dict()
         for node in ox_graph.node:
-            if (
-                not node.input
-            ):  # leaves do not need to be mapped; they can just get uniq'ed
+            if not node.input:  # leaves do not need to be mapped; they can just get uniq'ed
                 continue
             for output in node.output:
-                if (
-                    output in output_map
-                ):  # this is an actual output that already has been mapped
+                if output in output_map:  # this is an actual output that already has been mapped
                     continue
                 uniq_name = onnx_ops._create_name_or_use_existing_one(
                     self._scope, self._generate_name(output, None), None
@@ -548,13 +486,9 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
 
         for node in ox_graph.node:
             node = copy.deepcopy(node)  # since we patch, we must clone it first
-            map_tensors(
-                node.input, input_map
-            )  # patch the input references to the function arguments
+            map_tensors(node.input, input_map)  # patch the input references to the function arguments
             map_tensors(node.output, output_map)  # rename the outputs to unique ones
-            map_tensors(
-                node.input, output_map
-            )  # outputs may be inputs to other nodes in this graph
+            map_tensors(node.input, output_map)  # outputs may be inputs to other nodes in this graph
             if node.name in node_map:
                 node.name = node_map[node.name]
             if node.name in existing_node_names:
@@ -572,31 +506,23 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
                 continue
             self._container.nodes.append(node)
         for initializer in ox_graph.initializer:
-            if (
-                initializer.name in existing_initializer_names
-            ):  # @TODO: check if they are the same
+            if initializer.name in existing_initializer_names:  # @TODO: check if they are the same
                 _logger.info("Duplicate initializer name skipped:", initializer.name)
                 continue
-            if (
-                initializer.name in output_map
-            ):  # technically, the whole function could be a lonely initializer
+            if initializer.name in output_map:  # technically, the whole function could be a lonely initializer
                 # _logger.debug("Replacing:", initializer.name, initializer.shape)
                 initializer = copy.deepcopy(initializer)
                 initializer.name = output_map[initializer.name]
             # _logger.debug(initializer.name)
             self._container.initializers.append(initializer)
         for value_info in ox_graph.value_info:
-            if (
-                value_info.name in existing_value_infos
-            ):  # @TODO: check if they are the same
+            if value_info.name in existing_value_infos:  # @TODO: check if they are the same
                 _logger.info("Duplicate value_info name skipped:", value_info.name)
                 continue
             # @TODO: Not sure what must be mapped, and how
             _logger.debug(value_info)
             self._container.value_info.append(value_info)
-        return self._output_names_to_tensors(
-            outputs
-        )  # note: outputs is either a string or a list of strings
+        return self._output_names_to_tensors(outputs)  # note: outputs is either a string or a list of strings
 
     def arg(self, name):
         """
@@ -611,9 +537,7 @@ class OnnxOperatorBuilderX(OnnxOperatorBuilder):
         if cond is not None:
             cond = self._tensors_to_input_names(cond)
         else:
-            cond = self._tensors_to_input_names(
-                self.constant(value=np.array([True]), name="cf")
-            )
+            cond = self._tensors_to_input_names(self.constant(value=np.array([True]), name="cf"))
         sub_graph = body.oxml.graph
         return self._output_names_to_tensors(
             super().loop(

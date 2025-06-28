@@ -1,13 +1,15 @@
 import unittest
+
 import numpy as np
 from onnx import helper
-from onnxconverter_common.oopb import OnnxOperatorBuilder
+
 from onnxconverter_common.container import ModelComponentContainer
-from onnxconverter_common.topology import Topology, convert_topology
+from onnxconverter_common.oopb import OnnxOperatorBuilder
 from onnxconverter_common.registration import register_converter
+from onnxconverter_common.topology import Topology, convert_topology
 
 
-class _SimpleRawModelContainer(object):
+class _SimpleRawModelContainer:
     def __init__(self, inputs, outputs):
         self.input_names = inputs
         self.output_names = outputs
@@ -23,9 +25,7 @@ def build_graph(oopb, inputs, outputs):
     gemm = oopb.gemm(sub_node)
     add_const = helper.make_tensor("add_2_c", oopb.float, (2, 1), [3.0, 4.0])
     div1 = oopb.div(gemm, oopb.constant("add_2", add_const))
-    oopb.add_node(
-        "Add", [div1, ("add_3", oopb.float, np.array([3.0, 4.0]))], outputs=outputs
-    )
+    oopb.add_node("Add", [div1, ("add_3", oopb.float, np.array([3.0, 4.0]))], outputs=outputs)
 
 
 def create_conversion_topology(input_names, output_names):

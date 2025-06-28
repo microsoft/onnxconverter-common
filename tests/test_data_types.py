@@ -1,20 +1,22 @@
 import unittest
+
 from onnx import onnx_pb as onnx_proto
+
 from onnxconverter_common.data_types import (
     BooleanTensorType,
     Complex64TensorType,
     Complex128TensorType,
-    DoubleTensorType,
     DictionaryType,
-    Int32TensorType,
-    Int64Type,
-    Int64TensorType,
-    Int8TensorType,
-    FloatType,
+    DoubleTensorType,
     FloatTensorType,
+    FloatType,
+    Int8TensorType,
+    Int32TensorType,
+    Int64TensorType,
+    Int64Type,
     SequenceType,
-    StringType,
     StringTensorType,
+    StringType,
     UInt8TensorType,
 )
 
@@ -68,9 +70,7 @@ class TestDataTypes(unittest.TestCase):
 
     def test_sequence_type(self):
         self.common_test_seq_type(SequenceType, SequenceType(Int64Type()))
-        self.common_test_seq_type(
-            DictionaryType, DictionaryType(Int64Type(), Int64Type())
-        )
+        self.common_test_seq_type(DictionaryType, DictionaryType(Int64Type(), Int64Type()))
 
 
 if __name__ == "__main__":

@@ -1,14 +1,16 @@
-import unittest
-import numpy as np
-import onnxruntime as _ort
-import onnx
 import os
+import unittest
+
+import numpy as np
+import onnx
+import onnxruntime as _ort
 import packaging.version as pv
-from onnxconverter_common.onnx_fx import Graph
-from onnxconverter_common.onnx_ex import get_maximum_opset_supported
+
 from onnxconverter_common.auto_mixed_precision_model_path import (
     auto_convert_mixed_precision_model_path,
 )
+from onnxconverter_common.onnx_ex import get_maximum_opset_supported
+from onnxconverter_common.onnx_fx import Graph
 
 
 def _ort_inference(model_path, inputs):
@@ -21,12 +23,8 @@ Graph.opset = 9
 onnx_function = Graph.trace
 
 
-@unittest.skipIf(
-    pv.Version(onnx.__version__) <= pv.Version("1.8.0"), "test for ONNX 1.8 and above"
-)
-@unittest.skipIf(
-    get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater"
-)
+@unittest.skipIf(pv.Version(onnx.__version__) <= pv.Version("1.8.0"), "test for ONNX 1.8 and above")
+@unittest.skipIf(get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater")
 @unittest.skipIf(not hasattr(onnx, "shape_inference"), "shape inference is required")
 class AutoFloat16Test(unittest.TestCase):
     def test_auto_mixed_precision_model_path_input_rtol_atol(self):
@@ -49,9 +47,7 @@ class AutoFloat16Test(unittest.TestCase):
             atol=1e-2,
             keep_io_types=True,
         )
-        actual = _ort_inference(
-            model16_path, {"modelInput": input_x.astype(np.float32)}
-        )
+        actual = _ort_inference(model16_path, {"modelInput": input_x.astype(np.float32)})
         self.assertTrue(np.allclose(expected, actual, rtol=1e-2, atol=1e-2))
 
     def test_auto_mixed_precision_model_path_with_validate_func(self):
@@ -79,9 +75,7 @@ class AutoFloat16Test(unittest.TestCase):
             customized_validate_func=validate_fn,
             keep_io_types=True,
         )
-        actual = _ort_inference(
-            model16_path, {"modelInput": input_x.astype(np.float32)}
-        )
+        actual = _ort_inference(model16_path, {"modelInput": input_x.astype(np.float32)})
         self.assertTrue(np.allclose(expected, actual, rtol=1e-2, atol=1e-2))
 
 

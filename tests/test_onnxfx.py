@@ -1,10 +1,12 @@
 import unittest
+
 import numpy as np
 import onnxruntime as _ort
 import packaging.version as pv
-from onnxconverter_common.onnx_fx import Graph, OnnxOperatorBuilderX
-from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
+
 from onnxconverter_common.onnx_ex import get_maximum_opset_supported
+from onnxconverter_common.onnx_fx import Graph
+from onnxconverter_common.onnx_fx import GraphFunctionType as _Ty
 from onnxconverter_common.optimizer import optimize_onnx_model
 
 
@@ -18,9 +20,7 @@ Graph.opset = 9
 onnx_function = Graph.trace
 
 
-@unittest.skipIf(
-    get_maximum_opset_supported() < 9, "onnx_fx only supports ONNX opset 9 and greater"
-)
+@unittest.skipIf(get_maximum_opset_supported() < 9, "onnx_fx only supports ONNX opset 9 and greater")
 class ONNXFunctionTest(unittest.TestCase):
     # this works, and the exported graph is usable:
     def test_core(self):
@@ -75,16 +75,10 @@ class ONNXFunctionTest(unittest.TestCase):
         "onnxruntime fixed the issue in matmul since 1.4.0",
     )
     def test_matmul_opt(self):
-        @onnx_function(
-            outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f]
-        )
+        @onnx_function(outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f])
         def transpose_n_matmul(x):
             ox = x.ox  # type: OnnxOperatorBuilderX
-            wm = (
-                np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-                .astype(np.float32)
-                .reshape([2, 6])
-            )
+            wm = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).astype(np.float32).reshape([2, 6])
             b = ox.constant(value=wm)
             a = ox.transpose(x, perm=[0, 1, 3, 2])
             c = ox.transpose(b, perm=[1, 0])

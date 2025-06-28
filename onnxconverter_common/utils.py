@@ -4,8 +4,9 @@
 ###############################################################################
 
 import numbers
-import numpy as np
 import warnings
+
+import numpy as np
 import packaging.version as pv
 
 
@@ -139,9 +140,7 @@ def xgboost_installed():
     vers = pv.Version(__version__)
     allowed = pv.Version("0.7")
     if vers < allowed:
-        warnings.warn(
-            "The converter works for xgboost >= 0.7. Earlier versions might not."
-        )
+        warnings.warn("The converter works for xgboost >= 0.7. Earlier versions might not.")
     return True
 
 
@@ -235,20 +234,18 @@ def convert_to_python_value(var):
     elif isinstance(var, str):
         return str(var)
     else:
-        raise TypeError("Unable to convert {0} to python type".format(type(var)))
+        raise TypeError(f"Unable to convert {type(var)} to python type")
 
 
 def convert_to_python_default_value(var):
     if isinstance(var, numbers.Integral):
-        return int()
+        return 0
     elif isinstance(var, numbers.Real):
-        return float()
+        return 0.0
     elif isinstance(var, str):
-        return str()
+        return ""
     else:
-        raise TypeError(
-            "Unable to find default python value for type {0}".format(type(var))
-        )
+        raise TypeError(f"Unable to find default python value for type {type(var)}")
 
 
 def convert_to_list(var):
@@ -277,9 +274,7 @@ def convert_to_list(var):
         raise TypeError("Unable to flatten variable")
 
 
-def check_input_and_output_numbers(
-    operator, input_count_range=None, output_count_range=None
-):
+def check_input_and_output_numbers(operator, input_count_range=None, output_count_range=None):
     """
     Check if the number of input(s)/output(s) is correct
 
@@ -356,9 +351,7 @@ def check_input_and_output_numbers(
         )
 
 
-def check_input_and_output_types(
-    operator, good_input_types=None, good_output_types=None
-):
+def check_input_and_output_types(operator, good_input_types=None, good_output_types=None):
     """
     Check if the type(s) of input(s)/output(s) is(are) correct
 

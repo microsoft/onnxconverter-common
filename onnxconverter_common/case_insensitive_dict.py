@@ -3,8 +3,8 @@
 # license information.
 ###############################################################################
 
-from collections.abc import Mapping, MutableMapping
 from collections import OrderedDict
+from collections.abc import Mapping, MutableMapping
 
 
 class CaseInsensitiveDict(MutableMapping):

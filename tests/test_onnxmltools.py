@@ -1,4 +1,5 @@
 import unittest
+
 import numpy as np
 
 try:
@@ -16,9 +17,7 @@ from onnxconverter_common.data_types import FloatTensorType
 
 
 class OnnxmltoolsTestCase(unittest.TestCase):
-    @unittest.skipIf(
-        onnxmltools is None or lightgbm is None, reason="missing dependencies"
-    )
+    @unittest.skipIf(onnxmltools is None or lightgbm is None, reason="missing dependencies")
     def test_lightgbm(self):
         X = [[0, 1], [1, 1], [2, 0], [1, 2]]
         X = np.array(X, dtype=np.float32)

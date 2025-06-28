@@ -1,9 +1,10 @@
-import unittest
-import numpy as np
 import os
+import sys
+import unittest
+
+import numpy as np
 import onnx
 import onnxruntime as _ort
-import sys
 
 working_path = os.path.abspath(os.path.dirname(__file__))
 tmp_path = os.path.join(working_path, "temp")

@@ -4,11 +4,12 @@
 ###############################################################################
 
 import numbers
+
 import onnx
 from onnx import onnx_pb as onnx_proto
 
 
-class DataType(object):
+class DataType:
     def __init__(self, shape=None, doc_string=""):
         self.shape = shape
         self.doc_string = doc_string
@@ -17,12 +18,12 @@ class DataType(object):
         raise NotImplementedError()
 
     def __repr__(self):
-        return "{}(shape={})".format(self.__class__.__name__, self.shape)
+        return f"{self.__class__.__name__}(shape={self.shape})"
 
 
 class Int64Type(DataType):
     def __init__(self, doc_string=""):
-        super(Int64Type, self).__init__([1, 1], doc_string)
+        super().__init__([1, 1], doc_string)
 
     def to_onnx_type(self):
         onnx_type = onnx_proto.TypeProto()
@@ -32,12 +33,12 @@ class Int64Type(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "{}()".format(self.__class__.__name__)
+        return f"{self.__class__.__name__}()"
 
 
 class FloatType(DataType):
     def __init__(self, doc_string=""):
-        super(FloatType, self).__init__([1, 1], doc_string)
+        super().__init__([1, 1], doc_string)
 
     def to_onnx_type(self):
         onnx_type = onnx_proto.TypeProto()
@@ -47,12 +48,12 @@ class FloatType(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "{}()".format(self.__class__.__name__)
+        return f"{self.__class__.__name__}()"
 
 
 class StringType(DataType):
     def __init__(self, doc_string=""):
-        super(StringType, self).__init__([1, 1], doc_string)
+        super().__init__([1, 1], doc_string)
 
     def to_onnx_type(self):
         onnx_type = onnx_proto.TypeProto()
@@ -62,14 +63,12 @@ class StringType(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "{}()".format(self.__class__.__name__)
+        return f"{self.__class__.__name__}()"
 
 
 class TensorType(DataType):
-    def __init__(
-        self, shape=None, doc_string="", denotation=None, channel_denotations=None
-    ):
-        super(TensorType, self).__init__([] if not shape else shape, doc_string)
+    def __init__(self, shape=None, doc_string="", denotation=None, channel_denotations=None):
+        super().__init__([] if not shape else shape, doc_string)
         self.denotation = denotation
         self.channel_denotations = channel_denotations
 
@@ -89,20 +88,15 @@ class TensorType(DataType):
                 s.dim_param = d
             else:
                 raise ValueError(
-                    "Unsupported dimension type: %s, see %s"
-                    % (
-                        type(d),
-                        "https://github.com/onnx/onnx/blob/master/docs/IR.md#"
-                        + "input--output-data-types",
-                    )
+                    f"Unsupported dimension type: {type(d)}, see "
+                    "https://github.com/onnx/onnx/blob/master/docs/IR.md#"
+                    "input--output-data-types"
                 )
         if getattr(onnx_type, "denotation", None) is not None:
             if self.denotation:
                 onnx_type.denotation = self.denotation
             if self.channel_denotations:
-                for d, denotation in zip(
-                    onnx_type.tensor_type.shape.dim, self.channel_denotations
-                ):
+                for d, denotation in zip(onnx_type.tensor_type.shape.dim, self.channel_denotations):
                     if denotation:
                         d.denotation = denotation
         return onnx_type
@@ -110,7 +104,7 @@ class TensorType(DataType):
 
 class Int32TensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(Int32TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.INT32
@@ -118,7 +112,7 @@ class Int32TensorType(TensorType):
 
 class Int8TensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(Int8TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.INT8
@@ -126,7 +120,7 @@ class Int8TensorType(TensorType):
 
 class UInt8TensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(UInt8TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.UINT8
@@ -134,7 +128,7 @@ class UInt8TensorType(TensorType):
 
 class Int64TensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(Int64TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.INT64
@@ -142,7 +136,7 @@ class Int64TensorType(TensorType):
 
 class BooleanTensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(BooleanTensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.BOOL
@@ -157,9 +151,7 @@ class FloatTensorType(TensorType):
         denotation=None,
         channel_denotations=None,
     ):
-        super(FloatTensorType, self).__init__(
-            shape, doc_string, denotation, channel_denotations
-        )
+        super().__init__(shape, doc_string, denotation, channel_denotations)
         self.color_space = color_space
 
     def _get_element_onnx_type(self):
@@ -168,7 +160,7 @@ class FloatTensorType(TensorType):
 
 class DoubleTensorType(TensorType):
     def __init__(self, shape=None, color_space=None, doc_string=""):
-        super(DoubleTensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
         self.color_space = color_space
 
     def _get_element_onnx_type(self):
@@ -177,7 +169,7 @@ class DoubleTensorType(TensorType):
 
 class Complex64TensorType(TensorType):
     def __init__(self, shape=None, color_space=None, doc_string=""):
-        super(Complex64TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
         self.color_space = color_space
 
     def _get_element_onnx_type(self):
@@ -186,7 +178,7 @@ class Complex64TensorType(TensorType):
 
 class Complex128TensorType(TensorType):
     def __init__(self, shape=None, color_space=None, doc_string=""):
-        super(Complex128TensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
         self.color_space = color_space
 
     def _get_element_onnx_type(self):
@@ -195,7 +187,7 @@ class Complex128TensorType(TensorType):
 
 class StringTensorType(TensorType):
     def __init__(self, shape=None, doc_string=""):
-        super(StringTensorType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
 
     def _get_element_onnx_type(self):
         return onnx_proto.TensorProto.STRING
@@ -203,7 +195,7 @@ class StringTensorType(TensorType):
 
 class DictionaryType(DataType):
     def __init__(self, key_type, value_type, shape=None, doc_string=""):
-        super(DictionaryType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
         self.key_type = key_type
         self.value_type = value_type
 
@@ -224,14 +216,12 @@ class DictionaryType(DataType):
         return onnx_type
 
     def __repr__(self):
-        return "DictionaryType(key_type={0}, value_type={1})".format(
-            self.key_type, self.value_type
-        )
+        return f"DictionaryType(key_type={self.key_type}, value_type={self.value_type})"
 
 
 class SequenceType(DataType):
     def __init__(self, element_type, shape=None, doc_string=""):
-        super(SequenceType, self).__init__(shape, doc_string)
+        super().__init__(shape, doc_string)
         self.element_type = element_type
         self.doc_string = doc_string
 
@@ -246,13 +236,11 @@ class SequenceType(DataType):
             msg += "\n".join(info)
             raise RuntimeError(msg)
         except TypeError:
-            raise RuntimeError(
-                "Unable to create SequenceType with element_type=%r" % self.element_type
-            )
+            raise RuntimeError(f"Unable to create SequenceType with element_type={self.element_type!r}")
         return onnx_type
 
     def __repr__(self):
-        return "SequenceType(element_type={0})".format(self.element_type)
+        return f"SequenceType(element_type={self.element_type})"
 
 
 def find_type_conversion(source_type, target_type):
@@ -263,9 +251,7 @@ def find_type_conversion(source_type, target_type):
         return "identity"
     if isinstance(target_type, FloatTensorType):
         return "imageToFloatTensor"
-    raise ValueError(
-        "Unsupported type conversion from %s to %s" % (source_type, target_type)
-    )
+    raise ValueError(f"Unsupported type conversion from {source_type} to {target_type}")
 
 
 def onnx_built_with_ml():

@@ -1,25 +1,24 @@
-# coding=utf-8
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 ###############################################################################
 
 import re
-import onnx
 import warnings
+
+import onnx
 import packaging.version as pv
 from onnx import helper
-from .registration import get_converter, get_shape_calculator
-from .data_types import TensorType, Int64Type, FloatType, StringType
-from .onnx_ex import (
-    OPSET_TO_IR_VERSION,
-    DEFAULT_OPSET_NUMBER,
-    make_model_ex,
-    get_maximum_opset_supported,
-)  # noqa
+
 from .container import ModelComponentContainer
-from .optimizer import optimize_onnx
+from .data_types import FloatType, Int64Type, StringType, TensorType
 from .interface import OperatorBase, ScopeBase
+from .onnx_ex import (
+    get_maximum_opset_supported,
+    make_model_ex,
+)  # noqa
+from .optimizer import optimize_onnx
+from .registration import get_converter, get_shape_calculator
 
 
 class Variable:
@@ -51,11 +50,9 @@ class Variable:
 
     def __str__(self):
         if self.raw_name != self.onnx_name:
-            return "Var(name='{0}', onnx='{1}', type={2})".format(
-                self.raw_name, self.onnx_name, self.type
-            )
+            return f"Var(name='{self.raw_name}', onnx='{self.onnx_name}', type={self.type})"
         else:
-            return "Var(name='{0}', type={1})".format(self.raw_name, self.type)
+            return f"Var(name='{self.raw_name}', type={self.type})"
 
 
 class Operator(OperatorBase):
@@ -131,12 +128,8 @@ class Scope(ScopeBase):
         """
         self.name = name
         self.parent_scopes = parent_scopes if parent_scopes else list()
-        self.onnx_variable_names = (
-            variable_name_set if variable_name_set is not None else set()
-        )
-        self.onnx_operator_names = (
-            operator_name_set if operator_name_set is not None else set()
-        )
+        self.onnx_variable_names = variable_name_set if variable_name_set is not None else set()
+        self.onnx_operator_names = operator_name_set if operator_name_set is not None else set()
         self.target_opset = target_opset
 
         # An one-to-many map from raw variable name to ONNX variable names. It looks like
@@ -176,7 +169,7 @@ class Scope(ScopeBase):
         Find sink variables in this scope
         """
         # First we assume all variables are sinks
-        is_sink = {name: True for name in self.variables.keys()}
+        is_sink = dict.fromkeys(self.variables.keys(), True)
         # Then, we remove those variables which are inputs of some operators
         for operator in self.operators.values():
             for variable in operator.inputs:
@@ -281,22 +274,14 @@ class Topology:
         self.scopes = []
         self.raw_model = model
         self.scope_names = set()
-        self.variable_name_set = (
-            reserved_variable_names if reserved_variable_names is not None else set()
-        )
-        self.operator_name_set = (
-            reserved_operator_names if reserved_operator_names is not None else set()
-        )
+        self.variable_name_set = reserved_variable_names if reserved_variable_names is not None else set()
+        self.operator_name_set = reserved_operator_names if reserved_operator_names is not None else set()
         self.initial_types = initial_types if initial_types else list()
         self.metadata_props = metadata_props if metadata_props else dict()
         self.default_batch_size = default_batch_size
         self.target_opset = target_opset
-        self.custom_conversion_functions = (
-            custom_conversion_functions if custom_conversion_functions else {}
-        )
-        self.custom_shape_calculators = (
-            custom_shape_calculators if custom_shape_calculators else {}
-        )
+        self.custom_conversion_functions = custom_conversion_functions if custom_conversion_functions else {}
+        self.custom_shape_calculators = custom_shape_calculators if custom_shape_calculators else {}
 
         # This attribute is used in optimizing the graph structure. If root_names is not empty, only the variables
         # specified will be treated as the roots (i.e., set is_fed to True in the beginning of a graph evaluation) of
@@ -317,9 +302,7 @@ class Topology:
             raise ValueError("Name seed must be an non-empty string")
 
         # Make the seed meet C-style naming convention
-        seed = re.sub(
-            "[^0-9a-zA-Z]", "_", seed
-        )  # Only alphabets and numbers are allowed
+        seed = re.sub("[^0-9a-zA-Z]", "_", seed)  # Only alphabets and numbers are allowed
         if re.match("^[0-9]", seed):  # The first symbol cannot be a number
             seed = "_" + seed
 
@@ -364,16 +347,12 @@ class Topology:
         Find root variables of the whole graph
         """
         # First we assume all variables are roots
-        is_root = {
-            name: True for scope in self.scopes for name in scope.variables.keys()
-        }
+        is_root = {name: True for scope in self.scopes for name in scope.variables.keys()}
         # Then, we remove those variables which are outputs of some operators
         for operator in self.unordered_operator_iterator():
             for variable in operator.outputs:
                 is_root[variable.onnx_name] = False
-        is_sink = {
-            name: True for scope in self.scopes for name in scope.variables.keys()
-        }
+        is_sink = {name: True for scope in self.scopes for name in scope.variables.keys()}
         for operator in self.unordered_operator_iterator():
             for variable in operator.inputs:
                 is_sink[variable.onnx_name] = False
@@ -394,20 +373,13 @@ class Topology:
         """
         self._initialize_graph_status_for_traversing()
         priorities = {"tensorToProbabilityMap": 2, "tensorToLabel": 1}
-        while not all(
-            operator.is_evaluated
-            for scope in self.scopes
-            for operator in scope.operators.values()
-        ):
+        while not all(operator.is_evaluated for scope in self.scopes for operator in scope.operators.values()):
             is_evaluation_happened = False
             for operator in sorted(
                 self.unordered_operator_iterator(),
                 key=lambda op: priorities[op.type] if op.type in priorities else 0,
             ):
-                if (
-                    all(variable.is_fed for variable in operator.inputs)
-                    and not operator.is_evaluated
-                ):
+                if all(variable.is_fed for variable in operator.inputs) and not operator.is_evaluated:
                     # Check if over-writing problem occurs (i.e., multiple
                     # operators produce results on one variable).
                     for variable in operator.outputs:
@@ -415,15 +387,13 @@ class Topology:
                         # an output somewhere
                         if variable.is_fed:
                             raise RuntimeError(
-                                "A variable is already assigned ({}) "
-                                "for operator '{}' (name='{}'). This "
+                                f"A variable is already assigned ({variable}) "
+                                f"for operator '{operator.type}' (name='{operator.onnx_name}'). This "
                                 "may still happen if a converter is a "
                                 "combination of sub-operators and one of "
                                 "of them is producing this output. "
                                 "In that case, an identity node must be "
-                                "added.".format(
-                                    variable, operator.type, operator.onnx_name
-                                )
+                                "added."
                             )
                         # Mark this variable as filled
                         variable.is_fed = True
@@ -455,12 +425,7 @@ class Topology:
                             continue
                         if variable.onnx_name in known_outputs:
                             continue
-                        update = (
-                            False
-                            if self.root_names
-                            and variable.onnx_name not in self.root_names
-                            else True
-                        )
+                        update = False if self.root_names and variable.onnx_name not in self.root_names else True
                         if update:
                             variable.is_fed = True
                             is_evaluation_happened = True
@@ -572,9 +537,7 @@ class Topology:
         #   1. all roots get is_root=True and is_fed=True
         #   2. all leaves get is_leaf=True
         for operator in self.unordered_operator_iterator():
-            operator.is_evaluated = (
-                False  # All operators are not processed in the beginning
-            )
+            operator.is_evaluated = False  # All operators are not processed in the beginning
             for variable in operator.outputs:
                 # Output cannot be fed before graph traversing
                 variable.is_fed = False
@@ -644,23 +607,17 @@ class Topology:
             if not original.type.doc_string and duplicate.type.doc_string:
                 original.type.doc_string = duplicate.type.doc_string
 
-            if isinstance(original.type, TensorType) and isinstance(
-                duplicate.type, TensorType
-            ):
+            if isinstance(original.type, TensorType) and isinstance(duplicate.type, TensorType):
                 if not original.type.denotation and duplicate.type.denotation:
                     original.type.denotation = duplicate.type.denotation
                 if not original.type.channel_denotations:
-                    original.type.channel_denotations = (
-                        duplicate.type.channel_denotations
-                    )
+                    original.type.channel_denotations = duplicate.type.channel_denotations
                 elif duplicate.type.channel_denotations:
                     # Merge the channel denotations if available in both the original and the duplicate
                     for i in range(len(original.type.channel_denotations)):
                         if original.type.channel_denotations[i]:
                             continue
-                        original.type.channel_denotations[i] = (
-                            duplicate.type.channel_denotations[i]
-                        )
+                        original.type.channel_denotations[i] = duplicate.type.channel_denotations[i]
                 # Sometime, shapes of duplicates are different.
                 # We try to replace the original variable's unknown dimensions...
                 # ...as many as possible because we will get rid of the duplicate.
@@ -678,14 +635,10 @@ class Topology:
         for scope in self.scopes:
             # Find out who is going to be abandoned
             abandoned_operator_names = set(
-                onnx_name
-                for onnx_name, operator in scope.operators.items()
-                if operator.is_abandoned
+                onnx_name for onnx_name, operator in scope.operators.items() if operator.is_abandoned
             )
             abandoned_variable_names = set(
-                onnx_name
-                for onnx_name, variable in scope.variables.items()
-                if variable.is_abandoned
+                onnx_name for onnx_name, variable in scope.variables.items() if variable.is_abandoned
             )
 
             # Remove abandoned operators
@@ -788,9 +741,7 @@ def convert_topology(
         Possible values include '1.1.2', '1.2', and so on.
     :return: a ONNX ModelProto
     """
-    if targeted_onnx is not None and pv.Version(targeted_onnx) != pv.Version(
-        onnx.__version__
-    ):
+    if targeted_onnx is not None and pv.Version(targeted_onnx) != pv.Version(onnx.__version__):
         warnings.warn(
             "targeted_onnx is deprecated, please specify target_opset for the target model.\n"
             + "*** ONNX version conflict found. The installed version is %s while the targeted version is %s"
@@ -821,16 +772,12 @@ def convert_topology(
     for scope in topology.scopes:
         for variable in scope.variables.values():
             if variable.is_root:
-                if isinstance(
-                    variable.type, (TensorType, Int64Type, FloatType, StringType)
-                ):
+                if isinstance(variable.type, (TensorType, Int64Type, FloatType, StringType)):
                     tensor_inputs[variable.raw_name] = variable
                 else:
                     other_inputs[variable.raw_name] = variable
             if variable.is_leaf:
-                if isinstance(
-                    variable.type, (TensorType, Int64Type, FloatType, StringType)
-                ):
+                if isinstance(variable.type, (TensorType, Int64Type, FloatType, StringType)):
                     tensor_outputs[variable.raw_name] = variable
                 else:
                     other_outputs[variable.raw_name] = variable
@@ -847,19 +794,14 @@ def convert_topology(
             invalid_name.append(name)
         if name in tensor_inputs:
             onnx_input = tensor_inputs[name]  # type: Variable
-            if name in channel_first_inputs or (
-                name.endswith(":0") and name[:-2] in channel_first_inputs
-            ):
+            if name in channel_first_inputs or (name.endswith(":0") and name[:-2] in channel_first_inputs):
                 nhwc_inputs.append(onnx_input.full_name)
                 s = onnx_input.type.shape
                 onnx_input.type.shape = [s[0], s[3], s[1], s[2]]
             container.add_input(onnx_input)
 
     if invalid_name:
-        warnings.warn(
-            "Some input names are not compliant with ONNX naming convention: %s"
-            % invalid_name
-        )
+        warnings.warn("Some input names are not compliant with ONNX naming convention: %s" % invalid_name)
     for name in topology.raw_model.input_names:
         if name in other_inputs:
             container.add_input(other_inputs[name])
@@ -874,10 +816,7 @@ def convert_topology(
         if name in tensor_outputs:
             container.add_output(tensor_outputs[name])
     if invalid_name:
-        warnings.warn(
-            "Some output names are not compliant with ONNX naming convention: %s"
-            % invalid_name
-        )
+        warnings.warn("Some output names are not compliant with ONNX naming convention: %s" % invalid_name)
     for name in topology.raw_model.output_names:
         if name in other_outputs:
             container.add_output(other_outputs[name])
@@ -886,9 +825,7 @@ def convert_topology(
     for operator in topology.topological_operator_iterator():
         scope = next(scope for scope in topology.scopes if scope.name == operator.scope)
         if operator.type in topology.custom_conversion_functions:
-            topology.custom_conversion_functions[operator.type](
-                scope, operator, container
-            )
+            topology.custom_conversion_functions[operator.type](scope, operator, container)
         else:
             # Convert the selected operator into some ONNX objects and save them into the container
             get_converter(operator.type)(scope, operator, container)
@@ -906,9 +843,7 @@ def convert_topology(
             continue
 
         # Initializers are always tensors so we can just call make_tensor_value_info(...)
-        value_info = helper.make_tensor_value_info(
-            tensor.name, tensor.data_type, tensor.dims
-        )
+        value_info = helper.make_tensor_value_info(tensor.name, tensor.data_type, tensor.dims)
         extra_inputs.append(value_info)
 
     # enable the ONNX optimizations

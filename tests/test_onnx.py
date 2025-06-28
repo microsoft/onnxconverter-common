@@ -1,9 +1,11 @@
 import os
-import onnx
 import unittest
+
+import onnx
 import packaging.version as pv
-from onnxconverter_common.data_types import FloatTensorType
+
 from onnxconverter_common import set_denotation
+from onnxconverter_common.data_types import FloatTensorType
 
 
 class TestTypes(unittest.TestCase):
