@@ -5,3 +5,4 @@ onnxmltools
 pytest
 lintrunner==0.12.7
 ruff==0.12.1
+setuptools
