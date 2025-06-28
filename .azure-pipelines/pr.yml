@@ -19,8 +19,10 @@ extends:
         enabled: true
       credscan:
         enabled: true
+      codeql:
+        sourceLanguages: python
       tsa:
-        enabled: true
+        enabled: false
         configFile: '$(Build.SourcesDirectory)\.config\tsaoptions.json'
     stages:
     - stage: Stage

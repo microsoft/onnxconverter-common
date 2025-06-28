@@ -10,6 +10,10 @@ jobs:
     inputs:
       versionSpec: '3.x'
       architecture: 'x64'
+  - task: PipAuthenticate@1
+    displayName: 'Pip Authenticate'
+    inputs:
+      artifactFeeds: 'Lotus'
   - script: |
       python -m pip install --upgrade pip
       pip install -r requirements-dev.txt      
