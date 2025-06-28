@@ -20,7 +20,6 @@ from onnxconverter_common.data_types import (
 
 
 class TestDataTypes(unittest.TestCase):
-
     def common_test_tensor_type(self, data_type):
         dt = data_type((1, 5))
         self.assertIn(data_type.__name__, str(dt))
@@ -68,11 +67,11 @@ class TestDataTypes(unittest.TestCase):
         assert isinstance(dt.to_onnx_type(), onnx_proto.TypeProto)
 
     def test_sequence_type(self):
+        self.common_test_seq_type(SequenceType, SequenceType(Int64Type()))
         self.common_test_seq_type(
-            SequenceType, SequenceType(Int64Type()))
-        self.common_test_seq_type(
-            DictionaryType, DictionaryType(Int64Type(), Int64Type()))
+            DictionaryType, DictionaryType(Int64Type(), Int64Type())
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

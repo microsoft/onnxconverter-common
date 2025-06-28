@@ -25,6 +25,7 @@ class TracingObject:
         x = np.array(np.prod([1, 2, 3]), np.int32)
         assert repr(x) == "np.array(np.prod([1, 2, 3]), np.int32)"
     """
+
     def __init__(self, trace, py_obj=NoPyObjException):
         self._trace = trace
         self._py_obj = py_obj
@@ -45,9 +46,12 @@ class TracingObject:
     @staticmethod
     def get_repr(x):
         if isinstance(x, np.ndarray):
-            return "np.array(%s, dtype='%s')" % (TracingObject.get_repr(x.tolist()), x.dtype)
+            return "np.array(%s, dtype='%s')" % (
+                TracingObject.get_repr(x.tolist()),
+                x.dtype,
+            )
         if isinstance(x, float) and not math.isfinite(x):
-            return "float('%r')" % x   # handle nan/inf/-inf
+            return "float('%r')" % x  # handle nan/inf/-inf
         if not isinstance(x, list):
             return repr(x)
         ls = [TracingObject.get_repr(o) for o in x]
@@ -79,10 +83,14 @@ class TracingObject:
         arg_s += [k + "=" + TracingObject.get_repr(o) for k, o in kwargs.items()]
         trace = self._trace + "(" + ", ".join(arg_s) + ")"
         if len(trace) > 200:
-            trace = self._trace + "(\n" + "".join(indent(s) + ",\n" for s in arg_s) + ")"
+            trace = (
+                self._trace + "(\n" + "".join(indent(s) + ",\n" for s in arg_s) + ")"
+            )
         try:
             arg_o = [TracingObject.get_py_obj(a) for a in args]
-            kwarg_o = OrderedDict((k, TracingObject.get_py_obj(v)) for k, v in kwargs.items())
+            kwarg_o = OrderedDict(
+                (k, TracingObject.get_py_obj(v)) for k, v in kwargs.items()
+            )
             py_obj = TracingObject.get_py_obj(self)(*arg_o, **kwarg_o)
         except NoPyObjException:
             py_obj = NoPyObjException

@@ -7,24 +7,60 @@ name = "onnxconverter-common"
 dynamic = ["version"]
 description="ONNX Converter and Optimization Tools"
 authors = [{ name = "Microsoft Corporation", email = "onnx@microsoft.com" }]
-urls =  { "Repository" = "https://github.com/microsoft/onnxconverter-common" }
+urls = { "Repository" = "https://github.com/microsoft/onnxconverter-common" }
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
-  "Environment :: Console",
-  "Intended Audience :: Developers",
-  "Operating System :: MacOS :: MacOS X",
-  "Operating System :: Microsoft :: Windows",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "License :: OSI Approved :: MIT License",
+ "Development Status :: 5 - Production/Stable",
+ "Environment :: Console",
+ "Intended Audience :: Developers",
+ "Operating System :: MacOS :: MacOS X",
+ "Operating System :: Microsoft :: Windows",
+ "Programming Language :: Python",
+ "Programming Language :: Python :: 3.8",
+ "Programming Language :: Python :: 3.9",
+ "Programming Language :: Python :: 3.10",
+ "Programming Language :: Python :: 3.11",
+ "Programming Language :: Python :: 3.12",
+ "Programming Language :: Python :: 3.13",
+ "License :: OSI Approved :: MIT License",
 ]
 dependencies = ["numpy", "onnx", "packaging", "protobuf>=3.20.2"]
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+lint = [
+    "ruff",
+    "pyright",
+]
+dev = [
+    "onnxconverter-common[test,lint]",
+]
+
 [tool.setuptools.dynamic]
 version = {attr = "onnxconverter_common.__version__"}
+
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+src = ["onnxconverter_common"]
+select = ["E", "F", "I", "UP", "B", "A", "C4"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["onnxconverter_common"]
+
+[tool.pyright]
+include = ["onnxconverter_common"]
+pythonVersion = "3.8"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportUnusedVariable = true
+reportPrivateUsage = false

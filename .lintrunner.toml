@@ -1,0 +1,17 @@
+# This section defines a linter for checking Python files for errors and style issues.
+[[linter]]
+code = 'ruff-check'          # ADD THIS LINE: Unique identifier for the linter
+name = 'Ruff Check'
+tools = ['ruff']
+include_patterns = ['**/*.py']
+command = ['ruff', 'check']
+
+# This section defines a separate formatter for Python files.
+[[linter]]
+code = 'ruff-format'         # ADD THIS LINE: Unique identifier for the formatter
+name = 'Ruff Format'
+tools = ['ruff']
+include_patterns = ['**/*.py']
+# Using --force-exclude is a good practice to ensure ruff respects 'exclude' patterns.
+command = ['ruff', 'format', '--force-exclude']
+is_formatter = true

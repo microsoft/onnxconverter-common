@@ -30,11 +30,7 @@ class CaseInsensitiveDict(MutableMapping):
 
     def lower_key_iteritems(self):
         """Like iteritems(), but with lowercase keys."""
-        return (
-            (lower_key, keyval[1])
-            for lower_key, keyval
-            in self._dict.items()
-        )
+        return ((lower_key, keyval[1]) for lower_key, keyval in self._dict.items())
 
     def __eq__(self, other):
         if isinstance(other, Mapping):
