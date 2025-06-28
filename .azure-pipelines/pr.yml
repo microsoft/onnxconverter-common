@@ -19,6 +19,9 @@ extends:
         enabled: true
       credscan:
         enabled: true
+      tsa:
+        enabled: true
+        configFile: '$(Build.SourcesDirectory)\.config\tsaoptions.json'
     stages:
     - stage: Stage
       jobs:

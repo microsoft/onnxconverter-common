@@ -60,7 +60,7 @@ class OnnxOperatorBuilder:
             if isinstance(i_, np.ndarray):
                 ox_n = self._scope.get_unique_variable_name(name + "_i")
                 self._container.add_initializer(
-                    ox_n, NP_TYPE_TO_TENSOR_TYPE[i_.dtype], i_.shape, i_.flatten()
+                    ox_n, helper.np_dtype_to_tensor_dtype(i_.dtype), i_.shape, i_.flatten()
                 )
             elif isinstance(i_, (tuple, list)):
                 ox_n = self._scope.get_unique_variable_name(name + i_[0])
@@ -125,7 +125,7 @@ class OnnxOperatorBuilder:
                 value = np.atleast_1d(value)  # e.g. constant_of_shape() needs this
             lst = value.flatten().tolist()
             value = helper.make_tensor(
-                name, NP_TYPE_TO_TENSOR_TYPE[value.dtype], value.shape, lst
+                name, helper.np_dtype_to_tensor_dtype(value.dtype), value.shape, lst
             )
         return value
 
