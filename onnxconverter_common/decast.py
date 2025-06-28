@@ -13,7 +13,10 @@ def remove_cast(lnodes, op_set):
         sln = []
         for n_ in lnodes:
             if n_.op_type in op_set and n_.in_single_path:
-                if n_.precedence[0].op_type == 'Cast' and n_.successor[0].op_type == 'Cast':
+                if (
+                    n_.precedence[0].op_type == "Cast"
+                    and n_.successor[0].op_type == "Cast"
+                ):
                     sln.append(Solution(None, n_.precedence[0], n_.precedence[0], n_))
                     sln.append(Solution(n_, n_.successor[0], n_.successor[0], None))
                     break
@@ -38,10 +41,9 @@ def decast(origin_model, oplist):
     nodelist = list(graph.node)
     del graph.node[:]
 
-    all_nodes = LinkedNode.build_from_onnx(nodelist,
-                                           [],
-                                           [i_.name for i_ in graph.input],
-                                           [o_.name for o_ in graph.output])
+    all_nodes = LinkedNode.build_from_onnx(
+        nodelist, [], [i_.name for i_ in graph.input], [o_.name for o_ in graph.output]
+    )
 
     nodes = remove_cast(all_nodes, set(oplist))
     for n_ in nodes:
@@ -52,7 +54,7 @@ def decast(origin_model, oplist):
 
 def main():
     if len(sys.argv) < 4:
-        print('decast.py model_in  model_out <op1, ...>')
+        print("decast.py model_in  model_out <op1, ...>")
         return
 
     input = sys.argv[1]

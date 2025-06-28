@@ -15,6 +15,7 @@ def sparkml_installed():
     """
     try:
         import pyspark  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -26,6 +27,7 @@ def sklearn_installed():
     """
     try:
         import sklearn  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -37,6 +39,7 @@ def skl2onnx_installed():
     """
     try:
         import skl2onnx  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -48,6 +51,7 @@ def coreml_installed():
     """
     try:
         import coremltools  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -59,6 +63,7 @@ def keras2onnx_installed():
     """
     try:
         import keras2onnx  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -70,6 +75,7 @@ def torch_installed():
     """
     try:
         import torch  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -81,6 +87,7 @@ def caffe2_installed():
     """
     try:
         import caffe2  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -93,6 +100,7 @@ def libsvm_installed():
     try:
         import svm  # noqa F401
         import svmutil  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -104,6 +112,7 @@ def lightgbm_installed():
     """
     try:
         import lightgbm  # noqa F401
+
         return True
     except ImportError:
         return False
@@ -118,6 +127,7 @@ def xgboost_installed():
     except ImportError:
         return False
     from xgboost.core import _LIB
+
     try:
         _LIB.XGBoosterDumpModelEx
     except AttributeError:
@@ -125,10 +135,13 @@ def xgboost_installed():
         # You need to install xgboost from github and not from pypi.
         return False
     from xgboost import __version__
+
     vers = pv.Version(__version__)
-    allowed = pv.Version('0.7')
+    allowed = pv.Version("0.7")
     if vers < allowed:
-        warnings.warn('The converter works for xgboost >= 0.7. Earlier versions might not.')
+        warnings.warn(
+            "The converter works for xgboost >= 0.7. Earlier versions might not."
+        )
     return True
 
 
@@ -160,6 +173,7 @@ def get_producer():
     Internal helper function to return the producer
     """
     from . import __producer__
+
     return __producer__
 
 
@@ -168,6 +182,7 @@ def get_producer_version():
     Internal helper function to return the producer version
     """
     from . import __producer_version__
+
     return __producer_version__
 
 
@@ -176,6 +191,7 @@ def get_domain():
     Internal helper function to return the model domain
     """
     from . import __domain__
+
     return __domain__
 
 
@@ -184,6 +200,7 @@ def get_model_version():
     Internal helper function to return the model version
     """
     from . import __model_version__
+
     return __model_version__
 
 
@@ -218,7 +235,7 @@ def convert_to_python_value(var):
     elif isinstance(var, str):
         return str(var)
     else:
-        raise TypeError('Unable to convert {0} to python type'.format(type(var)))
+        raise TypeError("Unable to convert {0} to python type".format(type(var)))
 
 
 def convert_to_python_default_value(var):
@@ -229,7 +246,9 @@ def convert_to_python_default_value(var):
     elif isinstance(var, str):
         return str()
     else:
-        raise TypeError('Unable to find default python value for type {0}'.format(type(var)))
+        raise TypeError(
+            "Unable to find default python value for type {0}".format(type(var))
+        )
 
 
 def convert_to_list(var):
@@ -253,13 +272,15 @@ def convert_to_list(var):
         elif all(isinstance(v, numbers.Real) or isinstance(v, str) for v in var):
             return [convert_to_python_value(v) for v in var]
         else:
-            raise TypeError('Unable to flatten variable')
+            raise TypeError("Unable to flatten variable")
     else:
-        raise TypeError('Unable to flatten variable')
+        raise TypeError("Unable to flatten variable")
 
 
-def check_input_and_output_numbers(operator, input_count_range=None, output_count_range=None):
-    '''
+def check_input_and_output_numbers(
+    operator, input_count_range=None, output_count_range=None
+):
+    """
     Check if the number of input(s)/output(s) is correct
 
     :param operator: A Operator object
@@ -267,7 +288,7 @@ def check_input_and_output_numbers(operator, input_count_range=None, output_coun
     minimal/maximal number of inputs. If it's an integer, it is equivalent to specify that number twice in a list. For
     infinite ranges like 5 to infinity, you need to use [5, None].
     :param output_count_range: A list of two integers or an integer. See input_count_range for its format.
-    '''
+    """
     if isinstance(input_count_range, list):
         min_input_count = input_count_range[0]
         max_input_count = input_count_range[1]
@@ -275,7 +296,7 @@ def check_input_and_output_numbers(operator, input_count_range=None, output_coun
         min_input_count = input_count_range
         max_input_count = input_count_range
     else:
-        raise RuntimeError('input_count_range must be a list or an integer')
+        raise RuntimeError("input_count_range must be a list or an integer")
 
     if isinstance(output_count_range, list):
         min_output_count = output_count_range[0]
@@ -284,48 +305,92 @@ def check_input_and_output_numbers(operator, input_count_range=None, output_coun
         min_output_count = output_count_range
         max_output_count = output_count_range
     else:
-        raise RuntimeError('output_count_range must be a list or an integer')
+        raise RuntimeError("output_count_range must be a list or an integer")
 
     if min_input_count is not None and len(operator.inputs) < min_input_count:
         raise RuntimeError(
-            'For operator %s (type: %s), at least %s input(s) is(are) required but we got %s input(s) which are %s'
-            % (operator.full_name, operator.type, min_input_count, len(operator.inputs), operator.input_full_names))
+            "For operator %s (type: %s), at least %s input(s) is(are) required but we got %s input(s) which are %s"
+            % (
+                operator.full_name,
+                operator.type,
+                min_input_count,
+                len(operator.inputs),
+                operator.input_full_names,
+            )
+        )
 
     if max_input_count is not None and len(operator.inputs) > max_input_count:
         raise RuntimeError(
-            'For operator %s (type: %s), at most %s input(s) is(are) supported but we got %s input(s) which are %s'
-            % (operator.full_name, operator.type, max_input_count, len(operator.inputs), operator.input_full_names))
+            "For operator %s (type: %s), at most %s input(s) is(are) supported but we got %s input(s) which are %s"
+            % (
+                operator.full_name,
+                operator.type,
+                max_input_count,
+                len(operator.inputs),
+                operator.input_full_names,
+            )
+        )
 
     if min_output_count is not None and len(operator.outputs) < min_output_count:
         raise RuntimeError(
-            'For operator %s (type: %s), at least %s output(s) is(are) produced but we got %s output(s) which are %s'
-            % (operator.full_name, operator.type, min_output_count, len(operator.outputs), operator.output_full_names))
+            "For operator %s (type: %s), at least %s output(s) is(are) produced but we got %s output(s) which are %s"
+            % (
+                operator.full_name,
+                operator.type,
+                min_output_count,
+                len(operator.outputs),
+                operator.output_full_names,
+            )
+        )
 
     if max_output_count is not None and len(operator.outputs) > max_output_count:
         raise RuntimeError(
-            'For operator %s (type: %s), at most %s outputs(s) is(are) supported but we got %s output(s) which are %s'
-            % (operator.full_name, operator.type, max_output_count, len(operator.outputs), operator.output_full_names))
+            "For operator %s (type: %s), at most %s outputs(s) is(are) supported but we got %s output(s) which are %s"
+            % (
+                operator.full_name,
+                operator.type,
+                max_output_count,
+                len(operator.outputs),
+                operator.output_full_names,
+            )
+        )
 
 
-def check_input_and_output_types(operator, good_input_types=None, good_output_types=None):
-    '''
+def check_input_and_output_types(
+    operator, good_input_types=None, good_output_types=None
+):
+    """
     Check if the type(s) of input(s)/output(s) is(are) correct
 
     :param operator: A Operator object
     :param good_input_types: A list of allowed input types (e.g., [FloatTensorType, Int64TensorType]) or None. None
     means that we skip the check of the input types.
     :param good_output_types: A list of allowed output types. See good_input_types for its format.
-    '''
+    """
     if good_input_types is not None:
         for variable in operator.inputs:
             if type(variable.type) not in good_input_types:
-                raise RuntimeError('Operator %s (type: %s) got an input %s with a wrong type %s. Only %s are allowed'
-                                   % (operator.full_name, operator.type, variable.full_name, type(variable.type),
-                                      good_input_types))
+                raise RuntimeError(
+                    "Operator %s (type: %s) got an input %s with a wrong type %s. Only %s are allowed"
+                    % (
+                        operator.full_name,
+                        operator.type,
+                        variable.full_name,
+                        type(variable.type),
+                        good_input_types,
+                    )
+                )
 
     if good_output_types is not None:
         for variable in operator.outputs:
             if type(variable.type) not in good_output_types:
-                raise RuntimeError('Operator %s (type: %s) got an output %s with a wrong type %s. Only %s are allowed'
-                                   % (operator.full_name, operator.type, variable.full_name, type(variable.type),
-                                      good_output_types))
+                raise RuntimeError(
+                    "Operator %s (type: %s) got an output %s with a wrong type %s. Only %s are allowed"
+                    % (
+                        operator.full_name,
+                        operator.type,
+                        variable.full_name,
+                        type(variable.type),
+                        good_output_types,
+                    )
+                )

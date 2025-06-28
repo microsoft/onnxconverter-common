@@ -33,18 +33,18 @@ class OnnxGraphContext:
 
     @staticmethod
     def get_attr_graph(node):
-        if node.op_type in ['Loop', 'Scan']:
-            inner_graph = OnnxGraphContext.get_attribute(node, 'body')
-            return {'body': inner_graph}
-        elif node.op_type in ['If']:
-            else_graph = OnnxGraphContext.get_attribute(node, 'else_branch')
-            then_graph = OnnxGraphContext.get_attribute(node, 'then_branch')
-            return {'else_branch': else_graph, 'then_branch': then_graph}
+        if node.op_type in ["Loop", "Scan"]:
+            inner_graph = OnnxGraphContext.get_attribute(node, "body")
+            return {"body": inner_graph}
+        elif node.op_type in ["If"]:
+            else_graph = OnnxGraphContext.get_attribute(node, "else_branch")
+            then_graph = OnnxGraphContext.get_attribute(node, "then_branch")
+            return {"else_branch": else_graph, "then_branch": then_graph}
         else:
             return {}
 
     def calculate(self, node):
-        func_name = '_On' + node.op_type
+        func_name = "_On" + node.op_type
         func = type(self).__dict__.get(func_name, None)
         if func is None:
             return None
@@ -68,20 +68,22 @@ class OnnxGraphContext:
         return inputs
 
     def _OnConstant(self, node, inputs):
-        return [numpy_helper.to_array(OnnxGraphContext.get_attribute(node, 'value'))]
+        return [numpy_helper.to_array(OnnxGraphContext.get_attribute(node, "value"))]
 
     def _OnAdd(self, node, inputs):
         return [np.add(inputs[0], inputs[1])]
 
     def _OnCast(self, node, inputs):
-        np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[OnnxGraphContext.get_attribute(node, 'to')]
+        np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[
+            OnnxGraphContext.get_attribute(node, "to")
+        ]
         casted = inputs[0].astype(np_dtype)
         return [casted]
 
     def _OnGather(self, node, inputs):
         data_val = inputs[0]
         idx_val = inputs[1]
-        axis = OnnxGraphContext.get_attribute(node, 'axis')
+        axis = OnnxGraphContext.get_attribute(node, "axis")
         retval = np.take(data_val, idx_val, axis).astype(inputs[0].dtype)
         return [retval]
 
@@ -98,15 +100,17 @@ class OnnxGraphContext:
         return [np.logical_not(inputs[0])]
 
     def _OnTranspose(self, node, inputs):
-        perm_attr = OnnxGraphContext.get_attribute(node, 'perm')
+        perm_attr = OnnxGraphContext.get_attribute(node, "perm")
         retval = inputs[0].transpose(perm_attr)
         return [retval]
 
     def _OnRange(self, node, inputs):
-        retval = np.arange(inputs[0].item(0),
-                           inputs[1].item(0),
-                           inputs[2].item(0),
-                           dtype=inputs[0].dtype)
+        retval = np.arange(
+            inputs[0].item(0),
+            inputs[1].item(0),
+            inputs[2].item(0),
+            dtype=inputs[0].dtype,
+        )
         return [retval]
 
     def _OnSlice(self, node, inputs):
@@ -149,7 +153,7 @@ class OnnxGraphContext:
         return [np.subtract(inputs[0], inputs[1])]
 
     def _OnUnsqueeze(self, node, inputs):
-        axes = OnnxGraphContext.get_attribute(node, 'axes')
+        axes = OnnxGraphContext.get_attribute(node, "axes")
         if axes is None:
             axes = inputs[1]
         shape_in = inputs[0].shape
@@ -172,7 +176,7 @@ class OnnxGraphContext:
 
 def _fix_unamed_node(nodelist):
     node_id = [1]
-    name_set = set(nd_.name if nd_.name else '' for nd_ in nodelist)
+    name_set = set(nd_.name if nd_.name else "" for nd_ in nodelist)
 
     def _ensure_node_named(node, incre_id):
         if node.name:
@@ -209,10 +213,11 @@ def _dfs_calc(graph, node, reserved_names, node_status):
         return node_status[node.name]
 
     if len(node.input) == 0:
-        assert node.op_type in ['Constant', 'RandomNormal', 'RandomUniform'], \
+        assert node.op_type in ["Constant", "RandomNormal", "RandomUniform"], (
             "Assume only the generator operation node hasn't any inputs"
+        )
         status = -1
-        if node.op_type == 'Constant':
+        if node.op_type == "Constant":
             graph.calculate(node)
             node_status[node.name] = 0
         return status
@@ -224,12 +229,14 @@ def _dfs_calc(graph, node, reserved_names, node_status):
             elif ts_ not in graph.tensor_to_node:  # input of graph
                 calc_status[idx_] = -1
             else:
-                calc_status[idx_] = _dfs_calc(graph, graph.tensor_to_node[ts_], reserved_names, node_status)
+                calc_status[idx_] = _dfs_calc(
+                    graph, graph.tensor_to_node[ts_], reserved_names, node_status
+                )
 
         status_up = max(calc_status)
         status_low = min(calc_status)
         if status_low < 0:
-            status = - max(-status_low, abs(status_up)) - 1
+            status = -max(-status_low, abs(status_up)) - 1
         else:
             status = status_up + 1
 
@@ -252,14 +259,24 @@ def _is_initializer_existed(intlzer, initializers):
     return False
 
 
-def _remove_unused_initializers(nodes, initializers, reversed_names, outer_initializers=None):
+def _remove_unused_initializers(
+    nodes, initializers, reversed_names, outer_initializers=None
+):
     nodes_input_set = set()
     for nd_ in nodes:
         nodes_input_set.update(n_ for n_ in nd_.input)
 
-    lst = [intlz_ for intlz_ in initializers if intlz_.name in nodes_input_set or intlz_.name in reversed_names]
+    lst = [
+        intlz_
+        for intlz_ in initializers
+        if intlz_.name in nodes_input_set or intlz_.name in reversed_names
+    ]
     if outer_initializers is not None:
-        return [intlz_ for intlz_ in lst if not _is_initializer_existed(intlz_, outer_initializers)]
+        return [
+            intlz_
+            for intlz_ in lst
+            if not _is_initializer_existed(intlz_, outer_initializers)
+        ]
     return lst
 
 
@@ -269,9 +286,13 @@ def const_folding_optimizer(graph, outer_graph=None):
     opt_graph = OnnxGraphContext(graph, nodelist)
     node_status = {}
     for ts_ in graph.output:
-        _dfs_calc(opt_graph, opt_graph.tensor_to_node[ts_.name], reserved_names, node_status)
+        _dfs_calc(
+            opt_graph, opt_graph.tensor_to_node[ts_.name], reserved_names, node_status
+        )
 
-    graph.initializer.extend([numpy_helper.from_array(ts_, nm_) for nm_, ts_ in opt_graph.variables.items()])
+    graph.initializer.extend(
+        [numpy_helper.from_array(ts_, nm_) for nm_, ts_ in opt_graph.variables.items()]
+    )
     new_nodes = [nd_ for nd_ in nodelist if nd_.name in node_status]
     new_nodes = [nd_ for nd_ in new_nodes if nd_.output[0] not in opt_graph.variables]
 
@@ -279,8 +300,12 @@ def const_folding_optimizer(graph, outer_graph=None):
         return abs(node_status[nd_.name])
 
     new_nodes.sort(key=node_key)
-    pruned_initilizers = _remove_unused_initializers(new_nodes, graph.initializer, reserved_names,
-                                                     None if outer_graph is None else outer_graph.initializer)
+    pruned_initilizers = _remove_unused_initializers(
+        new_nodes,
+        graph.initializer,
+        reserved_names,
+        None if outer_graph is None else outer_graph.initializer,
+    )
     del graph.node[:]
     graph.node.extend(new_nodes)
     del graph.initializer[:]
@@ -291,8 +316,12 @@ def const_folding_optimizer(graph, outer_graph=None):
             opt_inner_graph = const_folding_optimizer(subgraph_, graph)
             lst_attrs = list(nd_.attribute)
             del nd_.attribute[:]
-            lst_attrs = [helper.make_attribute(aname_, opt_inner_graph) if
-                         attr.name == aname_ else attr for attr in lst_attrs]
+            lst_attrs = [
+                helper.make_attribute(aname_, opt_inner_graph)
+                if attr.name == aname_
+                else attr
+                for attr in lst_attrs
+            ]
             nd_.attribute.extend(lst_attrs)
 
     return graph

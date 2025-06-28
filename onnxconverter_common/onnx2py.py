@@ -36,6 +36,7 @@ os_traced = TracingObject("os", os)
 
 # <Helpers> These can be inlined into the output script #
 
+
 def clear_field(proto, field):
     proto.ClearField(field)
     return proto
@@ -51,33 +52,40 @@ def make_external_tensor(name, data_type, dims, raw_data=None, **kwargs):
     tensor.data_type = data_type
     tensor.name = name
     tensor.dims.extend(dims)
-    tensor.raw_data = raw_data if raw_data is not None else b''
+    tensor.raw_data = raw_data if raw_data is not None else b""
     external_data_helper.set_external_data(tensor, **kwargs)
     if raw_data is None:
         tensor.ClearField("raw_data")
-    order_repeated_field(tensor.external_data, 'key', kwargs.keys())
+    order_repeated_field(tensor.external_data, "key", kwargs.keys())
     return tensor
 
 
-def make_node(op_type, inputs, outputs, name=None, doc_string=None, domain=None, **kwargs):
-    node = helper.make_node(op_type, inputs, outputs, name, doc_string, domain, **kwargs)
-    if doc_string == '':
-        node.doc_string = ''
-    order_repeated_field(node.attribute, 'name', kwargs.keys())
+def make_node(
+    op_type, inputs, outputs, name=None, doc_string=None, domain=None, **kwargs
+):
+    node = helper.make_node(
+        op_type, inputs, outputs, name, doc_string, domain, **kwargs
+    )
+    if doc_string == "":
+        node.doc_string = ""
+    order_repeated_field(node.attribute, "name", kwargs.keys())
     return node
 
 
 def make_graph(*args, doc_string=None, **kwargs):
     graph = helper.make_graph(*args, doc_string=doc_string, **kwargs)
-    if doc_string == '':
-        graph.doc_string = ''
+    if doc_string == "":
+        graph.doc_string = ""
     return graph
+
 
 # </Helpers> #
 
 
 clear_field_traced = TracingObject("clear_field", clear_field)
-make_external_tensor_traced = TracingObject("make_external_tensor", make_external_tensor)
+make_external_tensor_traced = TracingObject(
+    "make_external_tensor", make_external_tensor
+)
 make_node_traced = TracingObject("make_node", make_node)
 make_graph_traced = TracingObject("make_graph", make_graph)
 DATA_DIR_TRACED = None
@@ -117,7 +125,7 @@ def convert_field(field):
 
 def convert_value_info(val_info):
     name = val_info.name
-    is_sequence_type = val_info.type.HasField('sequence_type')
+    is_sequence_type = val_info.type.HasField("sequence_type")
     if is_sequence_type:
         tensor_type = val_info.type.sequence_type.elem_type.tensor_type
     else:
@@ -142,7 +150,9 @@ def convert_value_info(val_info):
     else:
         kwargs["shape"] = None
     if any(d.HasField("denotation") for d in tensor_type.shape.dim):
-        kwargs["shape_denotation"] = [convert_shape_denotation(d) for d in tensor_type.shape.dim]
+        kwargs["shape_denotation"] = [
+            convert_shape_denotation(d) for d in tensor_type.shape.dim
+        ]
 
     if val_info.HasField("doc_string"):
         kwargs["doc_string"].doc_string
@@ -159,7 +169,9 @@ def convert_operatorsetid(opsetid):
         domain = opsetid.domain
         return helper_traced.make_operatorsetid(domain, version)
     else:
-        return clear_field_traced(helper_traced.make_operatorsetid('', version), 'domain')
+        return clear_field_traced(
+            helper_traced.make_operatorsetid("", version), "domain"
+        )
 
 
 def convert_external_tensor(tensor):
@@ -169,7 +181,9 @@ def convert_external_tensor(tensor):
     if tensor.external_data:
         for d in tensor.external_data:
             kwargs[d.key] = d.value
-    return make_external_tensor_traced(tensor.name, tensor.data_type, tensor.dims, **kwargs)
+    return make_external_tensor_traced(
+        tensor.name, tensor.data_type, tensor.dims, **kwargs
+    )
 
 
 def convert_tensor(tensor):
@@ -188,10 +202,10 @@ def convert_tensor(tensor):
         # Avoid path length limit on windows
         name = name + "_" + tensor.name
     for c in '~"#%&*:<>?/\\{|}':
-        name = name.replace(c, '_')
+        name = name.replace(c, "_")
     const_path = "%s/%s.npy" % (const_dir, name)
     np.save(const_path, np_data)
-    data_path = os_traced.path.join(DATA_DIR_TRACED, name + '.npy')
+    data_path = os_traced.path.join(DATA_DIR_TRACED, name + ".npy")
     const_counter += 1
     np_dtype = str(dtype)
     np_shape = list(np_data.shape)
@@ -202,7 +216,9 @@ def convert_tensor(tensor):
 def convert_node(node):
     fields = OrderedDict((f[0].name, f[1]) for f in node.ListFields())
     attributes = fields.pop("attribute", [])
-    attrs = OrderedDict((a.name, convert_field(helper.get_attribute_value(a))) for a in attributes)
+    attrs = OrderedDict(
+        (a.name, convert_field(helper.get_attribute_value(a))) for a in attributes
+    )
     fields = OrderedDict((f, convert_field(v)) for f, v in fields.items())
     op_type = fields.pop("op_type")
     if op_type == "Cast" and "to" in attrs:
@@ -218,7 +234,9 @@ def convert_graph(graph):
     name = fields.pop("name")
     inputs = fields.pop("input", [])
     outputs = fields.pop("output", [])
-    return make_graph_traced(name=name, inputs=inputs, outputs=outputs, **fields, nodes=nodes)
+    return make_graph_traced(
+        name=name, inputs=inputs, outputs=outputs, **fields, nodes=nodes
+    )
 
 
 def convert_model(model):
@@ -276,7 +294,10 @@ def convert(model, out_path):
     code += "import sys\n"
     if os.path.exists(const_dir):
         code += "import os\n"
-        code += "\nDATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), %r)\n" % const_dir_name
+        code += (
+            "\nDATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), %r)\n"
+            % const_dir_name
+        )
     if TracingObject.get_cnt(clear_field_traced):
         code += "\n" + inspect.getsource(clear_field)
     code += "\n" + inspect.getsource(order_repeated_field)
@@ -292,10 +313,12 @@ def convert(model, out_path):
         code += "        f.write(model.SerializeToString())\n"
     else:
         code += "    onnx.save(model, out_path)\n"
-    with open(out_path + ".py", "wt", encoding='utf8') as file:
+    with open(out_path + ".py", "wt", encoding="utf8") as file:
         file.write(code)
     if needed_types:
-        raise MissingHandlerException("Missing handler for types: %s" % list(needed_types))
+        raise MissingHandlerException(
+            "Missing handler for types: %s" % list(needed_types)
+        )
     return model_trace
 
 
@@ -307,18 +330,25 @@ def main():
     model = onnx.load(in_path, load_external_data=False)
     try:
         model_trace = convert(model, out_path)
-        if TracingObject.get_py_obj(model_trace).SerializeToString() == model.SerializeToString():
+        if (
+            TracingObject.get_py_obj(model_trace).SerializeToString()
+            == model.SerializeToString()
+        ):
             print("\nConversion successful. Converted model is identical.\n")
         else:
-            print("\nWARNING: Conversion succeeded but converted model is not identical. "
-                  "Difference might be trivial.\n")
+            print(
+                "\nWARNING: Conversion succeeded but converted model is not identical. "
+                "Difference might be trivial.\n"
+            )
     except MissingHandlerException as e:
         print("ERROR:", e)
 
     print("Model saved to", out_path)
     print("Run 'python %s output.onnx' to generate ONNX file" % out_path)
-    print("Import the model with 'from %s import model'" % os.path.basename(out_path[:-3]))
+    print(
+        "Import the model with 'from %s import model'" % os.path.basename(out_path[:-3])
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
