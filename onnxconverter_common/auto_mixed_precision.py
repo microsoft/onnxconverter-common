@@ -29,7 +29,7 @@ Example usage:
 import onnx
 import numpy as np
 from onnxconverter_common import float16
-from onnx import helper, mapping
+from onnx import helper
 import copy
 
 
@@ -131,7 +131,7 @@ def add_missing_dtypes_using_ort(model, feed_dict, outputs_per_iter=100):
         outs = outputs[i : i + outputs_per_iter]
         vals = get_tensor_values_using_ort(model, feed_dict, outs)
         for out, val in zip(outs, vals):
-            out_to_dtype[out] = mapping.NP_TYPE_TO_TENSOR_TYPE[val.dtype]
+            out_to_dtype[out] = helper.np_dtype_to_tensor_dtype(val.dtype)
         i += outputs_per_iter
     for out, dtype in out_to_dtype.items():
         model.graph.value_info.append(
