@@ -4,7 +4,7 @@
 ###############################################################################
 
 import numpy as np
-from onnx import numpy_helper, mapping, helper
+from onnx import numpy_helper, helper
 
 
 class OnnxGraphContext:
@@ -74,9 +74,9 @@ class OnnxGraphContext:
         return [np.add(inputs[0], inputs[1])]
 
     def _OnCast(self, node, inputs):
-        np_dtype = mapping.TENSOR_TYPE_TO_NP_TYPE[
+        np_dtype = helper.tensor_dtype_to_np_dtype(
             OnnxGraphContext.get_attribute(node, "to")
-        ]
+        )
         casted = inputs[0].astype(np_dtype)
         return [casted]
 

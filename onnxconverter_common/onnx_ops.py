@@ -8,8 +8,8 @@
 # `container` argument. Notice that those function behaviors are defined in a way very similar to ONNX-1.2.
 
 import numpy as np
+import onnx
 from onnx import onnx_pb as onnx_proto
-from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 
 
 def _create_name_or_use_existing_one(scope, op_type, name):
@@ -325,7 +325,7 @@ def apply_clip(
                 else:
                     min = np.array(min)
                     container.add_initializer(
-                        min_name, NP_TYPE_TO_TENSOR_TYPE[min.dtype], [], [min[0]]
+                        min_name, onnx.helper.np_dtype_to_tensor_dtype(min.dtype), [], [min[0]]
                     )
                 min = min_name
             if isinstance(min, str):
@@ -360,7 +360,7 @@ def apply_clip(
                 else:
                     max = np.array(max)
                     container.add_initializer(
-                        max_name, NP_TYPE_TO_TENSOR_TYPE[max.dtype], [], [max[0]]
+                        max_name, onnx.helper.np_dtype_to_tensor_dtype(max.dtype), [], [max[0]]
                     )
                 max = max_name
             if isinstance(max, str):

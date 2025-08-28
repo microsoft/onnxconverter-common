@@ -12,11 +12,9 @@ from onnx import helper
 from .registration import get_converter, get_shape_calculator
 from .data_types import TensorType, Int64Type, FloatType, StringType
 from .onnx_ex import (
-    OPSET_TO_IR_VERSION,
-    DEFAULT_OPSET_NUMBER,
     make_model_ex,
     get_maximum_opset_supported,
-)  # noqa
+)
 from .container import ModelComponentContainer
 from .optimizer import optimize_onnx
 from .interface import OperatorBase, ScopeBase

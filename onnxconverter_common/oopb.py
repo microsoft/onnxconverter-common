@@ -5,7 +5,6 @@
 ###############################################################################
 import numpy as np
 from onnx import onnx_pb as onnx_proto, helper
-from onnx.mapping import NP_TYPE_TO_TENSOR_TYPE
 from . import onnx_ops
 
 
