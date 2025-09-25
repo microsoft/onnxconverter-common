@@ -158,7 +158,7 @@ def convert_value_info(val_info):
         kwargs["doc_string"].doc_string
 
     if is_sequence_type:
-        return helper_traced.make_sequence_value_info(name, elem_type, **kwargs)
+        return helper_traced.make_tensor_sequence_value_info(name, elem_type, **kwargs)
     else:
         return helper_traced.make_tensor_value_info(name, elem_type, **kwargs)
 
