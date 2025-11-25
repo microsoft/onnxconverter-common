@@ -10,6 +10,7 @@ import packaging.version as pv
 import warnings
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
+from typing import List, Set
 
 
 FLOAT32 = 1
@@ -247,6 +248,7 @@ def convert_float_to_float16(
                 node_block_list,
                 min_positive_val,
                 max_finite_val,
+                is_top_level and keep_io_types,
             )
             process_graph_output(curr_graph, is_top_level, keep_io_types)
             sub_graph_list = get_next_level_graph(
@@ -479,24 +481,25 @@ def process_value_info(graph: onnx_proto.GraphProto, value_info_block_list: list
 # Initializer is 'edge' type, so doesn't have value_info
 def process_initializers(
     graph: onnx_proto.GraphProto,
-    op_block_list,
-    node_block_list,
-    min_positive_val,
-    max_finite_val,
+    op_block_list: List[str],
+    node_block_list: List[str],
+    min_positive_val: float,
+    max_finite_val: float,
+    keep_io_types: bool,
 ):
-    # Find the input of the block node, don't need to change this kind of initializer
-    initializer_block_list = set()
-    for node in graph.node:
-        if (node.op_type in op_block_list) or (node.name in node_block_list):
-            for input_name in node.input:  # some is initializer, some is value_info, can't distinguish but doesn't matter
-                initializer_block_list.add(input_name)
-    # Process initializers
-    for initializer in graph.initializer:
-        if initializer.name not in initializer_block_list:
-            if initializer.data_type == onnx_proto.TensorProto.FLOAT:
-                convert_tensor_float_to_float16(
-                    initializer, min_positive_val, max_finite_val
-                )
+    # Skip input (dynamic) initializers and direct inputs to block nodes.
+    blocked: Set[str] = {
+        i
+        for node in graph.node
+        if node.op_type in op_block_list or node.name in node_block_list
+        for i in node.input
+    }
+    if keep_io_types:
+        blocked |= {i.name for i in graph.input}
+    # Process initializers.
+    for init in graph.initializer:
+        if init.name not in blocked and init.data_type == onnx_proto.TensorProto.FLOAT:
+            convert_tensor_float_to_float16(init, min_positive_val, max_finite_val)
 
 
 def get_next_level_graph(
