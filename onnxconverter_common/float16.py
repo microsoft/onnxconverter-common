@@ -10,6 +10,7 @@ import packaging.version as pv
 import warnings
 from onnx import helper, numpy_helper
 from onnx import onnx_pb as onnx_proto
+from typing import List
 
 
 FLOAT32 = 1
@@ -230,6 +231,7 @@ def convert_float_to_float16(
             process_graph_input(
                 curr_graph, is_top_level, keep_io_types, global_input_name_dict
             )
+            process_cast32_node(curr_graph, op_block_list, node_block_list)
             value_info_block_list = process_tensor_in_node(
                 curr_graph,
                 op_block_list,
@@ -430,6 +432,25 @@ def insert_cast16_after_node(
                 )
                 node.output[i] = cast_input_name
                 break
+
+
+# Replace all Cast<float32> (e.g. from int or for type erasure) by Cast<float16>.
+def process_cast32_node(
+    graph: onnx_proto.GraphProto,
+    op_block_list: List[str],
+    node_block_list: List[str],
+):
+    if "Cast" in op_block_list:
+        return
+    for node in graph.node:
+        if node.op_type == "Cast" and node.name not in node_block_list:
+            for attr in node.attribute:
+                if (
+                    attr.name == "to"
+                    and attr.type == onnx_proto.AttributeProto.AttributeType.INT
+                    and attr.i == onnx_proto.TensorProto.FLOAT
+                ):
+                    attr.i = onnx_proto.TensorProto.FLOAT16
 
 
 # Process tensor data in attribute of the node
