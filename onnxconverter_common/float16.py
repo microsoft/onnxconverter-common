@@ -484,19 +484,50 @@ def process_initializers(
     min_positive_val,
     max_finite_val,
 ):
-    # Find the input of the block node, don't need to change this kind of initializer
-    initializer_block_list = set()
+    # Create a dict mapping input names to the nodes that use their tensors as inputs.
+    input_name_to_nodes_dict = {}
     for node in graph.node:
-        if (node.op_type in op_block_list) or (node.name in node_block_list):
-            for input_name in node.input:  # some is initializer, some is value_info, can't distinguish but doesn't matter
-                initializer_block_list.add(input_name)
+        for input_name in node.input:
+            input_name_to_nodes_dict.setdefault(input_name, []).append(node)
     # Process initializers
     for initializer in graph.initializer:
-        if initializer.name not in initializer_block_list:
-            if initializer.data_type == onnx_proto.TensorProto.FLOAT:
-                convert_tensor_float_to_float16(
-                    initializer, min_positive_val, max_finite_val
-                )
+        if initializer.data_type == onnx_proto.TensorProto.FLOAT:
+            all_nodes_are_blocked = all(
+                [
+                    (node.op_type in op_block_list) or (node.name in node_block_list)
+                    for node in input_name_to_nodes_dict[initializer.name]
+                ]
+            )
+            # skip conversion
+            if all_nodes_are_blocked:
+                continue
+            
+            # convert initializer from float to float16
+            convert_tensor_float_to_float16(
+                initializer, min_positive_val, max_finite_val
+            )
+            for node in input_name_to_nodes_dict[initializer.name]:
+                if (node.op_type in op_block_list) or (node.name in node_block_list):
+                    input_index = list(node.input).index(initializer.name)
+                    # insert a float16 to float Cast node before the node
+                    # change current node's input name and create new value_info for the new name
+                    # create new value_info for current node's new input name
+                    cast_node_name = node.name + '_input_cast' + str(input_index)
+                    cast_output_name = node.name + "_input_cast_" + str(input_index)
+                    add_cast_node(
+                        graph,
+                        [initializer.name],
+                        [cast_output_name],
+                        cast_node_name,
+                        FLOAT32
+                    )
+                    add_new_value_info(
+                        graph,
+                        make_value_info_from_tensor(initializer),
+                        cast_output_name,
+                        onnx_proto.TensorProto.FLOAT
+                    )
+                    node.input[input_index] = cast_output_name
 
 
 def get_next_level_graph(
