@@ -40,5 +40,5 @@ jobs:
     inputs:
       script: |
         pip install --upgrade pip
-        pip install build wheel
+        pip install build
         python -m build
