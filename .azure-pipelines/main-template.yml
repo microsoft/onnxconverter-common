@@ -36,9 +36,9 @@ jobs:
     condition: succeededOrFailed()
 
   - task: CmdLine@2
-    displayName: 'Command Line Script'
+    displayName: 'Build wheel and sdist'
     inputs:
       script: |
         pip install --upgrade pip
-        pip install wheel
-        python setup.py bdist_wheel
+        pip install build wheel
+        python -m build
