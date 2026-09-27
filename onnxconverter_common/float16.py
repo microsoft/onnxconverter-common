@@ -16,6 +16,50 @@ FLOAT32 = 1
 FLOAT16 = 10
 
 
+class _CastNameGenerator:
+    """Reserve existing and generated names across the model's graphs."""
+
+    def __init__(self, graph):
+        self._used_names = set()
+        self._next_suffix = {}
+        graphs = [graph]
+        while graphs:
+            current = graphs.pop()
+            self._used_names.update(
+                value.name
+                for value in itertools.chain(
+                    current.input,
+                    current.output,
+                    current.value_info,
+                    current.initializer,
+                )
+            )
+            for initializer in current.sparse_initializer:
+                self._used_names.update(
+                    [initializer.values.name, initializer.indices.name]
+                )
+            for node in current.node:
+                self._used_names.add(node.name)
+                self._used_names.update(node.input)
+                self._used_names.update(node.output)
+                for attribute in node.attribute:
+                    if attribute.HasField("g"):
+                        graphs.append(attribute.g)
+                    graphs.extend(attribute.graphs)
+
+    def create(self, node_name, tensor_name):
+        key = (node_name, tensor_name)
+        index = self._next_suffix.get(key, 0)
+        while True:
+            suffix = "" if index == 0 else "_" + str(index)
+            names = (node_name + suffix, tensor_name + suffix)
+            index += 1
+            if self._used_names.isdisjoint(names):
+                self._used_names.update(names)
+                self._next_suffix[key] = index
+                return names
+
+
 def _npfloat16_to_int(np_list):
     """
     Convert numpy float16 to python int.
@@ -222,13 +266,18 @@ def convert_float_to_float16(
         )
 
     graph_stack = [model.graph]
+    name_generator = _CastNameGenerator(model.graph)
 
     is_top_level = True
     while graph_stack:
         next_level = []
         for curr_graph in graph_stack:
             process_graph_input(
-                curr_graph, is_top_level, keep_io_types, global_input_name_dict
+                curr_graph,
+                is_top_level,
+                keep_io_types,
+                global_input_name_dict,
+                name_generator,
             )
             value_info_block_list = process_tensor_in_node(
                 curr_graph,
@@ -239,7 +288,11 @@ def convert_float_to_float16(
             )
             process_value_info(curr_graph, value_info_block_list)
             process_node_in_block_list(
-                curr_graph, global_input_name_dict, op_block_list, node_block_list
+                curr_graph,
+                global_input_name_dict,
+                op_block_list,
+                node_block_list,
+                name_generator,
             )
             process_initializers(
                 curr_graph,
@@ -248,7 +301,9 @@ def convert_float_to_float16(
                 min_positive_val,
                 max_finite_val,
             )
-            process_graph_output(curr_graph, is_top_level, keep_io_types)
+            process_graph_output(
+                curr_graph, is_top_level, keep_io_types, name_generator
+            )
             sub_graph_list = get_next_level_graph(
                 curr_graph, op_block_list, node_block_list
             )
@@ -285,7 +340,10 @@ def process_graph_input(
     is_top_level: bool,
     is_io_fp32: bool,
     global_input_name_dict: dict,
+    name_generator=None,
 ):
+    if name_generator is None:
+        name_generator = _CastNameGenerator(graph)
     # The input dtype is float32, need to cast to fp16
     if is_top_level and is_io_fp32:
         for graph_input in graph.input:  # n_input is ValueInfoProto
@@ -294,8 +352,10 @@ def process_graph_input(
                     graph, graph_input.name
                 )
                 for d_node in downstream_nodes:
-                    cast_node_name = graph_input.name + "_cast_to_" + d_node.name
-                    cast_node_output_name = graph_input.name + "_cast_to_" + d_node.name
+                    name = graph_input.name + "_cast_to_" + d_node.name
+                    cast_node_name, cast_node_output_name = name_generator.create(
+                        name, name
+                    )
                     add_cast_node(
                         graph,
                         [graph_input.name],
@@ -326,8 +386,13 @@ def process_graph_input(
 
 
 def process_graph_output(
-    graph: onnx_proto.GraphProto, is_top_level: bool, is_io_fp32: bool
+    graph: onnx_proto.GraphProto,
+    is_top_level: bool,
+    is_io_fp32: bool,
+    name_generator=None,
 ):
+    if name_generator is None:
+        name_generator = _CastNameGenerator(graph)
     if is_top_level and is_io_fp32:  # the output dtype is float32, need to cast to fp16
         for i, graph_output in enumerate(graph.output):
             if graph_output.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
@@ -335,9 +400,9 @@ def process_graph_output(
                     graph, graph_output.name
                 )
                 for u_node in upstream_nodes:
-                    cast_node_name = u_node.name + "_cast_to_" + graph_output.name
-                    cast_node_output_name = (
-                        u_node.name + "_cast_to_" + graph_output.name
+                    name = u_node.name + "_cast_to_" + graph_output.name
+                    cast_node_name, cast_node_output_name = name_generator.create(
+                        name, name
                     )
                     add_cast_node(
                         graph,
@@ -366,17 +431,29 @@ def process_node_in_block_list(
     global_input_name_dict: dict,
     op_block_list: list,
     node_block_list: list,
+    name_generator=None,
 ):
+    if name_generator is None:
+        name_generator = _CastNameGenerator(graph)
     for node in graph.node:
         if (node.op_type in op_block_list) or (node.name in node_block_list):
-            insert_cast32_before_node(graph, node, global_input_name_dict)
-            insert_cast16_after_node(graph, node, global_input_name_dict)
+            insert_cast32_before_node(
+                graph, node, global_input_name_dict, name_generator
+            )
+            insert_cast16_after_node(
+                graph, node, global_input_name_dict, name_generator
+            )
 
 
 # Todo: global_input_name_dict still not fill value
 def insert_cast32_before_node(
-    graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, global_input_name_dict
+    graph: onnx_proto.GraphProto,
+    node: onnx_proto.NodeProto,
+    global_input_name_dict,
+    name_generator=None,
 ):
+    if name_generator is None:
+        name_generator = _CastNameGenerator(graph)
     for i in range(len(node.input)):
         input_name = node.input[i]
         for value_info in itertools.chain(graph.value_info, graph.input):
@@ -386,11 +463,13 @@ def insert_cast32_before_node(
                     != onnx_proto.TensorProto.FLOAT16
                 ):
                     break
-                cast_output_name = node.name + "_input_cast_" + str(i)
+                cast_node_name, cast_output_name = name_generator.create(
+                    node.name + "_input_cast" + str(i),
+                    node.name + "_input_cast_" + str(i),
+                )
                 add_new_value_info(
                     graph, value_info, cast_output_name, onnx_proto.TensorProto.FLOAT
                 )
-                cast_node_name = node.name + "_input_cast" + str(i)
                 add_cast_node(
                     graph,
                     [input_name],
@@ -404,8 +483,13 @@ def insert_cast32_before_node(
 
 # Todo: global_input_name_dict still not fill value
 def insert_cast16_after_node(
-    graph: onnx_proto.GraphProto, node: onnx_proto.NodeProto, global_input_name_dict
+    graph: onnx_proto.GraphProto,
+    node: onnx_proto.NodeProto,
+    global_input_name_dict,
+    name_generator=None,
 ):
+    if name_generator is None:
+        name_generator = _CastNameGenerator(graph)
     for i in range(len(node.output)):
         output_name = node.output[i]
         for value_info in itertools.chain(graph.value_info, graph.output):
@@ -415,12 +499,14 @@ def insert_cast16_after_node(
                     != onnx_proto.TensorProto.FLOAT
                 ):
                     break
-                cast_input_name = node.name + "_output_cast_" + str(i)
+                cast_node_name, cast_input_name = name_generator.create(
+                    node.name + "_output_cast" + str(i),
+                    node.name + "_output_cast_" + str(i),
+                )
                 add_new_value_info(
                     graph, value_info, cast_input_name, onnx_proto.TensorProto.FLOAT
                 )
                 value_info.type.tensor_type.elem_type = onnx_proto.TensorProto.FLOAT16
-                cast_node_name = node.name + "_output_cast" + str(i)
                 add_cast_node(
                     graph,
                     [cast_input_name],
