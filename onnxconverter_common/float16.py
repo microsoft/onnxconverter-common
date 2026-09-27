@@ -613,12 +613,16 @@ def convert_float_to_float16_model_path(
 
             # shape_infer_model_path should be in the same folder of model_path
             with tempfile.NamedTemporaryFile(
-                dir=os.path.dirname(model_path)
+                dir=os.path.dirname(model_path), delete=False
             ) as tmpfile:
                 shape_infer_model_path = tmpfile.name
+            # Close the file before ONNX reopens it, which is required on Windows.
+            try:
                 infer_shapes_path(model_path, shape_infer_model_path)
                 model = onnx.load(shape_infer_model_path)
                 disable_shape_infer = True
+            finally:
+                os.remove(shape_infer_model_path)
         finally:
             pass
     if not disable_shape_infer:
