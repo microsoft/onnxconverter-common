@@ -34,6 +34,106 @@ onnx_function = Graph.trace
     get_maximum_opset_supported() < 9, "tests designed for ONNX opset 9 and greater"
 )
 class ONNXFloat16Test(unittest.TestCase):
+    def test_blocked_graph_output_preserves_io_types(self):
+        for keep_io_types in (True, False):
+            for disable_shape_infer, with_value_info in (
+                (True, True),
+                (True, False),
+                (False, True),
+                (False, False),
+            ):
+                for has_consumer in (True, False):
+                    for block_by_op in (True, False):
+                        with self.subTest(
+                            keep_io_types=keep_io_types,
+                            disable_shape_infer=disable_shape_infer,
+                            with_value_info=with_value_info,
+                            has_consumer=has_consumer,
+                            block_by_op=block_by_op,
+                        ):
+                            nodes = [
+                                onnx.helper.make_node(
+                                    "ReduceMean",
+                                    ["x"],
+                                    ["y"],
+                                    name="mean",
+                                    axes=[1],
+                                    keepdims=1,
+                                )
+                            ]
+                            outputs = [
+                                onnx.helper.make_tensor_value_info(
+                                    "y", onnx.TensorProto.FLOAT, [1, 1]
+                                )
+                            ]
+                            if has_consumer:
+                                nodes.append(
+                                    onnx.helper.make_node(
+                                        "Add", ["y", "y"], ["z"], name="add"
+                                    )
+                                )
+                                outputs.append(
+                                    onnx.helper.make_tensor_value_info(
+                                        "z", onnx.TensorProto.FLOAT, [1, 1]
+                                    )
+                                )
+                            graph = onnx.helper.make_graph(
+                                nodes,
+                                "blocked_output",
+                                [
+                                    onnx.helper.make_tensor_value_info(
+                                        "x", onnx.TensorProto.FLOAT, [1, 3]
+                                    )
+                                ],
+                                outputs,
+                                value_info=[copy.deepcopy(outputs[0])]
+                                if with_value_info
+                                else [],
+                            )
+                            model = onnx.helper.make_model(
+                                graph,
+                                opset_imports=[onnx.helper.make_opsetid("", 13)],
+                            )
+                            model.ir_version = 8
+                            onnx.checker.check_model(model, full_check=True)
+                            inputs = np.array([[1.0, 1.0002, 1.0004]], dtype=np.float32)
+                            reference = _ort_inference(model, {"x": inputs})
+                            converted = convert_float_to_float16(
+                                copy.deepcopy(model),
+                                keep_io_types=keep_io_types,
+                                disable_shape_infer=disable_shape_infer,
+                                op_block_list=["ReduceMean"] if block_by_op else [],
+                                node_block_list=[] if block_by_op else ["mean"],
+                            )
+                            onnx.checker.check_model(converted, full_check=True)
+                            expected_type = (
+                                onnx.TensorProto.FLOAT
+                                if keep_io_types
+                                else onnx.TensorProto.FLOAT16
+                            )
+                            for value in list(converted.graph.input) + list(
+                                converted.graph.output
+                            ):
+                                self.assertEqual(
+                                    value.type.tensor_type.elem_type, expected_type
+                                )
+                            self.assertEqual(
+                                [value.name for value in converted.graph.output],
+                                [value.name for value in model.graph.output],
+                            )
+                            dtype = np.float32 if keep_io_types else np.float16
+                            actual = _ort_inference(
+                                converted, {"x": inputs.astype(dtype)}
+                            )
+                            for expected, result in zip(reference, actual):
+                                self.assertEqual(result.dtype, dtype)
+                                np.testing.assert_allclose(result, expected, rtol=1e-3)
+                            if keep_io_types:
+                                # The blocked output must not round through FP16.
+                                np.testing.assert_allclose(
+                                    actual[0], reference[0], rtol=0, atol=1e-7
+                                )
+
     def test_float16(self):
         @onnx_function(
             outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f]
