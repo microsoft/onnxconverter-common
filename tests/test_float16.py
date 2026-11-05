@@ -134,6 +134,116 @@ class ONNXFloat16Test(unittest.TestCase):
                                     actual[0], reference[0], rtol=0, atol=1e-7
                                 )
 
+    def test_blocked_graph_output_captured_by_subgraph(self):
+        for has_consumer in (True, False):
+            for capture in ("converted", "blocked", "shadowed"):
+                with self.subTest(has_consumer=has_consumer, capture=capture):
+                    branch_nodes = [
+                        onnx.helper.make_node("Identity", ["y"], ["w"], name="nested")
+                    ]
+                    if capture == "shadowed":
+                        branch_nodes.insert(
+                            0,
+                            onnx.helper.make_node(
+                                "Constant",
+                                [],
+                                ["y"],
+                                name="local_y",
+                                value=onnx.helper.make_tensor(
+                                    "local_y", onnx.TensorProto.FLOAT, [1, 1], [1.0]
+                                ),
+                            ),
+                        )
+                    branch = onnx.helper.make_graph(
+                        branch_nodes,
+                        "branch",
+                        [],
+                        [
+                            onnx.helper.make_tensor_value_info(
+                                "w", onnx.TensorProto.FLOAT, [1, 1]
+                            )
+                        ],
+                    )
+                    nodes = [
+                        onnx.helper.make_node(
+                            "ReduceMean",
+                            ["x"],
+                            ["y"],
+                            name="mean",
+                            axes=[1],
+                            keepdims=1,
+                        ),
+                        onnx.helper.make_node(
+                            "If",
+                            ["c"],
+                            ["v"],
+                            name="if",
+                            then_branch=branch,
+                            else_branch=copy.deepcopy(branch),
+                        ),
+                    ]
+                    outputs = [
+                        onnx.helper.make_tensor_value_info(
+                            "y", onnx.TensorProto.FLOAT, [1, 1]
+                        ),
+                        onnx.helper.make_tensor_value_info(
+                            "v", onnx.TensorProto.FLOAT, [1, 1]
+                        ),
+                    ]
+                    if has_consumer:
+                        nodes.append(
+                            onnx.helper.make_node("Add", ["y", "y"], ["z"], name="add")
+                        )
+                        outputs.append(
+                            onnx.helper.make_tensor_value_info(
+                                "z", onnx.TensorProto.FLOAT, [1, 1]
+                            )
+                        )
+                    graph = onnx.helper.make_graph(
+                        nodes,
+                        "captured_output",
+                        [
+                            onnx.helper.make_tensor_value_info(
+                                "x", onnx.TensorProto.FLOAT, [1, 3]
+                            ),
+                            onnx.helper.make_tensor_value_info(
+                                "c", onnx.TensorProto.BOOL, []
+                            ),
+                        ],
+                        outputs,
+                    )
+                    model = onnx.helper.make_model(
+                        graph, opset_imports=[onnx.helper.make_opsetid("", 13)]
+                    )
+                    converted = convert_float_to_float16(
+                        model,
+                        keep_io_types=True,
+                        disable_shape_infer=True,
+                        op_block_list=["ReduceMean"]
+                        + (["If"] if capture == "blocked" else []),
+                    )
+                    self.assertEqual(
+                        converted.graph.output[0].type.tensor_type.elem_type,
+                        onnx.TensorProto.FLOAT,
+                    )
+                    fp16_branches = [
+                        node.output[0]
+                        for node in converted.graph.node
+                        if node.op_type == "Cast"
+                        and node.attribute[0].i == onnx.TensorProto.FLOAT16
+                    ]
+                    if_node = [
+                        node for node in converted.graph.node if node.op_type == "If"
+                    ][0]
+                    for attribute in if_node.attribute:
+                        nested = [
+                            node for node in attribute.g.node if node.name == "nested"
+                        ][0]
+                        if capture == "converted":
+                            self.assertIn(nested.input[0], fp16_branches)
+                        else:
+                            self.assertEqual(nested.input[0], "y")
+
     def test_float16(self):
         @onnx_function(
             outputs=["z"], input_types=(_Ty.F([1, 1, 6, 1])), output_types=[_Ty.f]
