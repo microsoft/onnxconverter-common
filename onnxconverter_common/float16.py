@@ -227,6 +227,10 @@ def convert_float_to_float16(
     while graph_stack:
         next_level = []
         for curr_graph in graph_stack:
+            original_output_types = {
+                output.name: output.type.tensor_type.elem_type
+                for output in curr_graph.output
+            }
             process_graph_input(
                 curr_graph, is_top_level, keep_io_types, global_input_name_dict
             )
@@ -248,7 +252,14 @@ def convert_float_to_float16(
                 min_positive_val,
                 max_finite_val,
             )
-            process_graph_output(curr_graph, is_top_level, keep_io_types)
+            process_graph_output(
+                curr_graph,
+                is_top_level,
+                keep_io_types,
+                op_block_list,
+                node_block_list,
+                original_output_types,
+            )
             sub_graph_list = get_next_level_graph(
                 curr_graph, op_block_list, node_block_list
             )
@@ -326,10 +337,61 @@ def process_graph_input(
 
 
 def process_graph_output(
-    graph: onnx_proto.GraphProto, is_top_level: bool, is_io_fp32: bool
+    graph: onnx_proto.GraphProto,
+    is_top_level: bool,
+    is_io_fp32: bool,
+    op_block_list: list,
+    node_block_list: list,
+    original_output_types=None,
 ):
-    if is_top_level and is_io_fp32:  # the output dtype is float32, need to cast to fp16
+    if is_top_level and is_io_fp32:
         for i, graph_output in enumerate(graph.output):
+            upstream_nodes = find_upstream_node_by_output_name(graph, graph_output.name)
+            if (
+                original_output_types is not None
+                and original_output_types[graph_output.name] == FLOAT32
+                and upstream_nodes
+                and upstream_nodes[0].op_type == "Cast"
+                and any(
+                    attribute.name == "to" and attribute.i == FLOAT16
+                    for attribute in upstream_nodes[0].attribute
+                )
+            ):
+                # A blocked producer's output cast must not change the public type.
+                upstream_node = upstream_nodes[0]
+                downstream_nodes = find_donwstream_node_by_input_name(
+                    graph, graph_output.name
+                ) + find_captured_node_by_input_name(
+                    graph, graph_output.name, op_block_list, node_block_list
+                )
+                graph_output.type.tensor_type.elem_type = FLOAT32
+                for value_info in graph.value_info:
+                    if value_info.name == graph_output.name:
+                        value_info.type.tensor_type.elem_type = FLOAT32
+                if not downstream_nodes:
+                    for attribute in upstream_node.attribute:
+                        if attribute.name == "to":
+                            attribute.i = FLOAT32
+                else:
+                    # Keep the FP16 branch for consumers, but expose the FP32
+                    # producer directly, without rounding through FP16 first.
+                    cast_output_name = (
+                        upstream_node.name + "_cast_to_" + graph_output.name
+                    )
+                    add_new_value_info(graph, graph_output, cast_output_name, FLOAT16)
+                    upstream_node.output[0] = cast_output_name
+                    for downstream_node in downstream_nodes:
+                        for j, input_name in enumerate(downstream_node.input):
+                            if input_name == graph_output.name:
+                                downstream_node.input[j] = cast_output_name
+                    add_cast_node(
+                        graph,
+                        [upstream_node.input[0]],
+                        [graph_output.name],
+                        upstream_node.name + "_keep_io_type",
+                        FLOAT32,
+                    )
+                continue
             if graph_output.type.tensor_type.elem_type == onnx_proto.TensorProto.FLOAT:
                 upstream_nodes = find_upstream_node_by_output_name(
                     graph, graph_output.name
@@ -555,6 +617,32 @@ def find_donwstream_node_by_input_name(graph: onnx_proto.GraphProto, input_name:
     for node in graph.node:
         if input_name in node.input:
             nodes.append(node)
+    return nodes
+
+
+# Find the nodes in the converted sub-graphs that capture the specified outer name
+def find_captured_node_by_input_name(
+    graph: onnx_proto.GraphProto,
+    input_name: str,
+    op_block_list: list,
+    node_block_list: list,
+):
+    nodes = []
+    for sub_graph in get_next_level_graph(graph, op_block_list, node_block_list):
+        local_names = {
+            value.name
+            for value in itertools.chain(sub_graph.input, sub_graph.initializer)
+        }
+        for node in sub_graph.node:
+            local_names.update(node.output)
+        if input_name in local_names:  # the name is shadowed in this scope
+            continue
+        nodes.extend(find_donwstream_node_by_input_name(sub_graph, input_name))
+        nodes.extend(
+            find_captured_node_by_input_name(
+                sub_graph, input_name, op_block_list, node_block_list
+            )
+        )
     return nodes
 
 
