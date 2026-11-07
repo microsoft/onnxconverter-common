@@ -2004,6 +2004,9 @@ class MergeCommonSequenceOptimizer(object):
         if node_0.origin.op_type != node_1.origin.op_type:
             return False
 
+        if node_0.origin.domain != node_1.origin.domain:
+            return False
+
         if node_0.origin.op_type == "Transpose":
             return False
 
